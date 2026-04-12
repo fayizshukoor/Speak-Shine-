@@ -170,6 +170,12 @@ async function startBot() {
       });
     }
 
+    if (text?.trim() === "/testdm") {
+      await safeSend(sock, process.env.OWNER_NUMBER, {
+        text: "🔥 DM test success!",
+      });
+    }
+
     // =============================
     // 🎥 VIDEO LOGIC
     // =============================
@@ -238,12 +244,32 @@ async function startBot() {
     const users = await User.find();
     const notDone = users.filter((u) => !u.completed);
 
-    let msg = "";
+    let msg = "📊 *Final Report + Leaderboard*\n\n";
 
+    // =============================
+    // 🏆 LEADERBOARD (FIRST)
+    // =============================
+    const sorted = users.sort((a, b) => b.completed - a.completed);
+
+    msg += "🏆 *Leaderboard:*\n\n";
+
+    sorted.forEach((u, i) => {
+      const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "🔹";
+
+      msg += `${medal} @${u.userId.split("@")[0]} → ${
+        u.completed ? "✅" : "❌"
+      }\n`;
+    });
+
+    msg += "\n";
+
+    // =============================
+    // ❌ NOT COMPLETED + FINE
+    // =============================
     if (notDone.length === 0) {
-      msg = "🎉 Everyone completed today's task!";
+      msg += "🎉 Everyone completed today's task!\n\n";
     } else {
-      msg = "❌ *Final Report:*\n\n";
+      msg += "❌ *Not Completed:*\n\n";
 
       for (let u of notDone) {
         if (!TEST_MODE) {
@@ -253,21 +279,38 @@ async function startBot() {
 
         msg += `@${u.userId.split("@")[0]} → ₹${u.fine}\n`;
       }
+
+      msg += "\n";
     }
 
+    // =============================
+    // 💰 TOTAL FINES
+    // =============================
+    msg += "💰 *Total Fines:*\n";
+
+    users.forEach((u) => {
+      msg += `@${u.userId.split("@")[0]} → ₹${u.fine}\n`;
+    });
+
+    // =============================
+    // 🔄 RESET
+    // =============================
     for (let u of users) {
       u.completed = false;
       await u.save();
     }
 
+    // =============================
+    // 📩 SEND
+    // =============================
     await safeSend(sock, TARGET_GROUP, {
       text: msg,
-      mentions: notDone.map((u) => u.userId),
+      mentions: users.map((u) => u.userId),
     });
   });
 
   // =============================
-  // 🧠 DAILY QUESTION (11 AM IST)
+  // 🧠 DAILY QUESTION (8 AM IST)
   // =============================
   cron.schedule(TEST_MODE ? "*/1 * * * *" : "30 2 * * *", async () => {
     console.log("📢 Daily Question...");
@@ -285,6 +328,7 @@ async function startBot() {
 
     if (!question) return;
 
+    // ❌ delete after selecting
     await Question.findByIdAndDelete(question._id);
 
     const msg =
@@ -292,7 +336,15 @@ async function startBot() {
       `💬 "${question.quote}"\n\n` +
       `👉 ${question.question}`;
 
+    // ✅ send to group
     await safeSend(sock, TARGET_GROUP, { text: msg });
+
+    // 🔥 IF THIS WAS LAST QUESTION
+    if (count === 1) {
+      await safeSend(sock, process.env.OWNER_NUMBER, {
+        text: "⚠️ Only 1 question was left. Now all questions are finished!",
+      });
+    }
   });
 
   // =============================
