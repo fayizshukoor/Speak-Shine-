@@ -53,6 +53,12 @@ async function startBot() {
     version,
     auth: state,
     printQRInTerminal: true,
+
+    // 🔥 IMPORTANT FIXES
+    syncFullHistory: false,
+    markOnlineOnConnect: true,
+    defaultQueryTimeoutMs: undefined,
+    retryRequestDelayMs: 500,
   });
 
   sock.ev.on("creds.update", saveCreds);
@@ -295,7 +301,9 @@ async function startBot() {
 
       // 📋 REMAINING
       if (cmd.startsWith("/remaining")) {
-        return sendReminder(`⏰ *Reminder*\n\n🗣️ _Don't forget to submit your speaking video today!_`);
+        return sendReminder(
+          `⏰ *Reminder*\n\n🗣️ _Don't forget to submit your speaking video today!_`,
+        );
       }
 
       // 💰 FINE
@@ -335,16 +343,24 @@ async function startBot() {
 
       // 🔄 RESET
       if (cmd.startsWith("/reset")) {
-        if (!isAdmin) return safeSend(sock, chatId, { text: `❌ *Access Denied*\n_Only admins can use this command._` });
+        if (!isAdmin)
+          return safeSend(sock, chatId, {
+            text: `❌ *Access Denied*\n_Only admins can use this command._`,
+          });
 
         await User.updateMany({}, { completed: false, fine: 0 });
 
-        return safeSend(sock, chatId, { text: `🔄 *Full Reset Done!*\n\n━━━━━━━━━━━━━━━\n✅ All statuses and fines have been cleared.` });
+        return safeSend(sock, chatId, {
+          text: `🔄 *Full Reset Done!*\n\n━━━━━━━━━━━━━━━\n✅ All statuses and fines have been cleared.`,
+        });
       }
 
       // 🔄 RESET DAY
       if (cmd.startsWith("/resetday")) {
-        if (!isAdmin) return safeSend(sock, chatId, { text: `❌ *Access Denied*\n_Only admins can use this command._` });
+        if (!isAdmin)
+          return safeSend(sock, chatId, {
+            text: `❌ *Access Denied*\n_Only admins can use this command._`,
+          });
 
         await User.updateMany({}, { completed: false });
 
@@ -393,13 +409,27 @@ async function startBot() {
   // ================= CRON =================
   cron.schedule("0 8 * * *", sendQuestion, { timezone: TIMEZONE });
 
-  cron.schedule("0 9,13,17 * * *", () => sendReminder(`⏰ *Reminder*\n\n🗣️ _Don't forget to submit your speaking video today!_`), {
-    timezone: TIMEZONE,
-  });
+  cron.schedule(
+    "0 9,13,17 * * *",
+    () =>
+      sendReminder(
+        `⏰ *Reminder*\n\n🗣️ _Don't forget to submit your speaking video today!_`,
+      ),
+    {
+      timezone: TIMEZONE,
+    },
+  );
 
-  cron.schedule("0 21,22 * * *", () => sendReminder(`🌙 *Night Reminder*\n\n😴 _It's getting late — submit your video before midnight!_`), {
-    timezone: TIMEZONE,
-  });
+  cron.schedule(
+    "0 21,22 * * *",
+    () =>
+      sendReminder(
+        `🌙 *Night Reminder*\n\n😴 _It's getting late — submit your video before midnight!_`,
+      ),
+    {
+      timezone: TIMEZONE,
+    },
+  );
 
   cron.schedule("30 22 * * *", sendDMReminder, { timezone: TIMEZONE });
 
