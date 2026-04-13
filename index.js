@@ -176,12 +176,16 @@ async function startBot() {
   // 🧠 DAILY QUESTION
   // =============================
   cron.schedule(
-    "0 8 * * *",
+    "50 8 * * *",
     async () => {
       const count = await Question.countDocuments();
       if (!count) return;
 
-      const q = await Question.findOne().skip(Math.random() * count);
+      const randomIndex = Math.floor(Math.random() * count);
+      const q = await Question.findOne().skip(randomIndex);
+
+      if (!q) return;
+
       await Question.findByIdAndDelete(q._id);
 
       safeSend(sock, TARGET_GROUP, {
