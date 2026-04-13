@@ -17,13 +17,21 @@ connectDB();
 const TARGET_GROUP = process.env.TARGET_GROUP;
 const TIMEZONE = "Asia/Kolkata";
 
+// ✅ Prevent duplicate question
+let questionSentToday = false;
+
 // =============================
 // ✅ SAFE SEND
 // =============================
 const safeSend = async (sock, jid, msg) => {
   try {
+    if (!sock?.user) {
+      console.log("⚠️ Socket not ready");
+      return;
+    }
     await sock.sendMessage(jid, msg);
-  } catch {
+  } catch (err) {
+    console.log("Retry send...");
     setTimeout(() => sock.sendMessage(jid, msg), 2000);
   }
 };
@@ -35,6 +43,7 @@ async function startBot() {
   const sock = makeWASocket({
     version,
     auth: state,
+    printQRInTerminal: true,
   });
 
   sock.ev.on("creds.update", saveCreds);
@@ -43,160 +52,197 @@ async function startBot() {
   // 📩 MESSAGE HANDLER
   // =============================
   sock.ev.on("messages.upsert", async ({ messages }) => {
-    const msg = messages[0];
-    if (!msg.message || msg.key.fromMe) return;
+    try {
+      const msg = messages[0];
+      if (!msg.message || msg.key.fromMe) return;
 
-    const chatId = msg.key.remoteJid;
-    if (chatId !== TARGET_GROUP) return;
+      const chatId = msg.key.remoteJid;
+      if (chatId !== TARGET_GROUP) return;
 
-    const user = msg.key.participant;
+      const user = msg.key.participant;
 
-    const content =
-      msg.message?.ephemeralMessage?.message ||
-      msg.message?.viewOnceMessage?.message ||
-      msg.message;
+      const content =
+        msg.message?.ephemeralMessage?.message ||
+        msg.message?.viewOnceMessage?.message ||
+        msg.message;
 
-    const text =
-      content?.conversation ||
-      content?.extendedTextMessage?.text ||
-      content?.imageMessage?.caption ||
-      "";
+      const text =
+        content?.conversation ||
+        content?.extendedTextMessage?.text ||
+        content?.imageMessage?.caption ||
+        "";
 
-    const groupMeta = await sock.groupMetadata(TARGET_GROUP);
-    const isAdmin = groupMeta.participants.find(
-      (p) => p.id === user && p.admin,
-    );
+      const cmd = text.trim().toLowerCase();
 
-    // =============================
-    // 🧠 COMMANDS
-    // =============================
+      console.log("📩 MESSAGE:", cmd);
 
-    if (text === "/fine") {
-      const users = await User.find();
-      let msg = "💰 *Fine Report*\n\n";
-      users.forEach((u) => {
-        msg += `👉 @${u.userId.split("@")[0]} → ₹${u.fine}\n`;
-      });
+      const groupMeta = await sock.groupMetadata(TARGET_GROUP);
+      const isAdmin = groupMeta.participants.find(
+        (p) => p.id === user && p.admin,
+      );
 
-      return safeSend(sock, chatId, {
-        text: msg,
-        mentions: users.map((u) => u.userId),
-      });
-    }
+      // =============================
+      // 🧠 COMMANDS
+      // =============================
 
-    if (text === "/leaderboard") {
-      const users = await User.find();
-      let msg = "🏆 *Leaderboard*\n\n";
+      if (cmd.startsWith("/remaining")) {
+        const users = await User.find();
+        const pending = users.filter((u) => !u.completed);
 
-      users
-        .sort((a, b) => b.completed - a.completed)
-        .forEach((u, i) => {
-          const medal = ["🥇", "🥈", "🥉"][i] || "🔹";
-          msg += `${medal} @${u.userId.split("@")[0]} → ${
-            u.completed ? "✅" : "❌"
-          }\n`;
+        if (!pending.length) {
+          return safeSend(sock, chatId, {
+            text: "🎉 No pending users. All completed!",
+          });
+        }
+
+        let msg = "📋 *Remaining Users*\n\n";
+        pending.forEach((u) => {
+          msg += `👉 @${u.userId.split("@")[0]}\n`;
         });
 
-      return safeSend(sock, chatId, {
-        text: msg,
-        mentions: users.map((u) => u.userId),
-      });
-    }
-
-    if (text === "/remaining") {
-      const users = await User.find();
-      const pending = users.filter((u) => !u.completed);
-
-      if (!pending.length) {
         return safeSend(sock, chatId, {
-          text: "🎉 No pending users. All completed!",
+          text: msg,
+          mentions: pending.map((u) => u.userId),
         });
       }
 
-      let msg = "📋 *Remaining Users*\n\n";
-      pending.forEach((u) => {
-        msg += `👉 @${u.userId.split("@")[0]}\n`;
-      });
+      if (cmd.startsWith("/fine")) {
+        const users = await User.find();
+        let msg = "💰 *Fine Report*\n\n";
 
-      return safeSend(sock, chatId, {
-        text: msg,
-        mentions: pending.map((u) => u.userId),
-      });
-    }
+        users.forEach((u) => {
+          msg += `👉 @${u.userId.split("@")[0]} → ₹${u.fine}\n`;
+        });
 
-    if (text === "/reset") {
-      if (!isAdmin) return safeSend(sock, chatId, { text: "❌ Admin only" });
-      await User.updateMany({}, { fine: 0, completed: false });
-      return safeSend(sock, chatId, { text: "🔄 Reset done!" });
-    }
+        return safeSend(sock, chatId, {
+          text: msg,
+          mentions: users.map((u) => u.userId),
+        });
+      }
 
-    if (text === "/resetday") {
-      if (!isAdmin) return safeSend(sock, chatId, { text: "❌ Admin only" });
-      await User.updateMany({}, { completed: false });
-      return safeSend(sock, chatId, { text: "🔄 Day reset!" });
-    }
+      if (cmd.startsWith("/leaderboard")) {
+        const users = await User.find();
+        let msg = "🏆 *Leaderboard*\n\n";
 
-    // =============================
-    // 🎥 VIDEO LOGIC
-    // =============================
-    const video =
-      content?.videoMessage || content?.ephemeralMessage?.message?.videoMessage;
+        users
+          .sort((a, b) => b.completed - a.completed)
+          .forEach((u, i) => {
+            const medal = ["🥇", "🥈", "🥉"][i] || "🔹";
+            msg += `${medal} @${u.userId.split("@")[0]} → ${
+              u.completed ? "✅" : "❌"
+            }\n`;
+          });
 
-    if (!video) return;
+        return safeSend(sock, chatId, {
+          text: msg,
+          mentions: users.map((u) => u.userId),
+        });
+      }
 
-    if ((video.seconds || 0) < 60) {
-      return safeSend(sock, chatId, {
-        text: `❌ @${user.split("@")[0]} Minimum 1 min video`,
+      if (cmd.startsWith("/reset")) {
+        if (!isAdmin)
+          return safeSend(sock, chatId, { text: "❌ Admin only" });
+
+        await User.updateMany({}, { fine: 0, completed: false });
+
+        return safeSend(sock, chatId, { text: "🔄 Reset done!" });
+      }
+
+      if (cmd.startsWith("/resetday")) {
+        if (!isAdmin)
+          return safeSend(sock, chatId, { text: "❌ Admin only" });
+
+        await User.updateMany({}, { completed: false });
+
+        return safeSend(sock, chatId, { text: "🔄 Day reset!" });
+      }
+
+      // =============================
+      // 🎥 VIDEO LOGIC
+      // =============================
+      const video =
+        content?.videoMessage ||
+        content?.ephemeralMessage?.message?.videoMessage;
+
+      if (!video) return;
+
+      if ((video.seconds || 0) < 60) {
+        return safeSend(sock, chatId, {
+          text: `❌ @${user.split("@")[0]} Minimum 1 min video`,
+          mentions: [user],
+        });
+      }
+
+      const existing = await User.findOne({ userId: user });
+
+      if (existing?.completed) {
+        return safeSend(sock, chatId, {
+          text: `⚠️ @${user.split("@")[0]} Already submitted`,
+          mentions: [user],
+        });
+      }
+
+      await User.findOneAndUpdate(
+        { userId: user },
+        { completed: true },
+        { upsert: true },
+      );
+
+      await safeSend(sock, chatId, {
+        text: `✅ @${user.split("@")[0]} Completed`,
         mentions: [user],
       });
+    } catch (err) {
+      console.log("❌ MESSAGE ERROR:", err);
     }
-
-    const existing = await User.findOne({ userId: user });
-
-    if (existing?.completed) {
-      return safeSend(sock, chatId, {
-        text: `⚠️ @${user.split("@")[0]} Already submitted`,
-        mentions: [user],
-      });
-    }
-
-    await User.findOneAndUpdate(
-      { userId: user },
-      { completed: true },
-      { upsert: true },
-    );
-
-    await safeSend(sock, chatId, {
-      text: `✅ @${user.split("@")[0]} Completed`,
-      mentions: [user],
-    });
   });
 
   // =============================
-  // 🧠 DAILY QUESTION
+  // 🧠 DAILY QUESTION FUNCTION
   // =============================
-  cron.schedule(
-  "30 9 * * *",
-  async () => {
-    const count = await Question.countDocuments();
-    if (!count) return;
+  const sendQuestion = async () => {
+    try {
+      if (questionSentToday) {
+        console.log("⚠️ Already sent today");
+        return;
+      }
 
-    const randomIndex = Math.floor(Math.random() * count);
-    const q = await Question.findOne().skip(randomIndex);
+      console.log("🔥 Sending Question...");
 
-    if (!q) return;
+      const count = await Question.countDocuments();
+      if (!count) return;
 
-    await Question.findByIdAndDelete(q._id);
+      const randomIndex = Math.floor(Math.random() * count);
+      const q = await Question.findOne().skip(randomIndex);
+      if (!q) return;
 
-    safeSend(sock, TARGET_GROUP, {
-      text: `🧠 Daily Question\n\n💬 "${q.quote}"\n\n👉 ${q.question}`,
-    });
-  },
-  { timezone: TIMEZONE },
-);
+      await Question.findByIdAndDelete(q._id);
+
+      await safeSend(sock, TARGET_GROUP, {
+        text: `🧠 Daily Question\n\n💬 "${q.quote}"\n\n👉 ${q.question}`,
+      });
+
+      questionSentToday = true;
+    } catch (err) {
+      console.log("❌ QUESTION ERROR:", err);
+    }
+  };
+
+  // ✅ MAIN TIME
+  cron.schedule("45 9 * * *", sendQuestion, { timezone: TIMEZONE });
+
+  // ✅ RECOVERY SYSTEM
+  cron.schedule("*/2 * * * *", async () => {
+    const now = new Date();
+
+    if (now.getHours() === 9 && now.getMinutes() <= 45) {
+      console.log("⚡ Recovery check...");
+      await sendQuestion();
+    }
+  });
 
   // =============================
-  // 🔁 REMINDER FUNCTION
+  // 🔁 REMINDERS
   // =============================
   const sendReminder = async (title) => {
     const users = await User.find();
@@ -204,7 +250,7 @@ async function startBot() {
 
     if (!pending.length) {
       return safeSend(sock, TARGET_GROUP, {
-        text: "🎉 All members completed today's task!",
+        text: "🎉 All completed!",
       });
     }
 
@@ -219,113 +265,40 @@ async function startBot() {
     });
   };
 
-  // Day reminders
-  cron.schedule(
-    "0 9,13,17 * * *",
-    () => sendReminder("⏰ Reminder: Submit video 🎥"),
-    { timezone: TIMEZONE },
+  cron.schedule("0 9,13,17 * * *", () =>
+    sendReminder("⏰ Reminder: Submit video 🎥"),
   );
 
-  // Night reminders
-  cron.schedule("0 21,22 * * *", () => sendReminder("🌙 Night Reminder"), {
-    timezone: TIMEZONE,
-  });
-
-  // =============================
-  // 📩 11 PM DM
-  // =============================
-  cron.schedule(
-    "0 23 * * *",
-    async () => {
-      const users = await User.find();
-      const pending = users.filter((u) => !u.completed);
-
-      if (!pending.length) {
-        return safeSend(sock, TARGET_GROUP, {
-          text: "🎉 All completed! No reminders needed 😄",
-        });
-      }
-
-      for (let u of pending) {
-        await safeSend(sock, u.userId, {
-          text: "🚨 Submit before 12 AM!",
-        });
-      }
-    },
-    { timezone: TIMEZONE },
+  cron.schedule("0 21,22 * * *", () =>
+    sendReminder("🌙 Night Reminder"),
   );
 
   // =============================
-  // 🚨 11:50 WARNING + VOICE
-  // =============================
-  cron.schedule(
-    "50 23 * * *",
-    async () => {
-      const users = await User.find();
-      const pending = users.filter((u) => !u.completed);
-
-      if (!pending.length) {
-        return safeSend(sock, TARGET_GROUP, {
-          text: "🎉 All completed! No fines today 😄",
-        });
-      }
-
-      let msg = "🚨 LAST 10 MINUTES!\n\n";
-      pending.forEach((u) => {
-        msg += `👉 @${u.userId.split("@")[0]}\n`;
-      });
-
-      await safeSend(sock, TARGET_GROUP, {
-        text: msg,
-        mentions: pending.map((u) => u.userId),
-      });
-
-      const filePath = "./temp-warning.mp3";
-
-      try {
-        await generateVoice("Last 10 minutes. Submit now!", filePath);
-        const buffer = fs.readFileSync(filePath);
-
-        await sock.sendMessage(TARGET_GROUP, {
-          audio: buffer,
-          mimetype: "audio/mpeg",
-          ptt: true,
-        });
-
-        fs.unlinkSync(filePath);
-      } catch (err) {
-        console.log(err);
-      }
-    },
-    { timezone: TIMEZONE },
-  );
-
-  // =============================
-  // 📊 FINAL REPORT
+  // 🌙 MIDNIGHT RESET
   // =============================
   cron.schedule(
     "0 0 * * *",
-    async () => {
-      const users = await User.find();
-
-      let msg = "📊 Report\n\n";
-      users.forEach((u) => {
-        msg += `👉 @${u.userId.split("@")[0]} → ${u.completed ? "✅" : "❌"}\n`;
-      });
-
-      await safeSend(sock, TARGET_GROUP, {
-        text: msg,
-        mentions: users.map((u) => u.userId),
-      });
-
-      await User.updateMany({}, { completed: false });
+    () => {
+      questionSentToday = false;
+      console.log("🌙 Reset question flag");
     },
     { timezone: TIMEZONE },
   );
 
+  // =============================
+  // 🔄 CONNECTION
+  // =============================
   sock.ev.on("connection.update", ({ connection, qr }) => {
     if (qr) qrcode.generate(qr, { small: true });
-    if (connection === "close") startBot();
+
+    if (connection === "close") {
+      console.log("🔄 Reconnecting...");
+      startBot();
+    }
+
+    if (connection === "open") {
+      console.log("✅ Bot connected");
+    }
   });
 }
 
