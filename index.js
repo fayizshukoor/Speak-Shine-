@@ -34,7 +34,11 @@ const convertToOgg = (input, output) => {
 };
 
 // ================= HELPERS =================
-const getName = (userId) => (userId ? userId.split("@")[0] : "unknown");
+const getName = (userId) => {
+  if (!userId || !userId.includes("@")) return "invalid";
+  return userId.split("@")[0];
+};
+
 const safeSend = async (sock, jid, msg) => {
   try {
     if (!sock?.user) return false;
@@ -49,6 +53,13 @@ const safeSend = async (sock, jid, msg) => {
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("auth");
   const { version } = await fetchLatestBaileysVersion();
+
+  // 🧹 CLEAN INVALID USERS (RUN ONCE)
+  await User.deleteMany({
+    $or: [{ userId: null }, { userId: "" }, { userId: { $exists: false } }],
+  });
+
+  console.log("🧹 Cleaned invalid users");
 
   const sock = makeWASocket({
     version,
