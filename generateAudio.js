@@ -12,20 +12,27 @@ export default async function generateVoice(text, filePath) {
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(filePath);
 
-    https
-      .get(url, (response) => {
-        response.pipe(file);
+    https.get(url, (response) => {
+      if (response.statusCode !== 200) {
+        reject(new Error("Failed to fetch audio"));
+        return;
+      }
 
-        file.on("finish", () => {
-          file.close(() => {
-            // ✅ wait properly
-            setTimeout(resolve, 500);
-          });
+      response.pipe(file);
+
+      file.on("finish", () => {
+        file.close(() => {
+          resolve(true); // ✅ resolve only after file fully ready
         });
-      })
-      .on("error", (err) => {
+      });
+
+      file.on("error", (err) => {
         fs.unlink(filePath, () => {});
         reject(err);
       });
+    }).on("error", (err) => {
+      fs.unlink(filePath, () => {});
+      reject(err);
+    });
   });
 }
