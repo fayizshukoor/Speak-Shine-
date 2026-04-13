@@ -140,8 +140,7 @@ async function startBot() {
       }
 
       if (cmd.startsWith("/reset")) {
-        if (!isAdmin)
-          return safeSend(sock, chatId, { text: "❌ Admin only" });
+        if (!isAdmin) return safeSend(sock, chatId, { text: "❌ Admin only" });
 
         await User.updateMany({}, { fine: 0, completed: false });
 
@@ -149,8 +148,7 @@ async function startBot() {
       }
 
       if (cmd.startsWith("/resetday")) {
-        if (!isAdmin)
-          return safeSend(sock, chatId, { text: "❌ Admin only" });
+        if (!isAdmin) return safeSend(sock, chatId, { text: "❌ Admin only" });
 
         await User.updateMany({}, { completed: false });
 
@@ -231,16 +229,17 @@ async function startBot() {
   };
 
   // ⏰ MAIN TIME
-  cron.schedule("5 10 * * *", sendQuestion, { timezone: TIMEZONE });
+  cron.schedule("20 10 * * *", sendQuestion, { timezone: TIMEZONE });
 
   // 🔁 RECOVERY (FULL WINDOW)
   cron.schedule("*/2 * * * *", async () => {
     const now = new Date();
 
-    if (now.getHours() === 10 && now.getMinutes() <= 15) {
+    if (now.getHours() === 10 && now.getMinutes() <= 59) {
       console.log("⚡ Recovery check...");
       await sendQuestion();
     }
+    console.log("⏰ Current time:", now.toLocaleTimeString("en-US", { timeZone: TIMEZONE }));
   });
 
   // =============================
@@ -258,8 +257,9 @@ async function startBot() {
   // =============================
   // 🔄 CONNECTION
   // =============================
-  sock.ev.on("connection.update", ({ connection, qr }) => {
+  sock.ev.on("connection.update", async ({ connection, qr }) => {
     if (qr) qrcode.generate(qr, { small: true });
+
     const que = await Question.countDocuments();
     console.log(`📊 Questions in DB: ${que}`);
 
