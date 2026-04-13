@@ -9,8 +9,14 @@ export default async function generateVoice(text, filePath) {
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(filePath);
 
-    https
-      .get(url, (res) => {
+    const request = https.get(
+      url,
+      {
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+        },
+      },
+      (res) => {
         if (res.statusCode !== 200) {
           reject(new Error("Failed to fetch audio"));
           return;
@@ -26,10 +32,18 @@ export default async function generateVoice(text, filePath) {
           fs.unlink(filePath, () => {});
           reject(err);
         });
-      })
-      .on("error", (err) => {
-        fs.unlink(filePath, () => {});
-        reject(err);
-      });
+      },
+    );
+
+    // ⏱ timeout (10 sec)
+    request.setTimeout(10000, () => {
+      request.destroy();
+      reject(new Error("TTS request timeout"));
+    });
+
+    request.on("error", (err) => {
+      fs.unlink(filePath, () => {});
+      reject(err);
+    });
   });
 }

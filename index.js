@@ -11,6 +11,7 @@ import Question from "./models/questionSchema.js";
 import Status from "./models/statusSchema.js";
 import generateVoice from "./generateVoice.js";
 import fs from "fs";
+import { exec } from "child_process";
 
 dotenv.config();
 connectDB();
@@ -18,6 +19,19 @@ connectDB();
 const TARGET_GROUP = process.env.TARGET_GROUP;
 const OWNER = process.env.OWNER_NUMBER;
 const TIMEZONE = "Asia/Kolkata";
+
+const convertToOgg = (input, output) => {
+  return new Promise((resolve, reject) => {
+    exec(`ffmpeg -i ${input} -c:a libopus -b:a 128k ${output}`, (err) => {
+      if (err) {
+        console.log("❌ FFmpeg error:", err);
+        reject(err);
+      } else {
+        resolve();
+      }
+    });
+  });
+};
 
 // ================= SAFE SEND =================
 const safeSend = async (sock, jid, msg) => {
@@ -153,20 +167,34 @@ async function startBot() {
 
       if (!pending.length) return;
 
-      const filePath = "./warning.mp3";
+      const mp3Path = "./warning.mp3";
+      const oggPath = "./warning.ogg";
 
+      // 🎤 Generate MP3 (ONLY ONCE ✅)
       await generateVoice(
         "Final warning. Please submit your speaking video before deadline.",
-        filePath,
+        mp3Path,
       );
 
-      if (!fs.existsSync(filePath)) {
-        console.log("❌ Voice file missing");
+      // ✅ Check file exists
+      if (!fs.existsSync(mp3Path)) {
+        console.log("❌ MP3 file missing");
         return;
       }
 
-      const audioBuffer = fs.readFileSync(filePath);
+      // 🎧 Convert MP3 → OGG
+      await convertToOgg(mp3Path, oggPath);
 
+      // ✅ Check OGG exists
+      if (!fs.existsSync(oggPath)) {
+        console.log("❌ OGG file missing");
+        return;
+      }
+
+      // 📖 Read OGG
+      const audioBuffer = fs.readFileSync(oggPath);
+
+      // 📤 Send text + voice
       await safeSend(sock, TARGET_GROUP, {
         text: "🚨 Final Warning! Submit before deadline!",
         mentions: pending.map((u) => u.userId),
@@ -174,11 +202,13 @@ async function startBot() {
 
       await sock.sendMessage(TARGET_GROUP, {
         audio: audioBuffer,
-        mimetype: "audio/mpeg",
+        mimetype: "audio/ogg; codecs=opus",
         ptt: true,
       });
 
-      fs.unlinkSync(filePath);
+      // 🗑 Clean files
+      fs.unlinkSync(mp3Path);
+      fs.unlinkSync(oggPath);
 
       console.log("🎤 Voice sent");
     } catch (err) {
