@@ -8,6 +8,7 @@ import dotenv from "dotenv";
 import { connectDB } from "./db.js";
 import User from "./models/userSchema.js";
 import Question from "./models/questionSchema.js";
+import statusSchema from "./models/statusSchema.js";
 
 dotenv.config();
 connectDB();
@@ -200,45 +201,57 @@ async function startBot() {
   // =============================
   // 🧠 DAILY QUESTION (SAFE)
   // =============================
+
+  const getStatus = async () => {
+    let status = await statusSchema.findOne();
+
+    if (!status) {
+      status = await statusSchema.create({});
+    }
+
+    return status;
+  };
+
   const sendQuestion = async () => {
     try {
-      if (questionSentToday) return;
+      const status = await getStatus();
+
+      // ❌ Already sent
+      if (status.questionSentToday) {
+        console.log("⛔ Already sent today");
+        return;
+      }
 
       console.log("🔥 Sending Question...");
 
       const count = await Question.countDocuments();
 
-      // ❌ No questions left
-      if (count === 0 && !notifiedEmpty) {
-        await safeSend(sock, OWNER, { text: "🚨 No questions left!" });
-        notifiedEmpty = true;
-      }
-
-      // ⚠️ Last question warning
-      if (count === 1 && !notifiedEmpty) {
-        console.log("⚠️ Last question remaining");
-
+      // 🚨 No questions
+      if (count === 0 && !status.notifiedEmpty) {
         await safeSend(sock, OWNER, {
-          text: "⚠️ Only 1 question left in DB!",
+          text: "🚨 No questions left!",
         });
-        notifiedEmpty = true;
+
+        status.notifiedEmpty = true;
+        await status.save();
+        return;
       }
 
       const randomIndex = Math.floor(Math.random() * count);
       const q = await Question.findOne().skip(randomIndex);
       if (!q) return;
 
-      // ✅ SEND TO GROUP
       const sent = await safeSend(sock, TARGET_GROUP, {
         text: `🧠 Daily Question\n\n💬 "${q.quote}"\n\n👉 ${q.question}`,
       });
 
-      // ✅ DELETE ONLY IF SENT
       if (sent) {
         await Question.findByIdAndDelete(q._id);
-        questionSentToday = true;
-      } else {
-        console.log("⚠️ Send failed, will retry...");
+
+        status.questionSentToday = true;
+        await status.save();
+
+        console.log("✅ Status updated in DB");
       }
     } catch (err) {
       console.log("❌ QUESTION ERROR:", err);
@@ -269,9 +282,16 @@ async function startBot() {
   // =============================
   cron.schedule(
     "0 0 * * *",
-    () => {
-      questionSentToday = false;
-      console.log("🌙 Reset done");
+    async () => {
+      const status = await Status.findOne();
+
+      if (status) {
+        status.questionSentToday = false;
+        status.notifiedEmpty = false;
+        await status.save();
+      }
+
+      console.log("🌙 Daily status reset");
     },
     { timezone: TIMEZONE },
   );
