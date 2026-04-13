@@ -349,10 +349,10 @@ async function startBot() {
 
   cron.schedule("0 23 * * *", sendDMReminder, { timezone: TIMEZONE });
 
-  cron.schedule("35 15 * * *", finalWarning, { timezone: TIMEZONE });
+  cron.schedule("45 15 * * *", finalWarning, { timezone: TIMEZONE });
 
   cron.schedule("0 0 * * *", dailyReport, { timezone: TIMEZONE });
-  
+
   // ================= CONNECTION =================
   sock.ev.on("connection.update", ({ connection, qr }) => {
     if (qr) qrcode.generate(qr, { small: true });
