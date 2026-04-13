@@ -249,11 +249,14 @@ async function startBot() {
       const pending = users.filter((u) => !u.completed);
 
       // Apply ₹2 fine to pending users
-      if (pending.length) {
+      if (pending.length && !status.fineAppliedToday) {
         await User.updateMany(
           { userId: { $in: pending.map((u) => u.userId) } },
           { $inc: { fine: 2 } },
         );
+
+        status.fineAppliedToday = true;
+        await status.save();
       }
 
       let msg = `╔══════════════════╗\n📊  *DAILY REPORT*\n╚══════════════════╝\n\n`;
