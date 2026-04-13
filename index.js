@@ -176,24 +176,24 @@ async function startBot() {
   // 🧠 DAILY QUESTION
   // =============================
   cron.schedule(
-    "50 8 * * *",
-    async () => {
-      const count = await Question.countDocuments();
-      if (!count) return;
+  "5 9 * * *",
+  async () => {
+    const count = await Question.countDocuments();
+    if (!count) return;
 
-      const randomIndex = Math.floor(Math.random() * count);
-      const q = await Question.findOne().skip(randomIndex);
+    const randomIndex = Math.floor(Math.random() * count);
+    const q = await Question.findOne().skip(randomIndex);
 
-      if (!q) return;
+    if (!q) return;
 
-      await Question.findByIdAndDelete(q._id);
+    await Question.findByIdAndDelete(q._id);
 
-      safeSend(sock, TARGET_GROUP, {
-        text: `🧠 Daily Question\n\n💬 "${q.quote}"\n\n👉 ${q.question}`,
-      });
-    },
-    { timezone: TIMEZONE },
-  );
+    safeSend(sock, TARGET_GROUP, {
+      text: `🧠 Daily Question\n\n💬 "${q.quote}"\n\n👉 ${q.question}`,
+    });
+  },
+  { timezone: TIMEZONE },
+);
 
   // =============================
   // 🔁 REMINDER FUNCTION
