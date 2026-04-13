@@ -76,7 +76,7 @@ async function startBot() {
       if (count === 0) {
         if (!status.notifiedEmpty) {
           await safeSend(sock, OWNER, {
-            text: "🚨 No questions left!",
+            text: `🚨 *Alert: Question Bank Empty!*\n\n━━━━━━━━━━━━━━━\n📭 No questions remaining in the database.\n\n🛠️ _Please add new questions to keep the daily challenge going._`,
           });
 
           status.notifiedEmpty = true;
@@ -88,7 +88,7 @@ async function startBot() {
       // ⚠️ ONLY 1 QUESTION LEFT (NEW)
       if (count === 1 && !status.notifiedLast) {
         await safeSend(sock, OWNER, {
-          text: "⚠️ Only 1 question remaining in DB!",
+          text: `⚠️ *Low Stock Warning!*\n\n━━━━━━━━━━━━━━━\n📦 Only *1 question* left in the database.\n\n🛠️ _Add more questions soon to avoid interruption._`,
         });
 
         status.notifiedLast = true;
@@ -101,7 +101,7 @@ async function startBot() {
       const question = q[0];
 
       const sent = await safeSend(sock, TARGET_GROUP, {
-        text: `🧠 Daily Question\n\n💬 "${question.quote}"\n\n👉 ${question.question}`,
+        text: `╔══════════════════╗\n🧠  *DAILY CHALLENGE*\n╚══════════════════╝\n\n💬 _"${question.quote}"_\n\n━━━━━━━━━━━━━━━\n❓ *Question:*\n👉 ${question.question}\n\n📹 _Record your answer & send a 1-min+ video!_`,
       });
 
       if (sent) {
@@ -122,15 +122,17 @@ async function startBot() {
 
       if (!pending.length) {
         await safeSend(sock, TARGET_GROUP, {
-          text: "🎉 All completed!",
+          text: `🎉 *All Done for Today!*\n\n━━━━━━━━━━━━━━━\n✅ Every member has submitted their video.\n\n🙌 _Amazing effort from the whole team!_ 💪`,
         });
         return;
       }
 
-      let msg = `${title}\n\n`;
+      let msg = `${title}\n━━━━━━━━━━━━━━━\n\n`;
+      msg += `📌 *${pending.length} member(s) yet to submit:*\n\n`;
       pending.forEach((u) => {
-        msg += `👉 @${u.userId.split("@")[0]}\n`;
+        msg += `▪️ @${u.userId.split("@")[0]}\n`;
       });
+      msg += `\n📹 _Send your 1-min+ speaking video now!_`;
 
       await safeSend(sock, TARGET_GROUP, {
         text: msg,
@@ -149,7 +151,7 @@ async function startBot() {
 
       for (const u of pending) {
         await safeSend(sock, u.userId, {
-          text: "⏰ Please submit your video today!",
+          text: `⏰ *Hey! Don't forget today's task.*\n\n━━━━━━━━━━━━━━━\n📹 You haven't submitted your speaking video yet.\n\n🕐 _Time is running out — send it before midnight!_ 💪`,
         });
       }
     } catch (err) {
@@ -196,7 +198,7 @@ async function startBot() {
 
       // 📤 Send text + voice
       await safeSend(sock, TARGET_GROUP, {
-        text: "🚨 Final Warning! Submit before deadline!",
+        text: `🚨 *FINAL WARNING!*\n\n━━━━━━━━━━━━━━━\n⏳ Deadline is almost here!\n\n${pending.map((u) => `▪️ @${u.userId.split("@")[0]}`).join("\n")}\n\n📹 _Submit your speaking video RIGHT NOW or a fine will be applied!_ 💸`,
         mentions: pending.map((u) => u.userId),
       });
 
@@ -223,13 +225,19 @@ async function startBot() {
       const completed = users.filter((u) => u.completed);
       const pending = users.filter((u) => !u.completed);
 
-      let msg = `📊 *Daily Report*\n\n`;
-      msg += `✅ Completed: ${completed.length}\n`;
-      msg += `❌ Pending: ${pending.length}\n\n`;
+      let msg = `╔══════════════════╗\n📊  *DAILY REPORT*\n╚══════════════════╝\n\n`;
+      msg += `✅ *Completed:* ${completed.length}\n`;
+      msg += `❌ *Pending:* ${pending.length}\n`;
+      msg += `━━━━━━━━━━━━━━━\n`;
 
-      pending.forEach((u) => {
-        msg += `👉 @${u.userId.split("@")[0]}\n`;
-      });
+      if (pending.length) {
+        msg += `\n⚠️ *Still pending:*\n`;
+        pending.forEach((u) => {
+          msg += `▪️ @${u.userId.split("@")[0]}\n`;
+        });
+      } else {
+        msg += `\n🎉 _Everyone submitted today — great work!_ 🙌\n`;
+      }
 
       await safeSend(sock, TARGET_GROUP, {
         text: msg,
@@ -250,12 +258,20 @@ async function startBot() {
   };
 
   // ================= MESSAGE HANDLER =================
-  sock.ev.on("messages.upsert", async ({ messages }) => {
+  const processedMsgIds = new Set();
+
+  sock.ev.on("messages.upsert", async ({ messages, type }) => {
     try {
+      if (type !== "notify") return;
       if (!messages || !messages.length) return;
 
       const msg = messages[0];
       if (!msg || !msg.message || msg.key.fromMe) return;
+
+      const msgId = msg.key.id;
+      if (processedMsgIds.has(msgId)) return;
+      processedMsgIds.add(msgId);
+      setTimeout(() => processedMsgIds.delete(msgId), 60000);
 
       const chatId = msg.key.remoteJid;
       if (chatId !== TARGET_GROUP) return;
@@ -277,17 +293,17 @@ async function startBot() {
 
       // 📋 REMAINING
       if (cmd.startsWith("/remaining")) {
-        return sendReminder("📋 Remaining Users");
+        return sendReminder(`⏰ *Reminder*\n\n🗣️ _Don't forget to submit your speaking video today!_`);
       }
 
       // 💰 FINE
       if (cmd.startsWith("/fine")) {
         const users = await User.find();
-        let msgText = "💰 *Fine Report*\n\n";
-
+        let msgText = `╔══════════════════╗\n💰  *FINE REPORT*\n╚══════════════════╝\n\n`;
         users.forEach((u) => {
-          msgText += `👉 @${u.userId.split("@")[0]} → ₹${u.fine || 0}\n`;
+          msgText += `▪️ @${u.userId.split("@")[0]} → ₹${u.fine || 0}\n`;
         });
+        msgText += `\n━━━━━━━━━━━━━━━\n💡 _Fines are applied for missed submissions._`;
 
         return safeSend(sock, chatId, {
           text: msgText,
@@ -298,16 +314,15 @@ async function startBot() {
       // 🏆 LEADERBOARD
       if (cmd.startsWith("/leaderboard")) {
         const users = await User.find();
-        let msgText = "🏆 *Leaderboard*\n\n";
+        let msgText = `╔══════════════════╗\n🏆  *LEADERBOARD*\n╚══════════════════╝\n\n`;
 
         users
           .sort((a, b) => b.completed - a.completed)
           .forEach((u, i) => {
             const medal = ["🥇", "🥈", "🥉"][i] || "🔹";
-            msgText += `${medal} @${u.userId.split("@")[0]} → ${
-              u.completed ? "✅" : "❌"
-            }\n`;
+            msgText += `${medal} @${u.userId.split("@")[0]} → ${u.completed ? "✅ Done" : "❌ Pending"}\n`;
           });
+        msgText += `\n━━━━━━━━━━━━━━━\n🔥 _Keep grinding — consistency wins!_`;
 
         return safeSend(sock, chatId, {
           text: msgText,
@@ -317,21 +332,21 @@ async function startBot() {
 
       // 🔄 RESET
       if (cmd.startsWith("/reset")) {
-        if (!isAdmin) return safeSend(sock, chatId, { text: "❌ Admin only" });
+        if (!isAdmin) return safeSend(sock, chatId, { text: `❌ *Access Denied*\n_Only admins can use this command._` });
 
         await User.updateMany({}, { completed: false, fine: 0 });
 
-        return safeSend(sock, chatId, { text: "🔄 Full reset done!" });
+        return safeSend(sock, chatId, { text: `🔄 *Full Reset Done!*\n\n━━━━━━━━━━━━━━━\n✅ All statuses and fines have been cleared.` });
       }
 
       // 🔄 RESET DAY
       if (cmd.startsWith("/resetday")) {
-        if (!isAdmin) return safeSend(sock, chatId, { text: "❌ Admin only" });
+        if (!isAdmin) return safeSend(sock, chatId, { text: `❌ *Access Denied*\n_Only admins can use this command._` });
 
         await User.updateMany({}, { completed: false });
 
         return safeSend(sock, chatId, {
-          text: "🔄 Today's status reset!",
+          text: `🔄 *Today's Status Reset!*\n\n━━━━━━━━━━━━━━━\n✅ All members marked as pending for today.`,
         });
       }
 
@@ -344,7 +359,7 @@ async function startBot() {
 
       if ((video.seconds || 0) < 60) {
         return safeSend(sock, chatId, {
-          text: "❌ Minimum 1 minute video",
+          text: `❌ *Video Too Short!*\n\n━━━━━━━━━━━━━━━\n⏱️ Minimum duration is *1 minute*.\n\n🔁 _Please re-record and send again._`,
         });
       }
 
@@ -352,7 +367,7 @@ async function startBot() {
 
       if (existing?.completed) {
         return safeSend(sock, chatId, {
-          text: "⚠️ Already submitted",
+          text: `⚠️ *Already Submitted!*\n\n━━━━━━━━━━━━━━━\n✅ You've already sent your video for today.\n\n😎 _Sit back and relax — see you tomorrow!_`,
         });
       }
 
@@ -362,8 +377,10 @@ async function startBot() {
         { upsert: true },
       );
 
+      const username = user.split("@")[0];
       await safeSend(sock, chatId, {
-        text: "✅ Completed",
+        text: `🔥 *Great work, @${username}!*\n\n✅ Submission received!\n\n💪 _Keep showing up every day — consistency is what separates the best from the rest. You're on the right track!_ 🚀`,
+        mentions: [user],
       });
     } catch (err) {
       console.log("❌ Message error:", err);
@@ -373,11 +390,11 @@ async function startBot() {
   // ================= CRON =================
   cron.schedule("0 8 * * *", sendQuestion, { timezone: TIMEZONE });
 
-  cron.schedule("0 9,13,17 * * *", () => sendReminder("⏰ Reminder"), {
+  cron.schedule("0 9,13,17 * * *", () => sendReminder(`⏰ *Reminder*\n\n🗣️ _Don't forget to submit your speaking video today!_`), {
     timezone: TIMEZONE,
   });
 
-  cron.schedule("0 21,22 * * *", () => sendReminder("🌙 Night Reminder"), {
+  cron.schedule("0 21,22 * * *", () => sendReminder(`🌙 *Night Reminder*\n\n😴 _It's getting late — submit your video before midnight!_`), {
     timezone: TIMEZONE,
   });
 
@@ -394,7 +411,7 @@ async function startBot() {
 
       if (count === 1) {
         await safeSend(sock, OWNER, {
-          text: "⚠️ Reminder: Only 1 question left in DB!",
+          text: `⚠️ *Low Stock Warning!*\n\n━━━━━━━━━━━━━━━\n📦 Only *1 question* left in the database.\n\n🛠️ _Add more questions soon to avoid interruption._`,
         });
       }
     },
