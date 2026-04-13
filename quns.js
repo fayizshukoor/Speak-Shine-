@@ -8,15 +8,11 @@ dotenv.config();
 await mongoose.connect(process.env.MONGO_URI);
 console.log("✅ DB Connected");
 
-// 📌 Questions
+// 📌 Updated Questions (REMOVED one)
 const questions = [
   {
     quote: "Life is really simple, but we insist on making it complicated.",
     question: "What does this quote mean to you? Do you agree?",
-  },
-  {
-    quote: "Success is not final, failure is not fatal.",
-    question: "How do you handle success and failure in your life?",
   },
   {
     quote: "The only way to do great work is to love what you do.",
@@ -37,11 +33,16 @@ const questions = [
   },
 ];
 
-// 🚀 Insert
+// 🚀 Delete old + Insert new
 const pushQuestions = async () => {
   try {
+    // ❌ REMOVE ALL OLD QUESTIONS
+    await Question.deleteMany();
+    console.log("🗑 Old questions deleted");
+
+    // ✅ INSERT NEW QUESTIONS
     await Question.insertMany(questions);
-    console.log("🎉 Questions inserted successfully!");
+    console.log("🎉 New questions inserted successfully!");
   } catch (err) {
     console.log("❌ Error:", err);
   } finally {
