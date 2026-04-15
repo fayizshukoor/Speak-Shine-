@@ -247,7 +247,7 @@ async function startBot() {
   // ================= DAILY REPORT =================
   const dailyReport = async () => {
     try {
-      const users = await User.find({ userId: { $ne: null } });
+      const users = await User.find();
       const completed = users.filter((u) => u.completed);
       const pending = users.filter((u) => !u.completed);
       const status = await Status.findOne();
