@@ -267,32 +267,46 @@ async function startBot() {
       const groupMeta = await sock.groupMetadata(TARGET_GROUP);
       const groupUsers = groupMeta.participants.map((p) => p.id);
 
+      let status = await Status.findOne();
+      if (!status) status = await Status.create({});
+
       const users = await User.find({
         userId: { $in: groupUsers },
       });
 
       const completed = users.filter((u) => u.completed);
       const pending = users.filter((u) => !u.completed);
-      const status = await Status.findOne();
+
+      let totalTodayFine = 0;
 
       // Apply ₹2 fine to pending users
       if (pending.length && !status.fineAppliedToday) {
         await User.updateMany(
           { userId: { $in: pending.map((u) => u.userId) } },
-          { $inc: { fine: 2 } },
+          { $inc: { fine: 2 } }
         );
+
+        pending.forEach((u) => {
+          u.fine = (u.fine || 0) + 2;
+          totalTodayFine += 2;
+        });
 
         status.fineAppliedToday = true;
         await status.save();
       }
 
-      let msg = `╔══════════════════╗\n📊  *DAILY REPORT*\n╚══════════════════╝\n\n`;
-      msg += `✅ *Submitted:* ${completed.length}\n`;
-      msg += `❌ *Missed:* ${pending.length}\n`;
-      msg += `━━━━━━━━━━━━━━━\n`;
+      let msg = `╔══════════════════╗
+📊 *DAILY REPORT*
+╚══════════════════╝
+
+✅ *Submitted:* ${completed.length}
+❌ *Missed:* ${pending.length}
+💸 *Today's Fine Collected:* ₹${totalTodayFine}
+━━━━━━━━━━━━━━━`;
 
       if (completed.length) {
-        msg += `\n🏅 *Today's Submissions:*\n`;
+        msg += `\n\n🏅 *Today's Submissions:*\n`;
+
         completed.forEach((u) => {
           msg += `✅ @${getName(u.userId)}\n`;
         });
@@ -300,14 +314,18 @@ async function startBot() {
 
       if (pending.length) {
         msg += `\n⚠️ *Missed & Fined ₹2:*\n`;
+
         pending.forEach((u) => {
-          msg += `❌ @${getName(u.userId)} _(Total fine: ₹${(u.fine || 0) + 2})_\n`;
+          msg += `❌ @${getName(u.userId)} _(Total fine: ₹${u.fine})_\n`;
         });
       }
 
       if (!pending.length) {
-        msg += `\n🎉 _Everyone submitted today — great work!_ 🙌\n`;
+        msg += `\n\n🎉 _Everyone submitted today — great work!_ 🙌`;
       }
+
+      msg += `\n━━━━━━━━━━━━━━━
+🔥 _Consistency builds champions._`;
 
       const allMentions = users.map((u) => u.userId).filter(Boolean);
 
@@ -316,15 +334,18 @@ async function startBot() {
         mentions: allMentions,
       });
 
-      // Reset daily status
-      await User.updateMany({}, { completed: false });
+      // Reset only group users
+      await User.updateMany(
+        { userId: { $in: groupUsers } },
+        { completed: false }
+      );
 
-      if (status) {
-        status.questionSentToday = false;
-        status.notifiedEmpty = false;
-        status.fineAppliedToday = false; // ✅ ADD THIS
-        await status.save();
-      }
+      // Reset daily flags
+      status.questionSentToday = false;
+      status.notifiedEmpty = false;
+      status.fineAppliedToday = false;
+      await status.save();
+
     } catch (err) {
       console.log("❌ Report error:", err);
     }
@@ -375,11 +396,31 @@ async function startBot() {
       // 💰 FINE
       if (cmd.startsWith("/fine")) {
         const users = await User.find();
-        let msgText = `╔══════════════════╗\n💰  *FINE REPORT*\n╚══════════════════╝\n\n`;
+
+        let totalFine = 0;
+
+        let msgText = `╔══════════════════╗
+💰 *FINE REPORT*
+╚══════════════════╝
+
+📋 *Individual Fines:*
+━━━━━━━━━━━━━━━
+`;
+
         users.forEach((u) => {
-          msgText += `▪️ @${getName(u.userId)} → ₹${u.fine || 0}\n`;
+          const fine = u.fine || 0;
+          totalFine += fine;
+
+          msgText += `▪️ @${getName(u.userId)} → ₹${fine}\n`;
         });
-        msgText += `\n━━━━━━━━━━━━━━━\n💡 _Fines are applied for missed submissions._`;
+
+        msgText += `
+━━━━━━━━━━━━━━━
+💵 *Total Fine Pool:* ₹${totalFine}
+
+⚠️ _Missed daily submissions result in fines._
+🔥 _Stay consistent. Avoid penalties._
+`;
 
         return safeSend(sock, chatId, {
           text: msgText,
