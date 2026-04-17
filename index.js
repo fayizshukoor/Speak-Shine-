@@ -81,10 +81,10 @@ async function startBot() {
     try {
       const status = await getStatus();
 
-      // if (status.questionSentToday) {
-      //   console.log("🚫 Blocked: already sent today");
-      //   return;
-      // }
+      if (status.questionSentToday) {
+        console.log("🚫 Blocked: already sent today");
+        return;
+      }
 
       const count = await Question.countDocuments();
 
@@ -133,7 +133,7 @@ async function startBot() {
 
       // ✅ Success
       if (sent) {
-      //  await Question.findByIdAndDelete(question._id);
+        await Question.findByIdAndDelete(question._id);
 
         status.questionSentToday = true;
         await status.save();
@@ -328,25 +328,6 @@ async function startBot() {
     } catch (err) {
       console.log("❌ Report error:", err);
     }
-  };
-
-  // Test
-  const tester = async () => {
-    const question = await Question.findOne();
-
-    if (!question) {
-      console.log("No question found");
-      return;
-    }
-
-    await generatePoster(question);
-
-    await sock.sendMessage(OWNER, {
-      image: { url: "./daily.png" },
-      caption: "🔥 Today's challenge is here!",
-    });
-
-    console.log("Question:", question);
   };
 
   // ================= MESSAGE HANDLER =================
@@ -612,7 +593,6 @@ async function startBot() {
     { timezone: TIMEZONE },
   );
 
-  cron.schedule("* * * * *", sendQuestion, { timezone: TIMEZONE });
 
   // ================= CONNECTION =================
   sock.ev.on("connection.update", ({ connection, qr }) => {
