@@ -567,6 +567,11 @@ async function startBot() {
           text: `⚠️ *Low Stock Warning!*\n\n━━━━━━━━━━━━━━━\n📦 Only *1 question* left in the database.\n\n🛠️ _Add more questions soon to avoid interruption._`,
         });
       }
+      if (count === 0) {
+        await safeSend(sock, OWNER, {
+          text: `🚨 *Alert: Question Bank Empty!*\n\n━━━━━━━━━━━━━━━\n📭 No questions remaining in the database.\n\n🛠️ _Please add new questions to keep the daily challenge going._`,
+        });
+      }
     },
     { timezone: TIMEZONE },
   );
