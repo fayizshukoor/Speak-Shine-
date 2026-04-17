@@ -80,18 +80,19 @@ async function startBot() {
   const sendQuestion = async () => {
     try {
       const status = await getStatus();
-      if (status.questionSentToday) {
-        console.log("🚫 Blocked: already sent today");
-        return;
-      }
+
+      // if (status.questionSentToday) {
+      //   console.log("🚫 Blocked: already sent today");
+      //   return;
+      // }
 
       const count = await Question.countDocuments();
 
-      // 🚨 NO QUESTIONS
+      // 🚨 No Questions
       if (count === 0) {
         if (!status.notifiedEmpty) {
           await safeSend(sock, OWNER, {
-            text: `🚨 *Alert: Question Bank Empty!*\n\n━━━━━━━━━━━━━━━\n📭 No questions remaining in the database.\n\n🛠️ _Please add new questions to keep the daily challenge going._`,
+            text: `🚨 *Alert: Question Bank Empty!*\n\n━━━━━━━━━━━━━━━\n📭 No questions remaining in the database.\n\n🛠️ Please add new questions.`,
           });
 
           status.notifiedEmpty = true;
@@ -100,29 +101,44 @@ async function startBot() {
         return;
       }
 
-      // ⚠️ ONLY 1 QUESTION LEFT (NEW)
+      // ⚠️ Last Question Warning
       if (count === 1 && !status.notifiedLast) {
         await safeSend(sock, OWNER, {
-          text: `⚠️ *Low Stock Warning!*\n\n━━━━━━━━━━━━━━━\n📦 Only *1 question* left in the database.\n\n🛠️ _Add more questions soon to avoid interruption._`,
+          text: `⚠️ *Low Stock Warning!*\n\n━━━━━━━━━━━━━━━\n📦 Only *1 question* left in database.\n\n🛠️ Add more soon.`,
         });
 
         status.notifiedLast = true;
         await status.save();
       }
 
+      // 🎯 Random Question
       const q = await Question.aggregate([{ $sample: { size: 1 } }]);
+
       if (!q || !q.length) return;
 
       const question = q[0];
 
+      // 🖼 Generate Poster
+      await generatePoster(question);
+
+      // 📤 Send Image Poster
       const sent = await safeSend(sock, TARGET_GROUP, {
-        text: `╔══════════════════╗\n🧠  *DAILY CHALLENGE*\n╚══════════════════╝\n\n💬 _"${question.quote}"_\n\n━━━━━━━━━━━━━━━\n❓ *Question:*\n👉 ${question.question}\n\n📹 _Record your answer & send a 1-min+ video!_`,
+        image: { url: "./daily.png" },
+        caption:
+          `╔══════════════════╗\n` +
+          `🔥 *TODAY'S CHALLENGE* 🔥\n` +
+          `╚══════════════════╝\n\n` +
+          `🎤 Record your answer and send a *1-min+ speaking video!*`,
       });
 
+      // ✅ Success
       if (sent) {
-        await Question.findByIdAndDelete(question._id);
-        status.questionSentToday = true;
+        // await Question.findByIdAndDelete(question._id);
+
+        // status.questionSentToday = true;
         await status.save();
+
+        console.log("✅ Poster question sent");
       }
     } catch (err) {
       console.log("❌ Question error:", err);
@@ -596,7 +612,7 @@ async function startBot() {
     { timezone: TIMEZONE },
   );
 
-  cron.schedule("* * * * *", tester, { timezone: TIMEZONE });
+  cron.schedule("* * * * *", sendQuestion, { timezone: TIMEZONE });
 
   // ================= CONNECTION =================
   sock.ev.on("connection.update", ({ connection, qr }) => {
