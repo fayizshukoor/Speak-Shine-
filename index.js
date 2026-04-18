@@ -176,13 +176,6 @@ async function startBot() {
       // 📤 Send Image Poster
       const sent = await safeSend(sock, TARGET_GROUP, {
         image: { url: "./daily.png" },
-        caption:
-          `╔══════════════════╗\n` +
-          `🔥 *TODAY'S CHALLENGE* 🔥\n` +
-          `╚══════════════════╝\n\n` +
-          `📂 *Category:* ${question.category}\n` +
-          `🗣️ *Topic:* ${question.topic}\n\n` +
-          `🎤 Record your answer and send a *1-min+ speaking video!*`,
       });
 
       // ✅ Success
@@ -753,15 +746,6 @@ async function startBot() {
 
         await safeSend(sock, OWNER, {
           image: { url: "./daily.png" },
-          caption:
-            `🧪 *TEST MODE*\n\n` +
-            `╔══════════════════╗\n` +
-            `🔥 *TODAY'S CHALLENGE* 🔥\n` +
-            `╚══════════════════╝\n\n` +
-            `📂 *Category:* ${question.category}\n` +
-            `🗣️ *Topic:* ${question.topic}\n\n` +
-            `❓ *Question:* ${question.question}\n\n` +
-            `🎤 _Send a 1-min+ speaking video!_`,
         });
 
         console.log("🧪 Test question sent to owner");
