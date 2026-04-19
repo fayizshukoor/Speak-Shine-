@@ -527,8 +527,8 @@ async function startBot() {
         });
       }
 
-      // 🔄 RESET
-      if (cmd.startsWith("/reset")) {
+      // 🔄 RESET (FULL RESET)
+      if (cmd.startsWith("/reset") && !cmd.startsWith("/resetday") && !cmd.startsWith("/resetstatus") && !cmd.startsWith("/resetfine")) {
         if (!isAdmin)
           return safeSend(sock, chatId, {
             text: `❌ *Access Denied*\n_Only admins can use this command._`,
@@ -537,7 +537,7 @@ async function startBot() {
         await User.updateMany({}, { completed: false, fine: 0 });
 
         return safeSend(sock, chatId, {
-          text: `🔄 *Full Reset Done!*\n\n━━━━━━━━━━━━━━━\n✅ All statuses and fines have been cleared.`,
+          text: `🔄 *Full Reset Done!*\n\n━━━━━━━━━━━━━━━\n✅ All statuses reset to pending\n✅ All fines cleared to ₹0\n\n💡 _Use /resetday or /resetfine for partial resets._`,
         });
       }
 
@@ -639,7 +639,21 @@ async function startBot() {
         await User.updateMany({}, { completed: false });
 
         return safeSend(sock, chatId, {
-          text: `🔄 *Today's Status Reset!*\n\n━━━━━━━━━━━━━━━\n✅ All members marked as pending for today.`,
+          text: `🔄 *Today's Status Reset!*\n\n━━━━━━━━━━━━━━━\n✅ All members marked as pending for today.\n\n💡 _Fines remain unchanged. Use /resetfine to clear fines._`,
+        });
+      }
+
+      // 💰 RESET FINE
+      if (cmd.startsWith("/resetfine")) {
+        if (!isAdmin)
+          return safeSend(sock, chatId, {
+            text: `❌ *Access Denied*\n_Only admins can use this command._`,
+          });
+
+        await User.updateMany({}, { fine: 0 });
+
+        return safeSend(sock, chatId, {
+          text: `💰 *All Fines Cleared!*\n\n━━━━━━━━━━━━━━━\n✅ All member fines have been reset to ₹0.\n\n💡 _Daily status unchanged. Use /resetday to reset status._`,
         });
       }
 
