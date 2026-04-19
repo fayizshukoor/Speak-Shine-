@@ -549,21 +549,64 @@ async function startBot() {
         }
 
         const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-        const parts = text.trim().split(" ");
-        const lastPart = parts[parts.length - 1];
-        const amount = !isNaN(lastPart) && lastPart !== "" ? parseInt(lastPart) : FINE_AMOUNT;
-        const targets = mentioned.length > 0 ? mentioned : [user];
+        const parts = text.trim().split(/\s+/);
+        
+        // Parse format: /addfine @user1 11 @user2 5 @user3 7
+        const userAmounts = [];
+        
+        if (mentioned.length === 0) {
+          // No mentions - apply to self
+          const lastPart = parts[parts.length - 1];
+          const amount = !isNaN(lastPart) && lastPart !== "" ? parseInt(lastPart) : FINE_AMOUNT;
+          userAmounts.push({ userId: user, amount });
+        } else {
+          // Parse mentions and amounts
+          let mentionIndex = 0;
+          
+          for (let i = 1; i < parts.length && mentionIndex < mentioned.length; i++) {
+            const part = parts[i];
+            
+            // If part starts with @, it's a mention
+            if (part.startsWith("@")) {
+              const userId = mentioned[mentionIndex];
+              
+              // Check if next part is a number
+              let amount = FINE_AMOUNT;
+              if (i + 1 < parts.length && !isNaN(parts[i + 1]) && parts[i + 1] !== "") {
+                amount = parseInt(parts[i + 1]);
+                i++; // Skip the number in next iteration
+              }
+              
+              userAmounts.push({ userId, amount });
+              mentionIndex++;
+            }
+          }
+          
+          // If parsing failed, apply same amount to all
+          if (userAmounts.length === 0) {
+            const lastPart = parts[parts.length - 1];
+            const amount = !isNaN(lastPart) && lastPart !== "" ? parseInt(lastPart) : FINE_AMOUNT;
+            
+            for (const userId of mentioned) {
+              userAmounts.push({ userId, amount });
+            }
+          }
+        }
 
-        await User.updateMany(
-          { userId: { $in: targets } },
-          { $inc: { fine: amount } },
-          { upsert: true }
-        );
+        // Apply fines
+        const results = [];
+        for (const { userId, amount } of userAmounts) {
+          await User.updateOne(
+            { userId },
+            { $inc: { fine: amount } },
+            { upsert: true }
+          );
+          results.push(`@${getName(userId)} → +₹${amount}`);
+        }
 
-        const names = targets.map((t) => `@${getName(t)}`).join(", ");
         return safeSend(sock, chatId, {
-          text: `💸 *Fine Added!*\n\n━━━━━━━━━━━━━━━\n👥 ${names}\n💰 ₹${amount} added to each.`,
-          mentions: targets,
+          text: `💸 *Fine Added!*\n\n━━━━━━━━━━━━━━━\n${results.join("\n")}\n\n✅ Fines updated successfully.`,
+          mentions: userAmounts.map(ua => ua.userId),
         });
       }
 
@@ -576,25 +619,67 @@ async function startBot() {
         }
 
         const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-        const parts = text.trim().split(" ");
-        const lastPart = parts[parts.length - 1];
-        const amount = !isNaN(lastPart) && lastPart !== "" ? parseInt(lastPart) : FINE_AMOUNT;
-        const targets = mentioned.length > 0 ? mentioned : [user];
-
-        const results = [];
-        for (const t of targets) {
-          const u = await User.findOne({ userId: t });
-          if (!u) continue;
-          const newFine = Math.max(0, (u.fine || 0) - amount);
-          await User.updateOne({ userId: t }, { fine: newFine });
-          results.push(`@${getName(t)} → ₹${newFine} remaining`);
+        const parts = text.trim().split(/\s+/);
+        
+        // Parse format: /removefine @user1 11 @user2 5 @user3 7
+        const userAmounts = [];
+        
+        if (mentioned.length === 0) {
+          // No mentions - apply to self
+          const lastPart = parts[parts.length - 1];
+          const amount = !isNaN(lastPart) && lastPart !== "" ? parseInt(lastPart) : FINE_AMOUNT;
+          userAmounts.push({ userId: user, amount });
+        } else {
+          // Parse mentions and amounts
+          let mentionIndex = 0;
+          
+          for (let i = 1; i < parts.length && mentionIndex < mentioned.length; i++) {
+            const part = parts[i];
+            
+            // If part starts with @, it's a mention
+            if (part.startsWith("@")) {
+              const userId = mentioned[mentionIndex];
+              
+              // Check if next part is a number
+              let amount = FINE_AMOUNT;
+              if (i + 1 < parts.length && !isNaN(parts[i + 1]) && parts[i + 1] !== "") {
+                amount = parseInt(parts[i + 1]);
+                i++; // Skip the number in next iteration
+              }
+              
+              userAmounts.push({ userId, amount });
+              mentionIndex++;
+            }
+          }
+          
+          // If parsing failed, apply same amount to all
+          if (userAmounts.length === 0) {
+            const lastPart = parts[parts.length - 1];
+            const amount = !isNaN(lastPart) && lastPart !== "" ? parseInt(lastPart) : FINE_AMOUNT;
+            
+            for (const userId of mentioned) {
+              userAmounts.push({ userId, amount });
+            }
+          }
         }
 
-        if (!results.length) return safeSend(sock, chatId, { text: `❌ No users found.` });
+        // Remove fines
+        const results = [];
+        for (const { userId, amount } of userAmounts) {
+          const u = await User.findOne({ userId });
+          if (!u) continue;
+          const newFine = Math.max(0, (u.fine || 0) - amount);
+          await User.updateOne({ userId }, { fine: newFine });
+          results.push(`@${getName(userId)} → -₹${amount} (₹${newFine} remaining)`);
+        }
+
+        if (!results.length) {
+          return safeSend(sock, chatId, { text: `❌ No users found.` });
+        }
 
         return safeSend(sock, chatId, {
-          text: `💰 *Fine Removed!*\n\n━━━━━━━━━━━━━━━\n${results.join("\n")}\n\n💸 ₹${amount} removed from each.`,
-          mentions: targets,
+          text: `💰 *Fine Removed!*\n\n━━━━━━━━━━━━━━━\n${results.join("\n")}\n\n✅ Fines updated successfully.`,
+          mentions: userAmounts.map(ua => ua.userId),
         });
       }
 
