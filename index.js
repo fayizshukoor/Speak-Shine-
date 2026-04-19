@@ -11,6 +11,7 @@ import Question from "./models/questionSchema.js";
 import Status from "./models/statusSchema.js";
 import generateVoice from "./generateVoice.js";
 import generatePoster from "./poster.js";
+import { resetStatus } from "./resetStatus.js";
 import fs from "fs";
 import { exec } from "child_process";
 
@@ -396,11 +397,7 @@ async function startBot() {
       );
 
       // Reset daily flags
-      status.questionSentToday = false;
-      status.notifiedEmpty = false;
-      status.notifiedLast = false;
-      status.fineAppliedToday = false;
-      await status.save();
+      await resetStatus();
 
     } catch (err) {
       console.log("❌ Report error:", err);
@@ -525,34 +522,23 @@ async function startBot() {
           });
         }
 
-        const mentioned =
-          msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-
+        const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
         const parts = text.trim().split(" ");
+        // last part is amount if it's a number
+        const lastPart = parts[parts.length - 1];
+        const amount = !isNaN(lastPart) && mentioned.length > 0 ? parseInt(lastPart) : FINE_AMOUNT;
+        const targets = mentioned.length > 0 ? mentioned : [user];
 
-        let targetUser;
-        let amount = FINE_AMOUNT;
-
-        // If mention exists
-        if (mentioned.length > 0) {
-          targetUser = mentioned[0];
-          amount = parseInt(parts[2]) || FINE_AMOUNT;
-        }
-        // No mention = self
-        else {
-          targetUser = user;
-          amount = parseInt(parts[1]) || FINE_AMOUNT;
-        }
-
-        await User.findOneAndUpdate(
-          { userId: targetUser },
+        await User.updateMany(
+          { userId: { $in: targets } },
           { $inc: { fine: amount } },
-          { upsert: true },
+          { upsert: true }
         );
 
+        const names = targets.map((t) => `@${getName(t)}`).join(", ");
         return safeSend(sock, chatId, {
-          text: `💸 ₹${amount} fine added to @${targetUser.split("@")[0]}`,
-          mentions: [targetUser],
+          text: `💸 *Fine Added!*\n\n━━━━━━━━━━━━━━━\n👥 ${names}\n💰 ₹${amount} added to each.`,
+          mentions: targets,
         });
       }
 
@@ -564,44 +550,26 @@ async function startBot() {
           });
         }
 
-        const mentioned =
-          msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-
+        const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
         const parts = text.trim().split(" ");
+        const lastPart = parts[parts.length - 1];
+        const amount = !isNaN(lastPart) && mentioned.length > 0 ? parseInt(lastPart) : FINE_AMOUNT;
+        const targets = mentioned.length > 0 ? mentioned : [user];
 
-        let targetUser;
-        let amount = FINE_AMOUNT;
-
-        // If mention exists → remove from mentioned user
-        if (mentioned.length > 0) {
-          targetUser = mentioned[0];
-          amount = parseInt(parts[2]) || FINE_AMOUNT;
-        }
-        // No mention = self
-        else {
-          targetUser = user;
-          amount = parseInt(parts[1]) || FINE_AMOUNT;
+        const results = [];
+        for (const t of targets) {
+          const u = await User.findOne({ userId: t });
+          if (!u) continue;
+          const newFine = Math.max(0, (u.fine || 0) - amount);
+          await User.updateOne({ userId: t }, { fine: newFine });
+          results.push(`@${getName(t)} → ₹${newFine} remaining`);
         }
 
-        const existingUser = await User.findOne({ userId: targetUser });
-
-        if (!existingUser) {
-          return safeSend(sock, chatId, {
-            text: "❌ User not found",
-          });
-        }
-
-        const currentFine = existingUser.fine || 0;
-        const newFine = Math.max(0, currentFine - amount);
-
-        await User.updateOne(
-          { userId: targetUser },
-          { fine: newFine }
-        );
+        if (!results.length) return safeSend(sock, chatId, { text: `❌ No users found.` });
 
         return safeSend(sock, chatId, {
-          text: `💰 ₹${amount} fine removed from @${targetUser.split("@")[0]}\nRemaining Fine: ₹${newFine}`,
-          mentions: [targetUser],
+          text: `💰 *Fine Removed!*\n\n━━━━━━━━━━━━━━━\n${results.join("\n")}\n\n💸 ₹${amount} removed from each.`,
+          mentions: targets,
         });
       }
 
@@ -629,12 +597,7 @@ async function startBot() {
       if (cmd.startsWith("/resetstatus")) {
         if (!isAdmin) return safeSend(sock, chatId, { text: `❌ *Access Denied*\n_Only admins can use this command._` });
 
-        await Status.updateOne({}, {
-          questionSentToday: false,
-          notifiedEmpty: false,
-          notifiedLast: false,
-          fineAppliedToday: false,
-        });
+        await resetStatus();
 
         return safeSend(sock, chatId, {
           text: `🔄 *Status Reset Done!*\n\n━━━━━━━━━━━━━━━\n✅ All daily flags have been cleared.`,
