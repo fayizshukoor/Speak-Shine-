@@ -947,7 +947,11 @@ async function startBot() {
         return; // Done with video
       }
 
-      // ✍️ GRAMMAR ANALYSIS FOR TEXT MESSAGES
+      // ✍️ GRAMMAR ANALYSIS - DISABLED
+      // To re-enable, remove the return below and use /grammar on command
+      return;
+
+      /* GRAMMAR ANALYSIS FOR TEXT MESSAGES
       if (!text || text.trim().length === 0) return;
 
       const grammarSettings = await GrammarSettings.findOne({ groupId: chatId }) || {
@@ -975,6 +979,7 @@ async function startBot() {
       } else {
         console.log(`✅ No corrections needed for ${getName(dbUser)}`);
       }
+      */
 
     } catch (err) {
       console.log("❌ Message error:", err);
