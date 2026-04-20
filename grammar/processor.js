@@ -4,13 +4,11 @@ import { suggestVocabUpgrade, suggestSpokenImprovement } from "./vocab.js";
 import { shouldAnalyze, isEnglish } from "./detector.js";
 
 export async function processMessage(text, settings, openaiKey = null) {
-  // Check if should analyze
   if (!shouldAnalyze(text)) {
     console.log(`⏭️ Skipping: "${text}" (filter)`);
     return null;
   }
   
-  // Check if English
   if (!isEnglish(text)) {
     console.log(`⏭️ Skipping: not English`);
     return null;
@@ -28,48 +26,46 @@ export async function processMessage(text, settings, openaiKey = null) {
   // Try OpenAI first if available
   if (openaiKey) {
     const aiResult = await analyzeWithOpenAI(text, openaiKey);
-    if (aiResult) {
-      return parseOpenAIResponse(aiResult, text);
-    }
+    if (aiResult) return parseOpenAIResponse(aiResult, text);
   }
-  
-  // Run all checks in parallel
-  const [matches, quickCheck, tenseIssues, vocabSuggestions, spokenSuggestion] = await Promise.all([
-    settings.grammarEnabled ? analyzeGrammar(text) : Promise.resolve([]),
-    Promise.resolve(quickTenseCheck(text)),
-    Promise.resolve(settings.tenseEnabled ? detectTenseIssues(text) : []),
-    Promise.resolve(settings.vocabEnabled ? suggestVocabUpgrade(text) : []),
-    Promise.resolve(settings.vocabEnabled ? suggestSpokenImprovement(text) : { found: false }),
-  ]);
 
-  // Apply LanguageTool corrections
-  if (matches.length > 0) {
-    const corrections = formatCorrections(text, matches);
-    if (corrections) {
-      result.corrected = corrections.corrected;
-      result.tips = corrections.tips;
+  // 1. Run custom tense check FIRST (most reliable)
+  if (settings.tenseEnabled) {
+    const quickCheck = quickTenseCheck(text);
+    if (quickCheck.found) {
+      result.corrected = quickCheck.correct;
+      result.tips.push(`Use: "${quickCheck.correct}"`);
+      // Return immediately - don't let LanguageTool override our correction
+      return result;
+    }
+    
+    const tenseIssues = detectTenseIssues(text);
+    if (tenseIssues.length > 0) {
+      result.tenseIssues = tenseIssues;
+    }
+  }
+
+  // 2. LanguageTool for grammar/spelling (only if no tense fix found)
+  if (settings.grammarEnabled) {
+    const matches = await analyzeGrammar(text);
+    if (matches.length > 0) {
+      const corrections = formatCorrections(text, matches);
+      if (corrections) {
+        result.corrected = corrections.corrected;
+        result.tips = corrections.tips;
+      }
     }
   }
   
-  // Apply quick tense fix
-  if (settings.tenseEnabled && quickCheck.found) {
-    const regex = new RegExp(quickCheck.wrong.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "gi");
-    result.corrected = (result.corrected || text).replace(regex, quickCheck.correct);
-    result.tips.push(`Tense: "${quickCheck.wrong}" → "${quickCheck.correct}"`);
-  } else if (settings.tenseEnabled && tenseIssues.length > 0) {
-    result.tenseIssues = tenseIssues;
+  // 3. Vocab suggestions
+  if (settings.vocabEnabled) {
+    const vocabSuggestions = suggestVocabUpgrade(text);
+    if (vocabSuggestions.length > 0) result.vocabSuggestions = vocabSuggestions.slice(0, 2);
+    
+    const spokenSuggestion = suggestSpokenImprovement(text);
+    if (spokenSuggestion.found) result.spokenSuggestion = spokenSuggestion;
   }
   
-  // Vocab suggestions
-  if (vocabSuggestions.length > 0) {
-    result.vocabSuggestions = vocabSuggestions.slice(0, 2);
-  }
-  
-  if (spokenSuggestion.found) {
-    result.spokenSuggestion = spokenSuggestion;
-  }
-  
-  // Return null only if absolutely nothing found
   if (!result.corrected && 
       result.tenseIssues.length === 0 && 
       result.vocabSuggestions.length === 0 && 

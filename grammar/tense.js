@@ -92,9 +92,25 @@ export const tenseCorrections = {
 export function quickTenseCheck(text) {
   const lower = text.toLowerCase().trim();
   
+  // Normalize common misspellings first
+  const normalized = lower
+    .replace(/\btowmarow\b/g, "tomorrow")
+    .replace(/\btommorow\b/g, "tomorrow")
+    .replace(/\btomorow\b/g, "tomorrow")
+    .replace(/\btomarrow\b/g, "tomorrow")
+    .replace(/\byesterady\b/g, "yesterday")
+    .replace(/\byestarday\b/g, "yesterday");
+  
   for (const [wrong, correct] of Object.entries(tenseCorrections)) {
-    if (lower.includes(wrong.toLowerCase())) {
-      return { found: true, wrong, correct };
+    if (normalized.includes(wrong.toLowerCase())) {
+      // Apply correction on normalized text, then restore original casing style
+      const corrected = normalized.replace(wrong.toLowerCase(), correct.toLowerCase());
+      // Capitalize first letter
+      return { 
+        found: true, 
+        wrong: lower, 
+        correct: corrected.charAt(0).toUpperCase() + corrected.slice(1)
+      };
     }
   }
   return { found: false };
