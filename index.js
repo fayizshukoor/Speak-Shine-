@@ -501,34 +501,34 @@ async function startBot() {
       if (cmd.startsWith("/fine")) {
         const users = await User.find();
 
+        // Merge duplicate userIds — sum their fines, keep highest fine record
+        const merged = new Map();
+        for (const u of users) {
+          const id = u.userId;
+          if (!id) continue;
+          if (merged.has(id)) {
+            merged.get(id).fine = (merged.get(id).fine || 0) + (u.fine || 0);
+          } else {
+            merged.set(id, { userId: id, fine: u.fine || 0 });
+          }
+        }
+        const uniqueUsers = [...merged.values()];
+
         let totalFine = 0;
 
-        let msgText = `╔══════════════════╗
-💰 *FINE REPORT*
-╚══════════════════╝
+        let msgText = `╔══════════════════╗\n💰 *FINE REPORT*\n╚══════════════════╝\n\n📋 *Individual Fines:*\n━━━━━━━━━━━━━━━\n`;
 
-📋 *Individual Fines:*
-━━━━━━━━━━━━━━━
-`;
-
-        users.forEach((u) => {
+        uniqueUsers.forEach((u) => {
           const fine = u.fine || 0;
           totalFine += fine;
-
           msgText += `▪️ @${getName(u.userId)} → ₹${fine}\n`;
         });
 
-        msgText += `
-━━━━━━━━━━━━━━━
-💵 *Total Fine Pool:* ₹${totalFine}
-
-⚠️ _Missed daily submissions result in fines._
-🔥 _Stay consistent. Avoid penalties._
-`;
+        msgText += `\n━━━━━━━━━━━━━━━\n💵 *Total Fine Pool:* ₹${totalFine}\n\n⚠️ _Missed daily submissions result in fines._\n🔥 _Stay consistent. Avoid penalties._\n`;
 
         return safeSend(sock, chatId, {
           text: msgText,
-          mentions: users.map((u) => u.userId),
+          mentions: uniqueUsers.map((u) => u.userId),
         });
       }
 
@@ -794,6 +794,37 @@ async function startBot() {
 
         return safeSend(sock, chatId, {
           text: `💰 *All Fines Cleared!*\n\n━━━━━━━━━━━━━━━\n✅ All member fines have been reset to ₹0.\n\n💡 _Daily status unchanged. Use /resetday to reset status._`,
+        });
+      }
+
+      // 🧹 DEDUP — remove duplicate userId records from DB
+      if (cmd.startsWith("/dedup")) {
+        if (!isAdmin)
+          return safeSend(sock, chatId, { text: `❌ *Access Denied*\n_Only admins can use this command._` });
+
+        const users = await User.find();
+        const seen = new Map();
+        let removed = 0;
+
+        for (const u of users) {
+          if (!u.userId) { await User.deleteOne({ _id: u._id }); removed++; continue; }
+          if (seen.has(u.userId)) {
+            // Keep the one with higher fine, delete the other
+            const existing = seen.get(u.userId);
+            if ((u.fine || 0) > (existing.fine || 0)) {
+              await User.deleteOne({ _id: existing._id });
+              seen.set(u.userId, u);
+            } else {
+              await User.deleteOne({ _id: u._id });
+            }
+            removed++;
+          } else {
+            seen.set(u.userId, u);
+          }
+        }
+
+        return safeSend(sock, chatId, {
+          text: `🧹 *Dedup Complete!*\n\n━━━━━━━━━━━━━━━\n✅ Removed *${removed}* duplicate record(s).\n📦 Unique members: *${seen.size}*`,
         });
       }
 
