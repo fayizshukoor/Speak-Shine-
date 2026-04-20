@@ -238,7 +238,7 @@ async function startBot() {
       msg += `📌 *${pending.length} member(s) yet to submit:*\n\n`;
       pending.forEach((u) => {
         const displayName = u.name || getName(u.userId);
-        msg += `▪️ ${displayName}\n`;
+        msg += `▪️ @${displayName}\n`;
       });
       msg += `\n📹 _Send your 1-min+ speaking video now!_`;
 
@@ -318,7 +318,7 @@ async function startBot() {
 
       // 📤 Send text + voice
       await safeSend(sock, TARGET_GROUP, {
-        text: `🚨 *FINAL WARNING!*\n\n━━━━━━━━━━━━━━━\n⏳ Deadline is almost here!\n\n${pending.map((u) => `▪️ ${u.name || getName(u.userId)}`).join("\n")}\n\n📹 _Submit your speaking video RIGHT NOW or a fine will be applied!_ 💸`,
+        text: `🚨 *FINAL WARNING!*\n\n━━━━━━━━━━━━━━━\n⏳ Deadline is almost here!\n\n${pending.map((u) => `▪️ @${u.name || getName(u.userId)}`).join("\n")}\n\n📹 _Submit your speaking video RIGHT NOW or a fine will be applied!_ 💸`,
         mentions: pending.map((u) => u.userId),
       });
 
@@ -385,7 +385,7 @@ async function startBot() {
         msg += `\n\n🏅 *Today's Submissions:*\n`;
         completed.forEach((u) => {
           const displayName = u.name || getName(u.userId);
-          msg += `✅ ${displayName}\n`;
+          msg += `✅ @${displayName}\n`;
         });
       }
 
@@ -393,7 +393,7 @@ async function startBot() {
         msg += `\n⚠️ *Missed & Fined ₹${FINE_AMOUNT}:*\n`;
         pending.forEach((u) => {
           const displayName = u.name || getName(u.userId);
-          msg += `❌ ${displayName} _(Total fine: ₹${u.fine})_\n`;
+          msg += `❌ @${displayName} _(Total fine: ₹${u.fine})_\n`;
         });
       }
 
@@ -558,7 +558,7 @@ async function startBot() {
           const fine = u.fine || 0;
           totalFine += fine;
           const displayName = u.name || getName(u.userId);
-          msgText += `▪️ ${displayName} → ₹${fine}\n`;
+          msgText += `▪️ @${displayName} → ₹${fine}\n`;
         });
 
         msgText += `\n━━━━━━━━━━━━━━━\n💵 *Total Fine Pool:* ₹${totalFine}\n\n⚠️ _Missed daily submissions result in fines._\n🔥 _Stay consistent. Avoid penalties._\n`;
@@ -844,6 +844,7 @@ async function startBot() {
           let updated = 0;
 
           for (const p of meta.participants) {
+            // Baileys stores push name in p.notify (from contact store) or p.name
             const pName = p.notify || p.name || null;
             if (!pName) continue;
 
@@ -858,8 +859,22 @@ async function startBot() {
             if (result.modifiedCount > 0) updated++;
           }
 
+          // Also check contacts store via sock.store if available
+          const users = await User.find({ name: null });
+          let fromStore = 0;
+          for (const u of users) {
+            try {
+              // Try fetching contact info
+              const contact = await sock.onWhatsApp(u.userId.replace("@s.whatsapp.net", ""));
+              if (contact?.[0]?.notify) {
+                await User.updateOne({ _id: u._id }, { $set: { name: contact[0].notify } });
+                fromStore++;
+              }
+            } catch (_) {}
+          }
+
           return safeSend(sock, chatId, {
-            text: `✅ *Names Synced!*\n\n━━━━━━━━━━━━━━━\n🔄 Updated *${updated}* member name(s) from group.`,
+            text: `✅ *Names Synced!*\n\n━━━━━━━━━━━━━━━\n🔄 From group metadata: *${updated}*\n📇 From contact store: *${fromStore}*\n\n💡 _Names will auto-update as members send messages._`,
           });
         } catch (err) {
           return safeSend(sock, chatId, { text: `❌ Sync failed: ${err.message}` });
