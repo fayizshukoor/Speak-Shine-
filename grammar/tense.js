@@ -52,27 +52,49 @@ export function detectTenseIssues(text) {
   return issues;
 }
 
-// Common tense corrections
+// Common tense corrections - expanded list
 export const tenseCorrections = {
-  "I go tomorrow": "I will go tomorrow",
-  "I go yesterday": "I went yesterday",
-  "Yesterday I am": "Yesterday I was",
-  "Tomorrow I am": "Tomorrow I will be",
-  "I am go": "I am going",
-  "He don't": "He doesn't",
-  "She don't": "She doesn't",
-  "I was go": "I went",
-  "I will went": "I will go",
+  // Future with present tense
+  "i go tomorrow": "I will go tomorrow",
+  "i come tomorrow": "I will come tomorrow",
+  "i do it tomorrow": "I will do it tomorrow",
+  "i go next": "I will go next",
+  "i come next": "I will come next",
+  "i go today": "I will go today",
+  "i come today": "I will come today",
+  
+  // Past time with present tense
+  "yesterday i am": "Yesterday I was",
+  "yesterday i is": "Yesterday I was",
+  "yesterday i go": "Yesterday I went",
+  "yesterday i come": "Yesterday I came",
+  "yesterday i eat": "Yesterday I ate",
+  "yesterday i see": "Yesterday I saw",
+  "last night i am": "Last night I was",
+  "last week i go": "Last week I went",
+  
+  // Common grammar mistakes
+  "i am go": "I am going",
+  "i was go": "I went",
+  "i will went": "I will go",
+  "he don't": "He doesn't",
+  "she don't": "She doesn't",
+  "it don't": "It doesn't",
+  "they is": "They are",
+  "we is": "We are",
+  "i is": "I am",
+  "you is": "You are",
+  "he are": "He is",
+  "she are": "She is",
+  "i are": "I am",
 };
 
 export function quickTenseCheck(text) {
+  const lower = text.toLowerCase().trim();
+  
   for (const [wrong, correct] of Object.entries(tenseCorrections)) {
-    if (text.toLowerCase().includes(wrong.toLowerCase())) {
-      return {
-        found: true,
-        wrong,
-        correct,
-      };
+    if (lower.includes(wrong.toLowerCase())) {
+      return { found: true, wrong, correct };
     }
   }
   return { found: false };
