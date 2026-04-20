@@ -319,30 +319,22 @@ async function startBot() {
   // ================= DAILY REPORT =================
   const dailyReport = async () => {
     try {
-      // Try to get live group members, fall back to all DB users
-      let groupUsers;
-      try {
-        const groupMeta = await sock.groupMetadata(TARGET_GROUP);
-        groupUsers = groupMeta.participants.map((p) => p.id);
-      } catch {
-        console.log("⚠️ Could not fetch group metadata, using DB users");
-        const allUsers = await User.find({ userId: { $ne: null } });
-        groupUsers = allUsers.map((u) => u.userId);
-      }
-
       let status = await Status.findOne();
       if (!status) status = await Status.create({});
 
+      // Use all DB users directly - avoids @lid vs @s.whatsapp.net mismatch
       const users = await User.find({
-        userId: { $in: groupUsers },
+        userId: { $ne: null, $exists: true, $ne: "" }
       });
 
       const completed = users.filter((u) => u.completed);
       const pending = users.filter((u) => !u.completed);
 
+      console.log(`📊 Report: ${completed.length} submitted, ${pending.length} pending`);
+
       let totalTodayFine = 0;
 
-      // Apply ₹2 fine to pending users
+      // Apply fine to pending users (only once per day)
       if (pending.length && !status.fineAppliedToday) {
         await User.updateMany(
           { userId: { $in: pending.map((u) => u.userId) } },
@@ -369,7 +361,6 @@ async function startBot() {
 
       if (completed.length) {
         msg += `\n\n🏅 *Today's Submissions:*\n`;
-
         completed.forEach((u) => {
           msg += `✅ @${getName(u.userId)}\n`;
         });
@@ -377,7 +368,6 @@ async function startBot() {
 
       if (pending.length) {
         msg += `\n⚠️ *Missed & Fined ₹${FINE_AMOUNT}:*\n`;
-
         pending.forEach((u) => {
           msg += `❌ @${getName(u.userId)} _(Total fine: ₹${u.fine})_\n`;
         });
@@ -397,11 +387,8 @@ async function startBot() {
         mentions: allMentions,
       });
 
-      // Reset only group users
-      await User.updateMany(
-        { userId: { $in: groupUsers } },
-        { completed: false }
-      );
+      // Reset all users for next day
+      await User.updateMany({}, { completed: false });
 
       // Reset daily flags
       await resetStatus();
@@ -463,13 +450,28 @@ async function startBot() {
       const user = msg.key.participant || msg.key.remoteJid;
       if (!user) return;
 
+      // Normalize userId - always use @s.whatsapp.net format
+      const normalizeUserId = (id) => {
+        if (!id) return id;
+        // Convert @lid to @s.whatsapp.net by stripping the lid suffix
+        if (id.includes("@lid")) {
+          return id.replace("@lid", "@s.whatsapp.net");
+        }
+        return id;
+      };
+
+      const normalizedUser = normalizeUserId(user);
+
       const cmd = text.trim().toLowerCase();
 
       const groupMeta = await sock.groupMetadata(chatId);
 
       const isAdmin = groupMeta.participants.some(
-        (p) => p.id === user && p.admin,
+        (p) => (p.id === normalizedUser || p.id === user) && p.admin,
       );
+
+      // Use normalizedUser for all DB operations
+      const dbUser = normalizedUser;
 
       // 📋 REMAINING
       if (cmd.startsWith("/remaining")) {
@@ -815,25 +817,25 @@ async function startBot() {
       }
 
       if (cmd === "/mystats") {
-        const stats = await UserStats.findOne({ userId: user, groupId: chatId });
+        const stats = await UserStats.findOne({ userId: dbUser, groupId: chatId });
         
         if (!stats || stats.totalCorrections === 0) {
           return safeSend(sock, chatId, {
             text: `📊 *Your English Stats*\n\n` +
-                  `@${getName(user)}, you haven't received any corrections yet!\n\n` +
+                  `@${getName(dbUser)}, you haven't received any corrections yet!\n\n` +
                   `💬 Keep chatting in English to get feedback.`,
-            mentions: [user],
+            mentions: [dbUser],
           });
         }
         
         return safeSend(sock, chatId, {
           text: `📊 *Your English Stats*\n\n` +
-                `👤 @${getName(user)}\n` +
+                `👤 @${getName(dbUser)}\n` +
                 `✍️ Total Corrections: ${stats.totalCorrections}\n` +
                 `📈 Grammar Score: ${stats.grammarScore}/100\n` +
                 `🔥 Streak: ${stats.streakDays} days\n\n` +
                 `💪 Keep improving!`,
-          mentions: [user],
+          mentions: [dbUser],
         });
       }
 
@@ -873,7 +875,7 @@ async function startBot() {
           });
         }
 
-        const existing = await User.findOne({ userId: user });
+        const existing = await User.findOne({ userId: dbUser });
 
         if (existing?.completed) {
           return safeSend(sock, chatId, {
@@ -882,30 +884,30 @@ async function startBot() {
         }
    
         await User.findOneAndUpdate(
-          { userId: user },
+          { userId: dbUser },
           { completed: true },
           { upsert: true },
         );
 
-        const username = user.split("@")[0];
+        const username = dbUser.split("@")[0];
         await safeSend(sock, chatId, {
           text: `🔥 *Great work, @${username}!*\n\n✅ Submission received!\n\n💪 _Keep showing up every day — consistency is what separates the best from the rest. You're on the right track!_ 🚀`,
-          mentions: [user],
+          mentions: [dbUser],
         });
 
         await safeSend(sock, chatId, {
           text: `🤖 ⏳ _Analyzing your video... feedback coming shortly!_`,
-          mentions: [user],
+          mentions: [dbUser],
         });
 
         // 🤖 AI Feedback (runs async, won't block submission)
-        generateFeedback(msg, user, video.seconds || 60)
+        generateFeedback(msg, dbUser, video.seconds || 60)
           .then((feedbackText) => {
-            safeSend(sock, chatId, { text: feedbackText, mentions: [user] });
+            safeSend(sock, chatId, { text: feedbackText, mentions: [dbUser] });
           })
           .catch((err) => {
             console.log("❌ Feedback error:", err.message);
-            safeSend(sock, chatId, { text: `⚠️ _Feedback unavailable: ${err.message}_`, mentions: [user] });
+            safeSend(sock, chatId, { text: `⚠️ _Feedback unavailable: ${err.message}_`, mentions: [dbUser] });
           });
 
         return; // Done with video
@@ -923,21 +925,21 @@ async function startBot() {
 
       if (!grammarSettings.grammarEnabled) return;
 
-      console.log(`✍️ Analyzing: "${text}" from ${getName(user)}`);
+      console.log(`✍️ Analyzing: "${text}" from ${getName(dbUser)}`);
       const grammarResult = await processMessage(text, grammarSettings, OPENAI_API_KEY);
 
       if (grammarResult) {
         await UserStats.updateOne(
-          { userId: user, groupId: chatId },
+          { userId: dbUser, groupId: chatId },
           { $inc: { totalCorrections: 1 }, $set: { lastMessageTime: new Date() } },
           { upsert: true }
         );
 
-        const response = formatResponse(grammarResult, getName(user));
-        await safeSend(sock, chatId, { text: response, mentions: [user] });
-        console.log(`✍️ Grammar feedback sent to ${getName(user)}`);
+        const response = formatResponse(grammarResult, getName(dbUser));
+        await safeSend(sock, chatId, { text: response, mentions: [dbUser] });
+        console.log(`✍️ Grammar feedback sent to ${getName(dbUser)}`);
       } else {
-        console.log(`✅ No corrections needed for ${getName(user)}`);
+        console.log(`✅ No corrections needed for ${getName(dbUser)}`);
       }
 
     } catch (err) {
