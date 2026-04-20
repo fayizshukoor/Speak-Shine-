@@ -501,15 +501,21 @@ async function startBot() {
       if (cmd.startsWith("/fine")) {
         const users = await User.find();
 
-        // Merge duplicate userIds — sum their fines, keep highest fine record
+        // Normalize userId to phone number for dedup comparison
+        const getPhone = (id) => id ? id.replace(/@s\.whatsapp\.net|@lid|@c\.us/g, "").split(":")[0] : null;
+
+        // Merge duplicate userIds (same phone, different JID format) — sum fines, prefer @s.whatsapp.net
         const merged = new Map();
         for (const u of users) {
-          const id = u.userId;
-          if (!id) continue;
-          if (merged.has(id)) {
-            merged.get(id).fine = (merged.get(id).fine || 0) + (u.fine || 0);
+          const phone = getPhone(u.userId);
+          if (!phone) continue;
+          if (merged.has(phone)) {
+            const existing = merged.get(phone);
+            existing.fine = (existing.fine || 0) + (u.fine || 0);
+            // Prefer @s.whatsapp.net userId for mentions
+            if (u.userId?.includes("@s.whatsapp.net")) existing.userId = u.userId;
           } else {
-            merged.set(id, { userId: id, fine: u.fine || 0 });
+            merged.set(phone, { userId: u.userId, fine: u.fine || 0 });
           }
         }
         const uniqueUsers = [...merged.values()];
@@ -803,28 +809,48 @@ async function startBot() {
           return safeSend(sock, chatId, { text: `❌ *Access Denied*\n_Only admins can use this command._` });
 
         const users = await User.find();
-        const seen = new Map();
-        let removed = 0;
 
+        // Normalize userId to phone number only for comparison
+        const getPhone = (id) => id ? id.replace(/@s\.whatsapp\.net|@lid|@c\.us/g, "").split(":")[0] : null;
+
+        // Group records by normalized phone number
+        const phoneMap = new Map();
         for (const u of users) {
-          if (!u.userId) { await User.deleteOne({ _id: u._id }); removed++; continue; }
-          if (seen.has(u.userId)) {
-            // Keep the one with higher fine, delete the other
-            const existing = seen.get(u.userId);
-            if ((u.fine || 0) > (existing.fine || 0)) {
-              await User.deleteOne({ _id: existing._id });
-              seen.set(u.userId, u);
-            } else {
-              await User.deleteOne({ _id: u._id });
-            }
+          const phone = getPhone(u.userId);
+          if (!phone) { await User.deleteOne({ _id: u._id }); continue; }
+          if (!phoneMap.has(phone)) {
+            phoneMap.set(phone, []);
+          }
+          phoneMap.get(phone).push(u);
+        }
+
+        let removed = 0;
+        for (const [phone, records] of phoneMap) {
+          if (records.length <= 1) continue;
+
+          // Keep the @s.whatsapp.net version preferably, else highest fine
+          records.sort((a, b) => {
+            const aPreferred = a.userId?.includes("@s.whatsapp.net") ? 1 : 0;
+            const bPreferred = b.userId?.includes("@s.whatsapp.net") ? 1 : 0;
+            if (aPreferred !== bPreferred) return bPreferred - aPreferred;
+            return (b.fine || 0) - (a.fine || 0);
+          });
+
+          const keep = records[0];
+          const totalFine = records.reduce((sum, r) => sum + (r.fine || 0), 0);
+
+          // Update the keeper with merged fine
+          await User.updateOne({ _id: keep._id }, { fine: totalFine });
+
+          // Delete the rest
+          for (const dup of records.slice(1)) {
+            await User.deleteOne({ _id: dup._id });
             removed++;
-          } else {
-            seen.set(u.userId, u);
           }
         }
 
         return safeSend(sock, chatId, {
-          text: `🧹 *Dedup Complete!*\n\n━━━━━━━━━━━━━━━\n✅ Removed *${removed}* duplicate record(s).\n📦 Unique members: *${seen.size}*`,
+          text: `🧹 *Dedup Complete!*\n\n━━━━━━━━━━━━━━━\n✅ Removed *${removed}* duplicate record(s).\n📦 Unique members: *${phoneMap.size}*`,
         });
       }
 
