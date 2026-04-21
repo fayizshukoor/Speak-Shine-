@@ -1,77 +1,99 @@
 import { exec } from "child_process";
 import fs from "fs";
-import path from "path";
 import fetch from "node-fetch";
 
 /**
- * Extracts N evenly-spaced frames from a video file using ffmpeg.
- * Returns array of base64-encoded JPEG strings.
- *
- * @param {string} videoPath - Path to the video file
- * @param {number} frameCount - How many frames to extract (default 3)
- * @returns {Promise<string[]>} Array of base64 JPEG strings
- */
-async function extractFrames(videoPath, frameCount = 3) {
-  // Get video duration first
-  const duration = await getVideoDuration(videoPath);
-
-  // Sample frames at 25%, 50%, 75% of the video
-  const timestamps = [];
-  for (let i = 1; i <= frameCount; i++) {
-    const t = Math.floor((duration * i) / (frameCount + 1));
-    timestamps.push(Math.max(1, t)); // at least 1 second in
-  }
-
-  const frames = [];
-  for (const ts of timestamps) {
-    const framePath = `${videoPath}_frame_${ts}.jpg`;
-    await new Promise((resolve, reject) => {
-      exec(
-        `ffmpeg -ss ${ts} -i "${videoPath}" -frames:v 1 -q:v 2 "${framePath}" -y`,
-        (err) => {
-          if (err) return reject(err);
-          resolve();
-        }
-      );
-    });
-
-    if (fs.existsSync(framePath)) {
-      const buffer = fs.readFileSync(framePath);
-      frames.push(buffer.toString("base64"));
-      fs.unlinkSync(framePath); // clean up immediately
-    }
-  }
-
-  return frames;
-}
-
-/**
  * Gets video duration in seconds using ffprobe.
+ * Falls back to 60s if ffprobe fails.
  */
 function getVideoDuration(videoPath) {
   return new Promise((resolve) => {
     exec(
       `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${videoPath}"`,
-      (err, stdout) => {
-        if (err || !stdout) return resolve(30); // fallback 30s
-        const dur = parseFloat(stdout.trim());
-        resolve(isNaN(dur) ? 30 : dur);
+      (err, stdout, stderr) => {
+        if (err) {
+          console.log("⚠️ ffprobe error (using fallback 60s):", err.message);
+          return resolve(60);
+        }
+        const dur = parseFloat((stdout || "").trim());
+        console.log(`📏 Video duration: ${dur}s`);
+        resolve(isNaN(dur) || dur <= 0 ? 60 : dur);
       }
     );
   });
 }
 
 /**
+ * Extracts a single frame at a given timestamp.
+ * Returns base64 JPEG string or null if failed.
+ */
+function extractFrame(videoPath, timestamp) {
+  return new Promise((resolve) => {
+    const framePath = `${videoPath}_frame_${timestamp}.jpg`;
+    exec(
+      `ffmpeg -ss ${timestamp} -i "${videoPath}" -frames:v 1 -q:v 3 -vf "scale=640:-1" "${framePath}" -y`,
+      (err, stdout, stderr) => {
+        if (err) {
+          console.log(`⚠️ Frame extraction failed at ${timestamp}s:`, err.message);
+          return resolve(null);
+        }
+        if (!fs.existsSync(framePath)) {
+          console.log(`⚠️ Frame file not found after extraction at ${timestamp}s`);
+          return resolve(null);
+        }
+        try {
+          const buffer = fs.readFileSync(framePath);
+          fs.unlinkSync(framePath);
+          if (buffer.length < 1000) {
+            console.log(`⚠️ Frame too small (${buffer.length} bytes) at ${timestamp}s — skipping`);
+            return resolve(null);
+          }
+          console.log(`✅ Frame at ${timestamp}s: ${buffer.length} bytes`);
+          resolve(buffer.toString("base64"));
+        } catch (readErr) {
+          console.log(`⚠️ Frame read error at ${timestamp}s:`, readErr.message);
+          resolve(null);
+        }
+      }
+    );
+  });
+}
+
+/**
+ * Extracts N evenly-spaced frames from a video file.
+ * Returns array of base64-encoded JPEG strings (skips failed frames).
+ */
+async function extractFrames(videoPath, frameCount = 3) {
+  if (!fs.existsSync(videoPath)) {
+    throw new Error(`Video file not found: ${videoPath}`);
+  }
+
+  const duration = await getVideoDuration(videoPath);
+
+  // Sample at 25%, 50%, 75% of video duration
+  const timestamps = [];
+  for (let i = 1; i <= frameCount; i++) {
+    const t = Math.max(1, Math.floor((duration * i) / (frameCount + 1)));
+    timestamps.push(t);
+  }
+  console.log(`🎬 Extracting frames at timestamps: ${timestamps.join(", ")}s`);
+
+  // Extract all frames in parallel
+  const results = await Promise.all(timestamps.map((ts) => extractFrame(videoPath, ts)));
+  return results.filter(Boolean); // remove nulls
+}
+
+/**
  * Analyzes video frames using Google Gemini Vision API.
- * Looks for: eye contact, facial expressions, body language, confidence, gestures.
+ * Evaluates: eye contact, facial expressions, body language, confidence, gestures.
  *
  * @param {string} videoPath - Path to the video file
- * @returns {Promise<object>} Visual analysis result
+ * @returns {Promise<object|null>} Visual analysis result, or null if unavailable
  */
 export async function analyzeVideo(videoPath) {
   const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-  if (!GEMINI_API_KEY) {
-    console.log("⚠️ GEMINI_API_KEY not set — skipping visual analysis");
+  if (!GEMINI_API_KEY || GEMINI_API_KEY === "your_gemini_api_key_here") {
+    console.log("⚠️ GEMINI_API_KEY not configured — skipping visual analysis");
     return null;
   }
 
@@ -80,25 +102,26 @@ export async function analyzeVideo(videoPath) {
   let frames = [];
   try {
     frames = await extractFrames(videoPath, 3);
-    console.log(`🖼️ Extracted ${frames.length} frames, sizes: ${frames.map(f => f.length)} chars`);
   } catch (err) {
-    console.log("⚠️ Frame extraction failed:", err.message);
+    console.log("⚠️ Frame extraction error:", err.message);
     return null;
   }
 
   if (frames.length === 0) {
-    console.log("⚠️ No frames extracted — skipping visual analysis");
+    console.log("⚠️ No usable frames extracted — skipping visual analysis");
     return null;
   }
 
-  // Build Gemini request parts — one text prompt + all frames as inline images
+  console.log(`🖼️ Sending ${frames.length} frame(s) to Gemini Vision...`);
+
+  // Build Gemini request: text prompt + image frames
   const parts = [
     {
       text: `You are an expert public speaking coach analyzing video frames of a student giving a spoken English presentation.
 
-Analyze these ${frames.length} frames sampled from their video and evaluate their non-verbal communication.
+Analyze these ${frames.length} frame(s) sampled from their video and evaluate their non-verbal communication.
 
-Return ONLY a valid JSON object with this exact structure (no markdown, no extra text):
+Return ONLY a valid JSON object with this exact structure (no markdown, no extra text, no explanation):
 
 {
   "eyeContact": <integer 1-10>,
@@ -108,17 +131,17 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no extra
   "eyeContactNote": "<one specific observation about where they are looking>",
   "bodyLanguageNote": "<one specific observation about posture, gestures, or movement>",
   "expressionNote": "<one specific observation about facial expressions and engagement>",
-  "visualSuggestions": ["<specific tip>", "<specific tip>"],
-  "visualStrengths": ["<positive observation>"]
+  "visualSuggestions": ["<specific actionable tip>", "<specific actionable tip>"],
+  "visualStrengths": ["<one positive visual observation>"]
 }
 
 SCORING GUIDE:
 - eyeContact: 10 = consistently looking at camera, 1 = always looking away
 - bodyLanguage: 10 = confident posture, open gestures, 1 = slouching, closed off
-- facialExpression: 10 = engaged, expressive, smiling naturally, 1 = blank/stiff
+- facialExpression: 10 = engaged, expressive, natural smile, 1 = blank or stiff
 - overallPresence: overall visual confidence and stage presence
 
-Be specific and honest. If the image quality is low or face is not clearly visible, still give your best assessment and note it.`,
+Be specific and honest. If image quality is low or face is not clearly visible, still give your best assessment and mention it in the notes.`,
     },
     ...frames.map((b64) => ({
       inline_data: {
@@ -138,28 +161,30 @@ Be specific and honest. If the image quality is low or face is not clearly visib
           contents: [{ parts }],
           generationConfig: {
             temperature: 0.2,
-            maxOutputTokens: 600,
+            maxOutputTokens: 700,
           },
         }),
       }
     );
 
     if (!res.ok) {
-      const err = await res.text();
-      console.log("⚠️ Gemini vision API error:", err.slice(0, 200));
+      const errText = await res.text();
+      console.log(`⚠️ Gemini API HTTP ${res.status}:`, errText.slice(0, 300));
       return null;
     }
 
     const data = await res.json();
-    console.log("🤖 Gemini raw response:", JSON.stringify(data).slice(0, 500));
+    console.log("🤖 Gemini response status:", data?.candidates?.[0]?.finishReason);
+
     const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (!raw) {
-      console.log("⚠️ Gemini returned empty content. Full response:", JSON.stringify(data).slice(0, 800));
+      console.log("⚠️ Gemini returned no text. Full response:", JSON.stringify(data).slice(0, 500));
       return null;
     }
-    console.log("📝 Gemini text output:", raw.slice(0, 300));
 
-    // Strip markdown fences if present
+    console.log("📝 Gemini raw text:", raw.slice(0, 400));
+
+    // Strip markdown code fences if present
     let jsonStr = raw;
     const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (fenceMatch) {
@@ -170,10 +195,13 @@ Be specific and honest. If the image quality is low or face is not clearly visib
       if (start !== -1 && end !== -1) jsonStr = raw.slice(start, end + 1);
     }
 
-    // Clean trailing commas
+    // Remove trailing commas (common LLM JSON issue)
     jsonStr = jsonStr.replace(/,\s*([}\]])/g, "$1");
 
-    return JSON.parse(jsonStr);
+    const parsed = JSON.parse(jsonStr);
+    console.log("✅ Visual analysis complete:", JSON.stringify(parsed).slice(0, 200));
+    return parsed;
+
   } catch (err) {
     console.log("⚠️ Visual analysis failed:", err.message);
     return null;

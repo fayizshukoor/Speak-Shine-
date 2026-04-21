@@ -24,28 +24,28 @@ export async function generateFeedback(msg, user, durationSeconds, questionTopic
     // 1. Download video (pass sock for media key re-fetch)
     videoPath = await downloadVideo(msg, id, sock);
 
-    // 2. Run audio extraction + visual analysis in parallel
-    // Visual analysis uses the video file directly (frames extracted via ffmpeg)
-    const [audioResult, visualResult] = await Promise.allSettled([
-      extractAudio(videoPath, id),
-      analyzeVideo(videoPath),   // runs on video frames simultaneously
-    ]);
+    // 2. Extract audio first (fast), then run visual analysis in parallel with transcription
+    audioPath = await extractAudio(videoPath, id);
 
-    // Audio extraction must succeed
-    if (audioResult.status === "rejected") {
-      throw audioResult.reason;
-    }
-    audioPath = audioResult.value;
+    // 3. Run visual analysis (Gemini) and transcription (Whisper) in parallel
+    //    Video file is still present at this point for frame extraction
+    const [transcriptionResult, visualResult] = await Promise.allSettled([
+      transcribe(audioPath),
+      analyzeVideo(videoPath),
+    ]);
 
     // Visual result is optional — gracefully degrade if it failed
     const visual = visualResult.status === "fulfilled" ? visualResult.value : null;
     if (visualResult.status === "rejected") {
       console.log("⚠️ Visual analysis error (non-fatal):", visualResult.reason?.message);
     }
-    console.log("🎨 Visual analysis result:", visual ? JSON.stringify(visual).slice(0, 300) : "null/failed");
+    console.log("🎨 Visual analysis result:", visual ? JSON.stringify(visual).slice(0, 200) : "null/failed");
 
-    // 3. Transcribe with verbose_json (word timestamps + duration)
-    const transcription = await transcribe(audioPath);
+    // Transcription must succeed
+    if (transcriptionResult.status === "rejected") {
+      throw transcriptionResult.reason;
+    }
+    const transcription = transcriptionResult.value;
 
     if (!transcription.text || transcription.text.length < 10) {
       return "⚠️ _Could not detect speech in the video._";
