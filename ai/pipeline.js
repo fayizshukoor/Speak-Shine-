@@ -21,9 +21,9 @@ export const TRANSCRIBE_TIMEOUT_MS =
 export const SPEECH_TIMEOUT_MS =
   Number(process.env.SPEECH_TIMEOUT_MS) || 45_000;
 
-/** Maximum ms to wait for Groq Vision visual analysis. Default: 45 000 */
+/** Maximum ms to wait for Groq Vision visual analysis. Default: 90 000 (6 frames need more time) */
 export const VISUAL_TIMEOUT_MS =
-  Number(process.env.VISUAL_TIMEOUT_MS) || 45_000;
+  Number(process.env.VISUAL_TIMEOUT_MS) || 90_000;
 
 // ---------------------------------------------------------------------------
 // withTimeout
