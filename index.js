@@ -125,7 +125,7 @@ async function startBot() {
           await safeSend(sock, TARGET_GROUP, {
             text:
               `🎉 *New Member Added!*\n\n` +
-              `Welcome to the group @${getName(id)} 👋\n\n` +
+              `Welcome to the group @${pushName || getName(id)} 👋\n\n` +
               `🔥 Stay active, complete daily speaking challenges, and keep improving every day!`,
             mentions: [id],
           });
@@ -245,7 +245,7 @@ async function startBot() {
       let msg = `${title}\n━━━━━━━━━━━━━━━\n\n`;
       msg += `📌 *${pending.length} member(s) yet to submit:*\n\n`;
       pending.forEach((u) => {
-        msg += `▪️ @${getName(u.userId)}\n`;
+        msg += `▪️ @${u.name || getName(u.userId)}\n`;
       });
       msg += `\n📹 _Send your 1-min+ speaking video now!_`;
 
@@ -333,7 +333,7 @@ async function startBot() {
 
       // 📤 Send text + voice
       await safeSend(sock, TARGET_GROUP, {
-        text: `🚨 *FINAL WARNING!*\n\n━━━━━━━━━━━━━━━\n⏳ Deadline is almost here!\n\n${pending.map((u) => `▪️ @${getName(u.userId)}`).join("\n")}\n\n📹 _Submit your speaking video RIGHT NOW or a fine will be applied!_ 💸`,
+        text: `🚨 *FINAL WARNING!*\n\n━━━━━━━━━━━━━━━\n⏳ Deadline is almost here!\n\n${pending.map((u) => `▪️ @${u.name || getName(u.userId)}`).join("\n")}\n\n📹 _Submit your speaking video RIGHT NOW or a fine will be applied!_ 💸`,
         mentions: pending.map((u) => u.userId),
       });
 
@@ -398,14 +398,14 @@ async function startBot() {
       if (completed.length) {
         msg += `\n\n🏅 *Today's Submissions:*\n`;
         completed.forEach((u) => {
-          msg += `✅ @${getName(u.userId)}\n`;
+          msg += `✅ @${u.name || getName(u.userId)}\n`;
         });
       }
 
       if (pending.length) {
         msg += `\n⚠️ *Missed & Fined ₹${FINE_AMOUNT}:*\n`;
         pending.forEach((u) => {
-          msg += `❌ @${getName(u.userId)} _(Total fine: ₹${u.fine})_\n`;
+          msg += `❌ @${u.name || getName(u.userId)} _(Total fine: ₹${u.fine})_\n`;
         });
       }
 
@@ -631,7 +631,7 @@ async function startBot() {
           .sort((a, b) => b.completed - a.completed)
           .forEach((u, i) => {
             const medal = ["🥇", "🥈", "🥉"][i] || "🔹";
-            msgText += `${medal} @${getName(u.userId)} → ${u.completed ? "✅ Done" : "❌ Pending"}\n`;
+            msgText += `${medal} @${u.name || getName(u.userId)} → ${u.completed ? "✅ Done" : "❌ Pending"}\n`;
           });
         msgText += `\n━━━━━━━━━━━━━━━\n🔥 _Keep grinding — consistency wins!_`;
 
@@ -831,12 +831,12 @@ async function startBot() {
 
         if (completed.length) {
           msg += `\n\n🏅 *Submitted:*\n`;
-          completed.forEach((u) => { msg += `✅ @${getName(u.userId)}\n`; });
+          completed.forEach((u) => { msg += `✅ @${u.name || getName(u.userId)}\n`; });
         }
 
         if (pending.length) {
           msg += `\n\n⚠️ *Would be fined ₹${FINE_AMOUNT}:*\n`;
-          pending.forEach((u) => { msg += `❌ @${getName(u.userId)} _(Current fine: ₹${u.fine || 0})_\n`; });
+          pending.forEach((u) => { msg += `❌ @${u.name || getName(u.userId)} _(Current fine: ₹${u.fine || 0})_\n`; });
         }
 
         msg += `\n━━━━━━━━━━━━━━━\n⚠️ _This is a TEST — no fines applied, no status reset._`;
@@ -1210,7 +1210,7 @@ async function startBot() {
           { upsert: true },
         );
 
-        const username = getName(dbUser);
+        const username = existing?.name || pushName || getName(dbUser);
         await safeSend(sock, chatId, {
           text: `🔥 *Great work, @${username}!*\n\n✅ Submission received!\n\n💪 _Keep showing up every day — consistency is what separates the best from the rest. You're on the right track!_ 🚀`,
           mentions: [dbUser],
@@ -1257,7 +1257,7 @@ async function startBot() {
         };
 
         // 🤖 AI Feedback (runs async, won't block submission)
-        generateFeedback(msg, dbUser, video.seconds || 60, todayStatus?.todayTopic || null, todayStatus?.todayQuestion || null, sock, { onProgress })
+        generateFeedback(msg, dbUser, video.seconds || 60, todayStatus?.todayTopic || null, todayStatus?.todayQuestion || null, sock, { onProgress, username })
           .then((feedbackText) => {
             storeResult(hash, feedbackText);
             const chunks = chunkMessage(feedbackText);
