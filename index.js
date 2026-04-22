@@ -7,7 +7,7 @@ import { Boom } from "@hapi/boom";
 import qrcode from "qrcode-terminal";
 import cron from "node-cron";
 import dotenv from "dotenv";
-import { connectDB } from "./db.js";
+import { connectDB, safeDB } from "./db.js";
 import User from "./models/userSchema.js";
 import Question from "./models/questionSchema.js";
 import Status from "./models/statusSchema.js";
@@ -149,15 +149,15 @@ async function startBot() {
 
   // ================= STATUS =================
   const getStatus = async () => {
-    let s = await Status.findOne();
-    if (!s) s = await Status.create({});
+    let s = await safeDB(() => Status.findOne());
+    if (!s) s = await safeDB(() => Status.create({}));
     return s;
   };
 
   // ================= DAILY QUESTION =================
   const sendQuestion = async () => {
     try {
-      const status = await getStatus();
+      const status = await safeDB(() => getStatus());
 
       if (status.questionSentToday) {
         console.log("🚫 Blocked: already sent today");
@@ -224,7 +224,7 @@ async function startBot() {
   // ================= REMINDER =================
   const sendReminder = async (title) => {
     try {
-      const users = await User.find();
+      const users = await safeDB(() => User.find());
       const pending = users.filter((u) => !u.completed);
 
       if (!pending.length) {
@@ -253,7 +253,7 @@ async function startBot() {
   // ================= DM REMINDER =================
   const sendDMReminder = async () => {
     try {
-      const users = await User.find();
+      const users = await safeDB(() => User.find());
       const pending = users.filter((u) => !u.completed);
 
       console.log(`📱 DM Reminder: ${pending.length} pending users at ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}`);
@@ -288,7 +288,7 @@ async function startBot() {
   // ================= FINAL WARNING =================
   const finalWarning = async () => {
     try {
-      const users = await User.find();
+      const users = await safeDB(() => User.find());
       const pending = users.filter((u) => !u.completed);
 
       console.log(`⏰ Final Warning - Pending: ${pending.length}`);
@@ -348,13 +348,12 @@ async function startBot() {
   // ================= DAILY REPORT =================
   const dailyReport = async () => {
     try {
-      let status = await Status.findOne();
-      if (!status) status = await Status.create({});
+      let status = await safeDB(() => Status.findOne());
+      if (!status) status = await safeDB(() => Status.create({}));
 
-      // Use all DB users directly - avoids @lid vs @s.whatsapp.net mismatch
-      const users = await User.find({
+      const users = await safeDB(() => User.find({
         userId: { $ne: null, $exists: true, $ne: "" }
-      });
+      }));
 
       const completed = users.filter((u) => u.completed);
       const pending = users.filter((u) => !u.completed);
