@@ -50,7 +50,16 @@ const convertToOgg = (input, output) => {
 // ================= HELPERS =================
 const getName = (userId) => {
   if (!userId || !userId.includes("@")) return "invalid";
-  return userId.split("@")[0];
+  // Strip device suffix (e.g. "918848096746:10@s.whatsapp.net" → "918848096746")
+  return userId.split("@")[0].split(":")[0];
+};
+
+// Returns the display name for use in @mention text.
+// WhatsApp shows a real tappable mention when the text contains @<phone_number>
+// and the mentions array contains the JID.
+const getMentionName = (userRecord) => {
+  if (!userRecord) return getName(userRecord?.userId || "");
+  return userRecord.name || getName(userRecord.userId);
 };
 
 // Returns saved name from DB record, falls back to phone number
@@ -125,7 +134,7 @@ async function startBot() {
           await safeSend(sock, TARGET_GROUP, {
             text:
               `🎉 *New Member Added!*\n\n` +
-              `Welcome to the group @${getName(id)} 👋\n\n` +
+              `Welcome to the group @${pushName || getName(id)} 👋\n\n` +
               `🔥 Stay active, complete daily speaking challenges, and keep improving every day!`,
             mentions: [id],
           });
@@ -1210,7 +1219,7 @@ async function startBot() {
           { upsert: true },
         );
 
-        const username = getName(dbUser);
+        const username = getMentionName(existing) || getName(dbUser);
         await safeSend(sock, chatId, {
           text: `🔥 *Great work, @${username}!*\n\n✅ Submission received!\n\n💪 _Keep showing up every day — consistency is what separates the best from the rest. You're on the right track!_ 🚀`,
           mentions: [dbUser],
@@ -1257,7 +1266,7 @@ async function startBot() {
         };
 
         // 🤖 AI Feedback (runs async, won't block submission)
-        generateFeedback(msg, dbUser, video.seconds || 60, todayStatus?.todayTopic || null, todayStatus?.todayQuestion || null, sock, { onProgress })
+        generateFeedback(msg, dbUser, video.seconds || 60, todayStatus?.todayTopic || null, todayStatus?.todayQuestion || null, sock, { onProgress, username })
           .then((feedbackText) => {
             storeResult(hash, feedbackText);
             const chunks = chunkMessage(feedbackText);
