@@ -55,10 +55,12 @@ const getName = (userId) => {
 };
 
 // Returns the display name for use in @mention text.
-// WhatsApp shows a real tappable mention when the text contains @<phone_number>
-// and the mentions array contains the JID.
+// Put the saved name in text + JID in mentions[] for the notification ping.
+// This shows "@shabeer" instead of "@+92 883 046 645 835"
 const getMentionName = (userRecord) => {
-  if (!userRecord) return getName(userRecord?.userId || "");
+  if (!userRecord) return "Unknown";
+  // Always use saved name if available — WhatsApp shows it as a proper mention
+  // Fall back to phone number only if no name saved
   return userRecord.name || getName(userRecord.userId);
 };
 
@@ -134,7 +136,7 @@ async function startBot() {
           await safeSend(sock, TARGET_GROUP, {
             text:
               `🎉 *New Member Added!*\n\n` +
-              `Welcome to the group @${pushName || getName(id)} 👋\n\n` +
+              `Welcome to the group @${getName(id)} 👋\n\n` +
               `🔥 Stay active, complete daily speaking challenges, and keep improving every day!`,
             mentions: [id],
           });
@@ -1219,7 +1221,7 @@ async function startBot() {
           { upsert: true },
         );
 
-        const username = getMentionName(existing) || getName(dbUser);
+        const username = getName(dbUser);
         await safeSend(sock, chatId, {
           text: `🔥 *Great work, @${username}!*\n\n✅ Submission received!\n\n💪 _Keep showing up every day — consistency is what separates the best from the rest. You're on the right track!_ 🚀`,
           mentions: [dbUser],
