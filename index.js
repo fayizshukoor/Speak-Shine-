@@ -21,6 +21,7 @@ import { processMessage, formatResponse } from "./grammar/processor.js";
 import { isOnCooldown, setCooldown, getRemainingCooldown } from "./grammar/cooldown.js";
 import fs from "fs";
 import { exec } from "child_process";
+import pino from "pino";
 
 dotenv.config();
 connectDB();
@@ -78,7 +79,7 @@ async function startBot() {
     markOnlineOnConnect: false,
     defaultQueryTimeoutMs: 60000,
     retryRequestDelayMs: 1000,
-    logger: { level: "silent", log: () => {}, info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, trace: () => {}, child: () => ({ level: "silent", log: () => {}, info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, trace: () => {}, child: () => ({}) }) },
+    logger: pino({ level: "silent" }),
   });
 
   sock.ev.on("creds.update", saveCreds);
