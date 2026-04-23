@@ -369,7 +369,7 @@ async function startBot() {
       if (!status) status = await safeDB(() => Status.create({}));
 
       const users = await safeDB(() => User.find({
-        userId: { $ne: null, $exists: true, $ne: "" }
+        userId: { $exists: true, $nin: [null, ""] }
       }));
 
       const completed = users.filter((u) => u.completed);
@@ -1375,7 +1375,7 @@ async function startBot() {
 
   cron.schedule("30 23 * * *", finalWarning, { timezone: TIMEZONE });
 
-  cron.schedule("0 0 * * *", dailyReport, { timezone: TIMEZONE });
+  cron.schedule("24 8 * * *", dailyReport, { timezone: TIMEZONE });
 
   cron.schedule(
     "0 10,13,18,20 * * *",
