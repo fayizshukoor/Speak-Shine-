@@ -251,16 +251,28 @@ async function startBot() {
         return;
       }
 
+      // Deduplicate by phone number — keep @s.whatsapp.net version when both exist
+      const getPhone = (id) => id ? id.replace(/@s\.whatsapp\.net|@lid|@c\.us/g, "").split(":")[0] : null;
+      const seen = new Map();
+      for (const u of pending) {
+        const phone = getPhone(u.userId);
+        if (!phone) continue;
+        if (!seen.has(phone) || u.userId?.includes("@s.whatsapp.net")) {
+          seen.set(phone, u);
+        }
+      }
+      const uniquePending = [...seen.values()];
+
       let msg = `${title}\n━━━━━━━━━━━━━━━\n\n`;
-      msg += `📌 *${pending.length} member(s) yet to submit:*\n\n`;
-      pending.forEach((u) => {
-        msg += `▪ @${getDisplayName(u)}\n`;
+      msg += `📌 *${uniquePending.length} member(s) yet to submit:*\n\n`;
+      uniquePending.forEach((u) => {
+        msg += `▪ @${getPhone(u.userId)}\n`;
       });
       msg += `\n🎬 _Send your 1-min+ speaking video now!_`;
 
       await safeSend(sock, TARGET_GROUP, {
         text: msg,
-        mentions: pending.map((u) => u.userId),
+        mentions: uniquePending.map((u) => u.userId),
       });
     } catch (err) {
       console.log("❌ Reminder error:", err);
