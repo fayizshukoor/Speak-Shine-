@@ -266,7 +266,8 @@ async function startBot() {
       let msg = `${title}\n━━━━━━━━━━━━━━━\n\n`;
       msg += `📌 *${uniquePending.length} member(s) yet to submit:*\n\n`;
       uniquePending.forEach((u) => {
-        msg += `▪ @${getPhone(u.userId)}\n`;
+        const num = u.userId.split("@")[0].split(":")[0];
+        msg += `▪ @${num}\n`;
       });
       msg += `\n🎬 _Send your 1-min+ speaking video now!_`;
 
@@ -1382,7 +1383,7 @@ async function startBot() {
   );
 
   cron.schedule(
-    "13 21 * * *",
+    "22 21 * * *",
     () =>
       sendReminder(
         `🌙 *Night Reminder*\n\n😴 _It's getting late — submit your video before midnight!_`,
