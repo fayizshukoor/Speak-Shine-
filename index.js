@@ -7,7 +7,7 @@ import { Boom } from "@hapi/boom";
 import qrcode from "qrcode-terminal";
 import cron from "node-cron";
 import dotenv from "dotenv";
-import { connectDB, safeDB } from "./db.js";
+import { connectDB, safeDB, startDBHealthCheck } from "./db.js";
 import User from "./models/userSchema.js";
 import Question from "./models/questionSchema.js";
 import Status from "./models/statusSchema.js";
@@ -58,13 +58,13 @@ const _isBaileysNoise = (args) => {
   }
   return false;
 };
-const _origInfo  = console.info.bind(console);
-const _origWarn  = console.warn.bind(console);
-const _origLog   = console.log.bind(console);
+const _origInfo = console.info.bind(console);
+const _origWarn = console.warn.bind(console);
+const _origLog = console.log.bind(console);
 const _origError = console.error.bind(console);
-console.info  = (...args) => { if (!_isBaileysNoise(args)) _origInfo(...args); };
-console.warn  = (...args) => { if (!_isBaileysNoise(args)) _origWarn(...args); };
-console.log   = (...args) => { if (!_isBaileysNoise(args)) _origLog(...args);  };
+console.info = (...args) => { if (!_isBaileysNoise(args)) _origInfo(...args); };
+console.warn = (...args) => { if (!_isBaileysNoise(args)) _origWarn(...args); };
+console.log = (...args) => { if (!_isBaileysNoise(args)) _origLog(...args); };
 console.error = (...args) => { if (!_isBaileysNoise(args)) _origError(...args); };
 
 const TARGET_GROUP = process.env.TARGET_GROUP;
@@ -357,7 +357,7 @@ async function startBot() {
           const phone = p.id.split("@")[0].split(":")[0];
           participantMap[phone] = p.id;
         }
-      } catch (_) {}
+      } catch (_) { }
 
       // Deduplicate by phone number
       const getPhone = (id) => id ? id.replace(/@s\.whatsapp\.net|@lid|@c\.us/g, "").split(":")[0] : null;
@@ -977,7 +977,7 @@ async function startBot() {
             const phone = p.id.split("@")[0].split(":")[0];
             participantMap[phone] = p.id;
           }
-        } catch (_) {}
+        } catch (_) { }
 
         // Sort by streak descending, then by fine ascending
         const sorted = [...members].sort((a, b) => {
@@ -1640,7 +1640,7 @@ async function startBot() {
             p.id.split("@")[0].split(":")[0] === userPhone
           );
           if (participant) actualUserJid = participant.id;
-        } catch (_) {}
+        } catch (_) { }
 
         await safeSend(sock, chatId, {
           text: `🔥 *Great work, @${userPhone}!*\n\n✅ Submission received!\n\n💪 _Keep showing up every day — consistency is what separates the best from the rest. You're on the right track!_ 🚀`,
@@ -1765,76 +1765,78 @@ async function startBot() {
   // ================= CRON =================
   if (!cronsRegistered) {
     cronsRegistered = true;
+    console.log("⏰ Registering cron jobs...");
 
-  cron.schedule("30 7 * * *", sendGoodMorning, { timezone: TIMEZONE });
+    cron.schedule("30 7 * * *", sendGoodMorning, { timezone: TIMEZONE });
 
-  cron.schedule("0 8 * * *", sendQuestion, { timezone: TIMEZONE });
+    cron.schedule("0 8 * * *", sendQuestion, { timezone: TIMEZONE });
 
-  cron.schedule(
-    "*/2 8 * * *",
-    async () => {
-      const now = new Date();
-      const minutes = now.getMinutes();
+    cron.schedule(
+      "*/2 8 * * *",
+      async () => {
+        const now = new Date();
+        const minutes = now.getMinutes();
 
-      if (minutes < 2 || minutes > 30) return; // only run 8:02 to 8:30
+        if (minutes < 2 || minutes > 30) return; // only run 8:02 to 8:30
 
-      await sendQuestion();
-    },
-    { timezone: TIMEZONE },
-  );
+        await sendQuestion();
+      },
+      { timezone: TIMEZONE },
+    );
 
-  cron.schedule(
-    "0 15 * * *",
-    () =>
-      sendReminder(
-        `⏰ *Reminder*\n\n🗣️ _Don't forget to submit your speaking video today!_`,
-      ),
-    {
-      timezone: TIMEZONE,
-    },
-  );
+    cron.schedule(
+      "0 15 * * *",
+      () =>
+        sendReminder(
+          `⏰ *Reminder*\n\n🗣️ _Don't forget to submit your speaking video today!_`,
+        ),
+      {
+        timezone: TIMEZONE,
+      },
+    );
 
-  cron.schedule(
-    "0 21 * * *",
-    () =>
-      sendReminder(
-        `🌙 *Night Reminder*\n\n😴 _It's getting late — submit your video before midnight!_`,
-      ),
-    {
-      timezone: TIMEZONE,
-    },
-  );
-  
+    cron.schedule(
+      "0 21 * * *",
+      () =>
+        sendReminder(
+          `🌙 *Night Reminder*\n\n😴 _It's getting late — submit your video before midnight!_`,
+        ),
+      {
+        timezone: TIMEZONE,
+      },
+    );
 
-  cron.schedule("30 22 * * *", sendDMReminder, { timezone: TIMEZONE });
 
-  cron.schedule("30 23 * * *", finalWarning, { timezone: TIMEZONE });
+    cron.schedule("30 22 * * *", sendDMReminder, { timezone: TIMEZONE });
 
-  cron.schedule("0 0 * * *", dailyReport, { timezone: TIMEZONE });
+    cron.schedule("30 23 * * *", finalWarning, { timezone: TIMEZONE });
 
-  cron.schedule("5 0 * * *", dailyReset, { timezone: TIMEZONE });
+    cron.schedule("0 0 * * *", dailyReport, { timezone: TIMEZONE });
 
-  // ================= TEST CRON (sends question to owner every min, no delete) =================
-  if (false) {
-    cron.schedule("* * * * *", async () => {
-      try {
-        const q = await Question.aggregate([{ $sample: { size: 1 } }]);
-        if (!q || !q.length) return;
-        const question = q[0];
+    cron.schedule("5 0 * * *", dailyReset, { timezone: TIMEZONE });
 
-        await generatePoster(question);
+    // ================= TEST CRON (sends question to owner every min, no delete) =================
+    if (false) {
+      cron.schedule("* * * * *", async () => {
+        try {
+          const q = await Question.aggregate([{ $sample: { size: 1 } }]);
+          if (!q || !q.length) return;
+          const question = q[0];
 
-        await safeSend(sock, OWNER, {
-          image: { url: "./daily.png" },
-        });
+          await generatePoster(question);
 
-        console.log("🧪 Test question sent to owner");
-      } catch (err) {
-        console.log("❌ Test cron error:", err);
-      }
-    }, { timezone: TIMEZONE });
-  }
+          await safeSend(sock, OWNER, {
+            image: { url: "./daily.png" },
+          });
 
+          console.log("🧪 Test question sent to owner");
+        } catch (err) {
+          console.log("❌ Test cron error:", err);
+        }
+      }, { timezone: TIMEZONE });
+    }
+
+    console.log("✅ All cron jobs registered (7:30, 8:00, 8:02-8:30, 15:00, 21:00, 22:30, 23:30, 00:00, 00:05)");
   } // end cronsRegistered guard
 
   // ================= CONNECTION =================
@@ -1846,6 +1848,13 @@ async function startBot() {
     if (connection === "open") {
       reconnecting = false;
       console.log("✅ Connected");
+
+      // Start DB health check on first connect only
+      if (!global._dbHealthStarted) {
+        global._dbHealthStarted = true;
+        startDBHealthCheck((text) => safeSend(sock, OWNER, { text }));
+        console.log("💚 DB health check started (every 5 min)");
+      }
     }
 
     if (connection === "close") {
