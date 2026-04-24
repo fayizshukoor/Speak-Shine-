@@ -1,6 +1,7 @@
 import fs from "fs";
 import FormData from "form-data";
 import fetch from "node-fetch";
+import { getTextKey, markKeyExhausted, parseRetryAfter } from "./groqKeyManager.js";
 
 // Segments with avg_logprob below this threshold are likely hallucinated — exclude them
 const SEGMENT_CONFIDENCE_THRESHOLD = -0.8;
@@ -14,9 +15,6 @@ const WORD_CLARITY_THRESHOLD = 0.4;
  * duration, pronunciation issues, and rhythm stats.
  */
 export async function transcribe(audioPath) {
-  const GROQ_API_KEY = process.env.GROQ_API_KEY;
-  if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY is not set in .env");
-
   const form = new FormData();
   form.append("file", fs.createReadStream(audioPath), {
     filename: "audio.mp3",
@@ -28,14 +26,34 @@ export async function transcribe(audioPath) {
   form.append("timestamp_granularities[]", "word");
   form.append("timestamp_granularities[]", "segment");
 
-  const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${GROQ_API_KEY}`,
-      ...form.getHeaders(),
-    },
-    body: form,
-  });
+  // Retry with next key on 429
+  let res;
+  while (true) {
+    const apiKey = getTextKey();
+    if (!apiKey) throw new Error("All Groq API keys exhausted — transcription unavailable");
+
+    res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, ...form.getHeaders() },
+      body: form,
+    });
+
+    if (res.status === 429) {
+      const errText = await res.text();
+      markKeyExhausted(apiKey, parseRetryAfter(errText) || undefined);
+      // Rebuild form — stream can only be read once
+      form._streams = [];
+      form.append("file", fs.createReadStream(audioPath), { filename: "audio.mp3", contentType: "audio/mpeg" });
+      form.append("model", "whisper-large-v3");
+      form.append("response_format", "verbose_json");
+      form.append("language", "en");
+      form.append("timestamp_granularities[]", "word");
+      form.append("timestamp_granularities[]", "segment");
+      continue;
+    }
+
+    break;
+  }
 
   if (!res.ok) {
     const err = await res.text();

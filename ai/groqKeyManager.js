@@ -50,41 +50,62 @@ const KEYS = loadKeys();
  */
 const exhaustedUntil = new Map();
 
-// Round-robin cursor
-let cursor = 0;
+// Round-robin cursors — separate for vision and text so they don't interfere
+let visionCursor = 0;
+let textCursor = 0;
+
+// ---------------------------------------------------------------------------
+// Internal helper — picks next available key from a given cursor
+// ---------------------------------------------------------------------------
+
+function pickKey(cursorRef, label) {
+  if (KEYS.length === 0) return { key: null };
+
+  const now = Date.now();
+  for (let i = 0; i < KEYS.length; i++) {
+    const idx = (cursorRef.value + i) % KEYS.length;
+    const key = KEYS[idx];
+    const blockedUntil = exhaustedUntil.get(key) ?? 0;
+
+    if (now >= blockedUntil) {
+      cursorRef.value = (idx + 1) % KEYS.length;
+      return { key };
+    }
+  }
+
+  const earliest = Math.min(...[...exhaustedUntil.values()]);
+  const waitSec = Math.ceil((earliest - now) / 1000);
+  console.log(`[KeyManager] ⚠️ All ${KEYS.length} Groq key(s) exhausted (${label}). Next reset in ~${waitSec}s`);
+  return { key: null };
+}
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /**
- * Returns the next available Groq API key, or null if all are exhausted.
- * Uses round-robin with exhaustion awareness.
- *
+ * Returns the next available Groq API key for vision (image) calls.
+ * Uses its own round-robin cursor independent of text calls.
  * @returns {string | null}
  */
 export function getVisionKey() {
-  if (KEYS.length === 0) return null;
+  const ref = { value: visionCursor };
+  const { key } = pickKey(ref, "vision");
+  visionCursor = ref.value;
+  return key;
+}
 
-  const now = Date.now();
-  // Try each key starting from cursor
-  for (let i = 0; i < KEYS.length; i++) {
-    const idx = (cursor + i) % KEYS.length;
-    const key = KEYS[idx];
-    const blockedUntil = exhaustedUntil.get(key) ?? 0;
-
-    if (now >= blockedUntil) {
-      // Advance cursor for next call (round-robin)
-      cursor = (idx + 1) % KEYS.length;
-      return key;
-    }
-  }
-
-  // All keys exhausted — log the earliest reset time
-  const earliest = Math.min(...[...exhaustedUntil.values()]);
-  const waitSec = Math.ceil((earliest - now) / 1000);
-  console.log(`[KeyManager] ⚠️ All ${KEYS.length} Groq key(s) exhausted. Next reset in ~${waitSec}s`);
-  return null;
+/**
+ * Returns the next available Groq API key for text calls
+ * (Whisper transcription, Llama speech analysis).
+ * Uses its own round-robin cursor independent of vision calls.
+ * @returns {string | null}
+ */
+export function getTextKey() {
+  const ref = { value: textCursor };
+  const { key } = pickKey(ref, "text");
+  textCursor = ref.value;
+  return key;
 }
 
 /**

@@ -1,5 +1,6 @@
 import fetch from "node-fetch";
 import { checkGrammar } from "./grammarCheck.js";
+import { getTextKey, markKeyExhausted, parseRetryAfter } from "./groqKeyManager.js";
 
 // ---------------------------------------------------------------------------
 // Filler word detection
@@ -169,8 +170,6 @@ function detectPauses(words, pauseThreshold = 1.5) {
  * @param {string|null} questionTopic - Today's daily question topic (optional)
  */
 export async function analyzeSpeech(transcript, durationSeconds, words = [], questionTopic = null, questionText = null, pronunciationIssues = [], rhythm = null) {
-  const GROQ_API_KEY = process.env.GROQ_API_KEY;
-  if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY is not set in .env");
 
   // --- Compute real stats from Whisper data ---
   const fillerWords = detectFillerWords(transcript);
