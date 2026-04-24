@@ -1725,18 +1725,16 @@ async function startBot() {
         const userRecord = await User.findOne({ userId: dbUser });
         const senderPhone = dbUser.split("@")[0].split(":")[0];
 
-        // Resolve exact participant JID from group metadata (needed for tappable mention + DM)
-        let actualUserJid = dbUser;
-        try {
-          const meta = await sock.groupMetadata(chatId);
-          const participant = meta.participants.find(
-            p => p.id.split("@")[0].split(":")[0] === senderPhone
-          );
-          if (participant) actualUserJid = participant.id;
-        } catch (_) { }
+        // Find the exact participant JID from already-fetched groupMeta
+        // groupMeta.participants contains the real JIDs (including device suffix like :10@s.whatsapp.net)
+        const senderParticipant = groupMeta.participants.find(
+          p => p.id.split("@")[0].split(":")[0] === senderPhone
+        );
+        const actualUserJid = senderParticipant?.id || `${senderPhone}@s.whatsapp.net`;
 
-        // DM JID: strip device suffix, use @s.whatsapp.net
-        const dmJid = `${actualUserJid.split("@")[0].split(":")[0]}@s.whatsapp.net`;
+        // For DM: use the full JID as-is from group metadata (includes device suffix)
+        // This is the only JID WhatsApp will actually deliver a DM to
+        const dmJid = actualUserJid;
 
         if (!userRecord) {
           return safeSend(sock, chatId, {
