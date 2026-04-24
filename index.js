@@ -568,12 +568,16 @@ async function startBot() {
 
       // Match owner by phone number since WhatsApp may use @lid format
       const ownerNumber = OWNER.replace("@s.whatsapp.net", "").replace("@lid", "");
-      const isOwnerDM = chatId === OWNER ||
+      const isOwnerDM = !chatId.includes("@g.us") && (
+        chatId === OWNER ||
         chatId.includes(ownerNumber) ||
-        (msg.key.fromMe && dmVideo && !chatId.includes("@g.us"));
+        (msg.key.fromMe && dmVideo)
+      );
 
-      // Block fromMe except owner DM videos
-      if (msg.key.fromMe && !(isOwnerDM && dmVideo)) return;
+      // Block fromMe messages EXCEPT:
+      // - Owner DM videos (for testing feedback)
+      // - Owner DM text commands (fromMe can happen when bot and owner share a session)
+      if (msg.key.fromMe && !(isOwnerDM && (dmVideo || text.startsWith("/")))) return;
 
       const msgId = msg.key.id;
       if (processedMsgIds.has(msgId)) return;
