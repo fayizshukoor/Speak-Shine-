@@ -148,7 +148,7 @@ describe('Visual Analysis — 8 frames via 2 batches of 4', () => {
     expect(timestamps).toEqual([15, 30, 45, 60, 75, 90, 105, 120]);
   });
 
-  it('merges scores from both batches by averaging', async () => {
+  it('merges scores from both batches — validator produces final reconciled result', async () => {
     const videoPath = 'test_video.mp4';
     mockExec(120);
     mockFs(videoPath);
@@ -157,13 +157,37 @@ describe('Visual Analysis — 8 frames via 2 batches of 4', () => {
     let callCount = 0;
     fetch.mockImplementation(async (_url, options) => {
       callCount++;
+      const body = JSON.parse(options.body);
+      const isTextOnly = !body.messages[0].content.some?.(i => i?.type === 'image_url')
+        && typeof body.messages[0].content === 'string';
+
+      // Batch 1: eye contact 6, body language 8
+      // Batch 2: eye contact 8, body language 6
+      // Validator (3rd call, text-only): reconciles to 7 each
+      if (callCount === 3 || isTextOnly) {
+        return {
+          ok: true, status: 200,
+          json: async () => ({
+            choices: [{
+              message: {
+                content: JSON.stringify({
+                  eyeContact: 7, bodyLanguage: 7, facialExpression: 7, overallPresence: 7,
+                  eyeContactNote: 'Reconciled note', bodyLanguageNote: 'Reconciled note',
+                  expressionNote: 'Reconciled note',
+                  visualSuggestions: ['tip'], visualStrengths: ['strength'],
+                }),
+              },
+            }],
+          }),
+        };
+      }
+
       const scores = callCount === 1
         ? { eyeContact: 6, bodyLanguage: 8, facialExpression: 6, overallPresence: 6 }
         : { eyeContact: 8, bodyLanguage: 6, facialExpression: 8, overallPresence: 8 };
 
       return {
-        ok: true,
-        status: 200,
+        ok: true, status: 200,
         json: async () => ({
           choices: [{
             message: {
@@ -180,10 +204,12 @@ describe('Visual Analysis — 8 frames via 2 batches of 4', () => {
 
     const result = await analyzeVideo(videoPath);
 
-    expect(result.eyeContact).toBe(7);       // avg(6, 8)
-    expect(result.bodyLanguage).toBe(7);     // avg(8, 6)
-    expect(result.facialExpression).toBe(7); // avg(6, 8)
-    expect(result.overallPresence).toBe(7);  // avg(6, 8)
+    // Validator reconciles to 7 for all scores
+    expect(result.eyeContact).toBe(7);
+    expect(result.bodyLanguage).toBe(7);
+    expect(result.facialExpression).toBe(7);
+    expect(result.overallPresence).toBe(7);
+    expect(result.eyeContactNote).toBe('Reconciled note');
   });
 
   it('returns partial result if one batch fails', async () => {
@@ -218,6 +244,44 @@ describe('Visual Analysis — 8 frames via 2 batches of 4', () => {
     const result = await analyzeVideo(videoPath);
     expect(result).not.toBeNull();
     expect(result.eyeContact).toBe(7);
+  });
+
+  it('makes 3 API calls total: 2 vision batches + 1 text validator', async () => {
+    const videoPath = 'test_video.mp4';
+    mockExec(120);
+    mockFs(videoPath);
+    mockFrameCache();
+
+    const apiCalls = [];
+    fetch.mockImplementation(async (_url, options) => {
+      const body = JSON.parse(options.body);
+      const hasImages = Array.isArray(body.messages[0].content) &&
+        body.messages[0].content.some(i => i?.type === 'image_url');
+      apiCalls.push({ model: body.model, hasImages });
+
+      return {
+        ok: true, status: 200,
+        json: async () => ({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                eyeContact: 7, bodyLanguage: 7, facialExpression: 7, overallPresence: 7,
+                eyeContactNote: 'Good', bodyLanguageNote: 'Good', expressionNote: 'Good',
+                visualSuggestions: ['tip'], visualStrengths: ['strength'],
+              }),
+            },
+          }],
+        }),
+      };
+    });
+
+    await analyzeVideo(videoPath);
+
+    expect(apiCalls).toHaveLength(3);
+    expect(apiCalls[0].hasImages).toBe(true);  // batch 1 — vision
+    expect(apiCalls[1].hasImages).toBe(true);  // batch 2 — vision
+    expect(apiCalls[2].hasImages).toBe(false); // validator — text only
+    expect(apiCalls[2].model).toBe('llama-3.3-70b-versatile');
   });
 
   it('returns null when GROQ_API_KEY is not set', async () => {
