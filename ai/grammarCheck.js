@@ -44,6 +44,7 @@ export async function checkGrammar(transcript, aiErrors = []) {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: params.toString(),
+      timeout: 8000, // 8s max — never block the pipeline waiting for LT
     });
 
     if (!res.ok) {

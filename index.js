@@ -28,6 +28,37 @@ import pino from "pino";
 dotenv.config();
 connectDB();
 
+// ---------------------------------------------------------------------------
+// Suppress Baileys Signal protocol session noise from console output.
+// These logs (pubKey, privKey, Closing session, ephemeralKeyPair, etc.) are
+// internal cryptographic session management — harmless but very verbose.
+// ---------------------------------------------------------------------------
+const _origLog = console.log.bind(console);
+console.log = (...args) => {
+  const msg = args[0];
+  if (typeof msg === "string" && (
+    msg.includes("pubKey") ||
+    msg.includes("privKey") ||
+    msg.includes("Closing session") ||
+    msg.includes("Closing open session") ||
+    msg.includes("ephemeralKeyPair") ||
+    msg.includes("lastRemoteEphemeralKey") ||
+    msg.includes("rootKey") ||
+    msg.includes("registrationId") ||
+    msg.includes("remoteIdentityKey") ||
+    msg.includes("baseKeyType") ||
+    msg.includes("pendingPreKey") ||
+    msg.includes("previousCounter") ||
+    msg.includes("_chains") ||
+    msg.includes("chainKey") ||
+    msg.includes("chainType") ||
+    msg.includes("messageKeys") ||
+    msg.includes("indexInfo") ||
+    msg.includes("currentRatchet")
+  )) return;
+  _origLog(...args);
+};
+
 const TARGET_GROUP = process.env.TARGET_GROUP;
 const OWNER = process.env.OWNER_NUMBER;
 const TIMEZONE = "Asia/Kolkata";
