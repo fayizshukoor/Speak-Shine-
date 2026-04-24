@@ -7,6 +7,7 @@ const statusSchema = new mongoose.Schema({
   fineAppliedToday: { type: Boolean, default: false },
   todayTopic: { type: String, default: null },    // topic (broad subject)
   todayQuestion: { type: String, default: null }, // actual question asked to members
+  recentCategories: { type: [String], default: [] },  // last 7 used categories (dedup window)
 }, { timestamps: true });
 
 export default mongoose.model("Status", statusSchema);

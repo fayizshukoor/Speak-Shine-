@@ -304,8 +304,23 @@ async function startBot() {
         // Don't return — continue sending today's question normally
       }
 
-      // 🎯 Random Question
-      const q = await Question.aggregate([{ $sample: { size: 1 } }]);
+      // 🎯 Random Question — avoid repeating categories from last 7 days
+      const recentCategories = status?.recentCategories || [];
+      let q = null;
+
+      // Try to find a question whose category wasn't used recently
+      if (recentCategories.length > 0) {
+        const freshQuestions = await Question.aggregate([
+          { $match: { category: { $nin: recentCategories } } },
+          { $sample: { size: 1 } },
+        ]);
+        if (freshQuestions?.length) q = freshQuestions;
+      }
+
+      // Fallback: all categories exhausted or no category field — just pick any random
+      if (!q || !q.length) {
+        q = await Question.aggregate([{ $sample: { size: 1 } }]);
+      }
 
       if (!q || !q.length) return;
 
@@ -323,10 +338,19 @@ async function startBot() {
       if (sent) {
         await Question.findByIdAndDelete(question._id);
 
-        // Save today's topic so AI feedback can check relevance
-        await Status.updateOne({}, { $set: { todayTopic: question.topic || null, todayQuestion: question.question || null } });
+        // Update recentCategories — keep last 7, push today's category
+        const updatedRecent = question.category
+          ? [...new Set([...(status?.recentCategories || []), question.category])].slice(-7)
+          : (status?.recentCategories || []);
 
-        console.log("✅ Poster question sent");
+        // Save today's topic so AI feedback can check relevance
+        await Status.updateOne({}, { $set: {
+          todayTopic: question.topic || null,
+          todayQuestion: question.question || null,
+          recentCategories: updatedRecent,
+        }});
+
+        console.log(`✅ Poster question sent | Category: ${question.category || "N/A"} | Recent: [${updatedRecent.join(", ")}]`);
       } else {
         // Send failed — release the lock so it can retry
         await Status.updateOne({}, { $set: { questionSentToday: false } });
