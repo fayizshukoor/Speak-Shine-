@@ -38,9 +38,10 @@ function checkAudioQuality(audioPath) {
 export async function extractAudio(videoPath, id) {
   return new Promise((resolve, reject) => {
     const audioPath = path.resolve(`./tmp/audio_${id}.mp3`);
-    // Use 96k bitrate for better transcription quality (was 64k)
+    // Use 64k for longer videos to stay well under Groq's 25MB file size limit.
+    // 64kbps × 600s (10 min) = ~4.8MB — safe for any reasonable video length.
     exec(
-      `ffmpeg -i "${videoPath}" -vn -ar 16000 -ac 1 -b:a 96k "${audioPath}" -y`,
+      `ffmpeg -i "${videoPath}" -vn -ar 16000 -ac 1 -b:a 64k "${audioPath}" -y`,
       async (err) => {
         if (err) return reject(err);
 
