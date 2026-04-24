@@ -1,7 +1,7 @@
 ﻿import { exec } from "child_process";
 import fs from "fs";
+import path from "path";
 import fetch from "node-fetch";
-import FrameCache from "../models/frameCacheSchema.js";
 import { getVisionKey, markKeyExhausted, parseRetryAfter, keyStatus } from "./groqKeyManager.js";
 
 const FRAME_COUNT = 8;
@@ -28,30 +28,20 @@ function getVideoDuration(videoPath) {
 }
 
 /**
- * Extracts a single frame, stores it in MongoDB, and returns the DB _id.
- * The base64 string is never held in Node.js heap beyond this function.
+ * Extracts a single frame to a temp file and returns { framePath, timestamp, frameIndex }.
+ * Returns null if extraction fails.
  */
-async function extractAndStoreFrame(videoPath, timestamp, videoId, frameIndex) {
+async function extractFrame(videoPath, timestamp, frameIndex, tmpDir) {
+  const framePath = path.join(tmpDir, `frame_${frameIndex}_${timestamp}.jpg`);
   return new Promise((resolve) => {
-    const framePath = `${videoPath}_frame_${timestamp}.jpg`;
     exec(
       `ffmpeg -ss ${timestamp} -i "${videoPath}" -frames:v 1 -q:v 3 -vf "scale=640:-1" "${framePath}" -y`,
-      async (err) => {
+      (err) => {
         if (err) return resolve(null);
         if (!fs.existsSync(framePath)) return resolve(null);
-        try {
-          const buffer = fs.readFileSync(framePath);
-          fs.unlinkSync(framePath);
-          if (buffer.length < 1000) return resolve(null);
-
-          // Store in MongoDB — free buffer from memory immediately
-          const base64 = buffer.toString("base64");
-          const doc = await FrameCache.create({ videoId, frameIndex, timestamp, base64 });
-          return resolve(doc._id);
-        } catch (e) {
-          console.log("Frame store error:", e.message);
-          resolve(null);
-        }
+        const size = fs.statSync(framePath).size;
+        if (size < 1000) { fs.unlinkSync(framePath); return resolve(null); }
+        resolve({ framePath, timestamp, frameIndex });
       }
     );
   });
@@ -59,14 +49,14 @@ async function extractAndStoreFrame(videoPath, timestamp, videoId, frameIndex) {
 
 /**
  * Extracts FRAME_COUNT frames spaced evenly by video duration.
- * Timestamp formula: Math.floor(duration / FRAME_COUNT * i) for i = 1..FRAME_COUNT
- * e.g. 120s video → timestamps at 15, 30, 45, 60, 75, 90, 105, 120s
+ * Returns array of { framePath, timestamp, frameIndex } objects.
+ * All frames are written to tmpDir as JPEG files.
  */
-async function extractAndStoreFrames(videoPath, videoId) {
+async function extractFrames(videoPath, tmpDir) {
   if (!fs.existsSync(videoPath)) throw new Error(`Video file not found: ${videoPath}`);
-  const duration = await getVideoDuration(videoPath);
+  fs.mkdirSync(tmpDir, { recursive: true });
 
-  // duration / FRAME_COUNT spacing — e.g. 120s / 8 = every 15s
+  const duration = await getVideoDuration(videoPath);
   const timestamps = [];
   for (let i = 1; i <= FRAME_COUNT; i++) {
     timestamps.push(Math.max(1, Math.floor((duration / FRAME_COUNT) * i)));
@@ -74,26 +64,46 @@ async function extractAndStoreFrames(videoPath, videoId) {
 
   console.log(`[Visual] duration=${duration}s, interval=${(duration / FRAME_COUNT).toFixed(1)}s, timestamps=[${timestamps.join(", ")}]`);
 
-  // Extract all frames in parallel — each stores directly to MongoDB so memory stays low
+  // Extract all frames in parallel
   const results = await Promise.all(
-    timestamps.map((ts, i) => extractAndStoreFrame(videoPath, ts, videoId, i))
+    timestamps.map((ts, i) => extractFrame(videoPath, ts, i, tmpDir))
   );
 
   return results.filter(Boolean);
 }
 
 /**
- * Sends one batch of frameDocs to Groq Vision and returns the parsed result.
- * batchInfo: { index: 0-based batch number, total: total batches, startSec, endSec }
- * Returns null on any failure.
+ * Reads a frame file as base64, then immediately deletes it to free disk space.
  */
-async function analyzeFrameBatch(frameDocs, batchLabel, batchInfo = {}) {
+function readAndDeleteFrame(framePath) {
+  try {
+    const base64 = fs.readFileSync(framePath).toString("base64");
+    fs.unlinkSync(framePath);
+    return base64;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Cleans up all remaining frame files in tmpDir.
+ */
+function cleanupFrames(frames) {
+  for (const f of frames) {
+    try { if (fs.existsSync(f.framePath)) fs.unlinkSync(f.framePath); } catch {}
+  }
+}
+
+/**
+ * Sends one batch of frames to Groq Vision and returns the parsed result.
+ * Reads each frame file just before sending, then deletes it immediately.
+ */
+async function analyzeFrameBatch(frames, batchLabel, batchInfo = {}) {
   const { index = 0, total = 1, startSec = null, endSec = null } = batchInfo;
 
-  // Tell the model which part of the video these frames cover so its notes are accurate
   const timeContext = (startSec !== null && endSec !== null)
-    ? `These ${frameDocs.length} frame(s) are from the ${index === 0 ? "first" : index === total - 1 ? "last" : "middle"} part of the video (approximately ${formatSec(startSec)}–${formatSec(endSec)}).`
-    : `These ${frameDocs.length} frame(s) are from part ${index + 1} of ${total} of the video.`;
+    ? `These ${frames.length} frame(s) are from the ${index === 0 ? "first" : index === total - 1 ? "last" : "middle"} part of the video (approximately ${formatSec(startSec)}–${formatSec(endSec)}).`
+    : `These ${frames.length} frame(s) are from part ${index + 1} of ${total} of the video.`;
 
   const prompt = `You are an expert public speaking coach analyzing video frames of a student giving a spoken English presentation.
 ${timeContext}
@@ -102,18 +112,21 @@ Do NOT reference frame numbers in your notes — describe what you see naturally
 Return ONLY valid JSON (no markdown, no extra text):
 {"eyeContact":<1-10>,"bodyLanguage":<1-10>,"facialExpression":<1-10>,"overallPresence":<1-10>,"eyeContactNote":"<observation>","bodyLanguageNote":"<observation>","expressionNote":"<observation>","visualSuggestions":["<tip>","<tip>"],"visualStrengths":["<positive>"]}`;
 
-  const userContent = [
-    { type: "text", text: prompt },
-    ...frameDocs.map((doc) => ({
-      type: "image_url",
-      image_url: { url: `data:image/jpeg;base64,${doc.base64}` },
-    })),
-  ];
+  // Read frames from disk and build request content — delete each file immediately after reading
+  const imageContent = frames.map((f) => {
+    const base64 = readAndDeleteFrame(f.framePath);
+    if (!base64) return null;
+    return { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64}` } };
+  }).filter(Boolean);
 
-  // Free base64 from memory before the API call
-  frameDocs.forEach((doc) => { doc.base64 = null; });
+  if (imageContent.length === 0) {
+    console.log(`[Visual] ${batchLabel} no readable frames`);
+    return null;
+  }
 
-  // Try each available key — if one is rate-limited, rotate to the next
+  const userContent = [{ type: "text", text: prompt }, ...imageContent];
+
+  // Try each available key — rotate on 429
   while (true) {
     const apiKey = getVisionKey();
     if (!apiKey) {
@@ -134,9 +147,7 @@ Return ONLY valid JSON (no markdown, no extra text):
 
     if (res.status === 429) {
       const errText = await res.text();
-      const retryMs = parseRetryAfter(errText);
-      markKeyExhausted(apiKey, retryMs || undefined);
-      // Loop — try next available key
+      markKeyExhausted(apiKey, parseRetryAfter(errText) || undefined);
       continue;
     }
 
@@ -184,19 +195,12 @@ Return ONLY valid JSON (no markdown, no extra text):
   }
 }
 
-/**
- * Merges two batch results by averaging numeric scores and combining notes/arrays.
- * If only one batch succeeded, returns that result directly.
- */
 function mergeBatchResults(a, b) {
   if (!a && !b) return null;
   if (!a) return b;
   if (!b) return a;
 
   const avg = (x, y) => Math.round((x + y) / 2);
-
-  // Combine notes: join both observations so neither batch is dropped.
-  // Skip if they're identical or one is the generic fallback.
   const combineNotes = (noteA, noteB) => {
     const a = (noteA || "").trim();
     const b = (noteB || "").trim();
@@ -217,26 +221,12 @@ function mergeBatchResults(a, b) {
     eyeContactNote:   combineNotes(a.eyeContactNote,   b.eyeContactNote),
     bodyLanguageNote: combineNotes(a.bodyLanguageNote, b.bodyLanguageNote),
     expressionNote:   combineNotes(a.expressionNote,   b.expressionNote),
-    // Deduplicate and combine suggestions/strengths
     visualSuggestions: [...new Set([...(a.visualSuggestions ?? []), ...(b.visualSuggestions ?? [])])],
     visualStrengths:   [...new Set([...(a.visualStrengths ?? []),   ...(b.visualStrengths ?? [])])],
   };
 }
 
-/**
- * Validation pass — sends all batch assessments to a text-only LLM.
- * The validator reviews every batch result, spots contradictions, and
- * produces a single reconciled, accurate final score + clean notes.
- *
- * Falls back to `merged` if the validation call fails.
- *
- * @param {object[]} batchResults  - Array of non-null batch results
- * @param {object}   merged        - Pre-merged fallback result
- * @param {string}   GROQ_API_KEY
- * @returns {Promise<object|null>}
- */
 async function validateAndReconcile(batchResults, merged) {
-  // Summarise each batch result as readable text for the validator
   const batchSummaries = batchResults.map((r, i) => {
     return `Assessment ${i + 1} (${i === 0 ? "first half" : i === batchResults.length - 1 ? "second half" : `part ${i + 1}`} of video):
 - Eye Contact: ${r.eyeContact}/10 — ${r.eyeContactNote ?? ""}
@@ -250,9 +240,9 @@ async function validateAndReconcile(batchResults, merged) {
   const prompt = `You are a senior public speaking coach reviewing multiple partial assessments of the same student's video presentation. Each assessment covers a different segment of the video.
 
 Your job is to:
-1. Reconcile any contradictions between assessments (e.g. one says eye contact is 8, another says 3 — find the accurate overall picture)
+1. Reconcile any contradictions between assessments
 2. Produce a single final score for each dimension that reflects the WHOLE video
-3. Write clean, natural observation notes (no "assessment 1 says..." — just describe the student directly)
+3. Write clean, natural observation notes (describe the student directly, no "assessment 1 says...")
 4. Keep suggestions and strengths that are genuinely useful, remove duplicates
 
 Here are the partial assessments:
@@ -270,9 +260,9 @@ Return ONLY valid JSON (no markdown, no extra text):
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile", // text-only model — fast and accurate for reconciliation
+        model: "llama-3.3-70b-versatile",
         messages: [{ role: "user", content: prompt }],
-        temperature: 0.1, // low temperature for consistent, factual output
+        temperature: 0.1,
         max_tokens: 800,
       }),
     });
@@ -303,49 +293,43 @@ Return ONLY valid JSON (no markdown, no extra text):
 
   } catch (err) {
     console.log("[Visual] validator failed (using merged result):", err.message);
-    return null; // caller falls back to merged
+    return null;
   }
 }
 
 export async function analyzeVideo(videoPath) {
-  // Check at least one key is configured
   const initialKey = getVisionKey();
   if (!initialKey) { console.log(`[Visual] No Groq API keys configured (${keyStatus()})`); return null; }
 
-  const videoId = `vid_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  // Use a unique temp directory per video — cleaned up at the end
+  const tmpDir = path.resolve(`./tmp/frames_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
 
-  let frameIds = [];
+  let frames = [];
   try {
-    frameIds = await extractAndStoreFrames(videoPath, videoId);
+    frames = await extractFrames(videoPath, tmpDir);
   } catch (err) {
     console.log("Visual frame extraction error:", err.message);
     return null;
   }
 
-  if (frameIds.length === 0) {
-    console.log("No frames stored");
+  if (frames.length === 0) {
+    console.log("No frames extracted");
     return null;
   }
 
   try {
-    const frameDocs = await FrameCache.find({ videoId }).sort({ frameIndex: 1 }).lean();
-    console.log(`[Visual] ${frameDocs.length} frames retrieved, splitting into batches of ${GROQ_BATCH_LIMIT}`);
+    console.log(`[Visual] ${frames.length} frames extracted, splitting into batches of ${GROQ_BATCH_LIMIT}`);
 
-    // Split into batches of GROQ_BATCH_LIMIT (4), send in parallel
+    // Split into batches
     const batches = [];
-    for (let i = 0; i < frameDocs.length; i += GROQ_BATCH_LIMIT) {
-      batches.push(frameDocs.slice(i, i + GROQ_BATCH_LIMIT));
+    for (let i = 0; i < frames.length; i += GROQ_BATCH_LIMIT) {
+      batches.push(frames.slice(i, i + GROQ_BATCH_LIMIT));
     }
 
     const batchResults = await Promise.all(
       batches.map((batch, idx) => {
-        // Calculate approximate time range this batch covers in the video
-        const framesPerBatch = GROQ_BATCH_LIMIT;
-        const startFrameIdx = idx * framesPerBatch;
-        const endFrameIdx = Math.min(startFrameIdx + batch.length - 1, frameDocs.length - 1);
-        const startSec = frameDocs[startFrameIdx]?.timestamp ?? null;
-        const endSec = frameDocs[endFrameIdx]?.timestamp ?? null;
-
+        const startSec = batch[0]?.timestamp ?? null;
+        const endSec = batch[batch.length - 1]?.timestamp ?? null;
         return analyzeFrameBatch(
           batch,
           `batch${idx + 1}/${batches.length}`,
@@ -354,10 +338,7 @@ export async function analyzeVideo(videoPath) {
       })
     );
 
-    // Clean up DB frames
-    await FrameCache.deleteMany({ videoId }).catch(() => {});
-
-    // Merge all batch results into a preliminary result
+    // Merge all batch results
     const merged = batchResults.reduce((acc, result) => mergeBatchResults(acc, result), null);
 
     if (!merged) {
@@ -365,8 +346,7 @@ export async function analyzeVideo(videoPath) {
       return null;
     }
 
-    // Validation pass — send all batch results to a text-only LLM to reconcile
-    // contradictions and produce a single accurate, coherent final result.
+    // Validation pass
     const validBatchResults = batchResults.filter(Boolean);
     const validated = validBatchResults.length >= 2
       ? await validateAndReconcile(validBatchResults, merged)
@@ -376,9 +356,9 @@ export async function analyzeVideo(videoPath) {
     console.log("Visual analysis complete:", JSON.stringify(final).slice(0, 150));
     return final;
 
-  } catch (err) {
-    await FrameCache.deleteMany({ videoId }).catch(() => {});
-    console.log("Visual analysis failed:", err.message);
-    return null;
+  } finally {
+    // Always clean up remaining frame files and temp dir
+    cleanupFrames(frames);
+    try { fs.rmdirSync(tmpDir); } catch {}
   }
 }

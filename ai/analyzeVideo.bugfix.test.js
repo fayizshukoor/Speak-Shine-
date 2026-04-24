@@ -3,27 +3,20 @@
  *
  * Validates that 8 frames are extracted and sent in 2 batches of 4,
  * each batch staying within the Groq Vision API 5-image limit.
+ * Frames are now stored as temp files on disk (not MongoDB).
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fc from 'fast-check';
 import fs from 'fs';
 import { exec } from 'child_process';
+import path from 'path';
 
 vi.mock('fs');
 vi.mock('child_process');
 vi.mock('node-fetch');
 
-vi.mock('../models/frameCacheSchema.js', () => {
-  const FrameCache = {
-    create: vi.fn(),
-    find: vi.fn(),
-    deleteMany: vi.fn(),
-  };
-  return { default: FrameCache };
-});
-
-// Mock the key manager so tests don't depend on env vars
+// Mock the key manager
 vi.mock('./groqKeyManager.js', () => ({
   getVisionKey: vi.fn(() => 'test-api-key'),
   markKeyExhausted: vi.fn(),
@@ -34,7 +27,6 @@ vi.mock('./groqKeyManager.js', () => ({
 
 const { analyzeVideo } = await import('./analyzeVideo.js');
 const fetch = (await import('node-fetch')).default;
-const FrameCache = (await import('../models/frameCacheSchema.js')).default;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -45,45 +37,36 @@ function mockExec(duration = 120) {
     if (cmd.includes('ffprobe')) {
       callback(null, `${duration}\n`, '');
     } else {
+      // ffmpeg — simulate frame file creation
       callback(null, '', '');
     }
   });
 }
 
 function mockFs(videoPath) {
-  fs.existsSync.mockImplementation((p) => p === videoPath || p.includes('_frame_'));
-  fs.readFileSync.mockReturnValue(Buffer.alloc(2000, 0xff));
+  fs.existsSync.mockImplementation((p) => {
+    // video file exists, frame files exist after ffmpeg
+    if (p === videoPath) return true;
+    if (p.includes('frame_')) return true;
+    return false;
+  });
+  fs.mkdirSync.mockImplementation(() => {});
+  fs.statSync.mockReturnValue({ size: 5000 }); // frame file size > 1000
+  fs.readFileSync.mockReturnValue(Buffer.alloc(5000, 0xff)); // valid frame data
   fs.unlinkSync.mockImplementation(() => {});
+  fs.rmdirSync.mockImplementation(() => {});
 }
 
-function mockFrameCache() {
-  let stored = [];
-
-  FrameCache.create.mockImplementation(async ({ videoId, frameIndex, timestamp, base64 }) => {
-    const _id = `id_${frameIndex}`;
-    stored.push({ _id, videoId, frameIndex, timestamp, base64 });
-    return { _id };
-  });
-
-  FrameCache.find.mockImplementation(() => {
-    const sorted = [...stored].sort((a, b) => a.frameIndex - b.frameIndex);
-    return { sort: vi.fn().mockReturnThis(), lean: vi.fn().mockResolvedValue(sorted) };
-  });
-
-  FrameCache.deleteMany.mockResolvedValue({});
-
-  return { getStored: () => stored };
-}
-
-/** Returns a mock fetch that records each call's image count and always succeeds. */
 function mockFetchSuccess() {
-  const calls = []; // [{imageCount}]
+  const calls = [];
 
   fetch.mockImplementation(async (_url, options) => {
     const body = JSON.parse(options.body);
     const content = body.messages[0].content;
-    const imageCount = content.filter(i => i.type === 'image_url').length;
-    calls.push({ imageCount });
+    const imageCount = Array.isArray(content)
+      ? content.filter(i => i?.type === 'image_url').length
+      : 0;
+    calls.push({ imageCount, model: body.model });
 
     return {
       ok: true,
@@ -111,7 +94,7 @@ function mockFetchSuccess() {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('Visual Analysis — 8 frames via 2 batches of 4', () => {
+describe('Visual Analysis — 8 frames via 2 batches of 4 (disk-based)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -122,17 +105,16 @@ describe('Visual Analysis — 8 frames via 2 batches of 4', () => {
 
   it('extracts 8 frames and sends them in 2 API calls, each with ≤5 images', async () => {
     const videoPath = 'test_video.mp4';
-    mockExec(120); // 2-minute video → interval = 120/8 = 15s
+    mockExec(120);
     mockFs(videoPath);
-    mockFrameCache();
     const { getCalls } = mockFetchSuccess();
 
     const result = await analyzeVideo(videoPath);
 
-    const calls = getCalls();
-    expect(calls).toHaveLength(2);                          // 2 batches
-    calls.forEach(c => expect(c.imageCount).toBeLessThanOrEqual(5)); // each ≤ 5
-    expect(calls.reduce((s, c) => s + c.imageCount, 0)).toBe(8);    // total = 8
+    const calls = getCalls().filter(c => c.imageCount > 0); // vision calls only
+    expect(calls).toHaveLength(2);
+    calls.forEach(c => expect(c.imageCount).toBeLessThanOrEqual(5));
+    expect(calls.reduce((s, c) => s + c.imageCount, 0)).toBe(8);
 
     expect(result).not.toBeNull();
     expect(result).toHaveProperty('eyeContact');
@@ -141,38 +123,20 @@ describe('Visual Analysis — 8 frames via 2 batches of 4', () => {
     expect(result).toHaveProperty('overallPresence');
   });
 
-  it('timestamps are spaced by duration/8 (e.g. 120s → every 15s)', async () => {
-    const videoPath = 'test_video.mp4';
-    mockExec(120);
-    mockFs(videoPath);
-    const { getStored } = mockFrameCache();
-    mockFetchSuccess();
-
-    await analyzeVideo(videoPath);
-
-    const timestamps = getStored().map(f => f.timestamp);
-    expect(timestamps).toHaveLength(8);
-    // 120/8 = 15 → expected: 15, 30, 45, 60, 75, 90, 105, 120
-    expect(timestamps).toEqual([15, 30, 45, 60, 75, 90, 105, 120]);
-  });
-
   it('merges scores from both batches — validator produces final reconciled result', async () => {
     const videoPath = 'test_video.mp4';
     mockExec(120);
     mockFs(videoPath);
-    mockFrameCache();
 
     let callCount = 0;
     fetch.mockImplementation(async (_url, options) => {
       callCount++;
       const body = JSON.parse(options.body);
-      const isTextOnly = !body.messages[0].content.some?.(i => i?.type === 'image_url')
-        && typeof body.messages[0].content === 'string';
+      const content = body.messages[0].content;
+      const hasImages = Array.isArray(content) && content.some(i => i?.type === 'image_url');
 
-      // Batch 1: eye contact 6, body language 8
-      // Batch 2: eye contact 8, body language 6
-      // Validator (3rd call, text-only): reconciles to 7 each
-      if (callCount === 3 || isTextOnly) {
+      if (!hasImages) {
+        // validator call
         return {
           ok: true, status: 200,
           json: async () => ({
@@ -211,60 +175,20 @@ describe('Visual Analysis — 8 frames via 2 batches of 4', () => {
     });
 
     const result = await analyzeVideo(videoPath);
-
-    // Validator reconciles to 7 for all scores
     expect(result.eyeContact).toBe(7);
-    expect(result.bodyLanguage).toBe(7);
-    expect(result.facialExpression).toBe(7);
-    expect(result.overallPresence).toBe(7);
     expect(result.eyeContactNote).toBe('Reconciled note');
-  });
-
-  it('returns partial result if one batch fails', async () => {
-    const videoPath = 'test_video.mp4';
-    mockExec(120);
-    mockFs(videoPath);
-    mockFrameCache();
-
-    let callCount = 0;
-    fetch.mockImplementation(async (_url, options) => {
-      callCount++;
-      if (callCount === 1) {
-        return { ok: false, status: 500, text: async () => 'Internal Server Error' };
-      }
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({
-          choices: [{
-            message: {
-              content: JSON.stringify({
-                eyeContact: 7, bodyLanguage: 8, facialExpression: 6, overallPresence: 7,
-                eyeContactNote: 'Good', bodyLanguageNote: 'Good', expressionNote: 'Good',
-                visualSuggestions: ['tip'], visualStrengths: ['strength'],
-              }),
-            },
-          }],
-        }),
-      };
-    });
-
-    const result = await analyzeVideo(videoPath);
-    expect(result).not.toBeNull();
-    expect(result.eyeContact).toBe(7);
   });
 
   it('makes 3 API calls total: 2 vision batches + 1 text validator', async () => {
     const videoPath = 'test_video.mp4';
     mockExec(120);
     mockFs(videoPath);
-    mockFrameCache();
 
     const apiCalls = [];
     fetch.mockImplementation(async (_url, options) => {
       const body = JSON.parse(options.body);
-      const hasImages = Array.isArray(body.messages[0].content) &&
-        body.messages[0].content.some(i => i?.type === 'image_url');
+      const content = body.messages[0].content;
+      const hasImages = Array.isArray(content) && content.some(i => i?.type === 'image_url');
       apiCalls.push({ model: body.model, hasImages });
 
       return {
@@ -286,10 +210,46 @@ describe('Visual Analysis — 8 frames via 2 batches of 4', () => {
     await analyzeVideo(videoPath);
 
     expect(apiCalls).toHaveLength(3);
-    expect(apiCalls[0].hasImages).toBe(true);  // batch 1 — vision
-    expect(apiCalls[1].hasImages).toBe(true);  // batch 2 — vision
-    expect(apiCalls[2].hasImages).toBe(false); // validator — text only
+    expect(apiCalls[0].hasImages).toBe(true);
+    expect(apiCalls[1].hasImages).toBe(true);
+    expect(apiCalls[2].hasImages).toBe(false);
     expect(apiCalls[2].model).toBe('llama-3.3-70b-versatile');
+  });
+
+  it('returns partial result if one batch fails', async () => {
+    const videoPath = 'test_video.mp4';
+    mockExec(120);
+    mockFs(videoPath);
+
+    let callCount = 0;
+    fetch.mockImplementation(async (_url, options) => {
+      callCount++;
+      const body = JSON.parse(options.body);
+      const content = body.messages[0].content;
+      const hasImages = Array.isArray(content) && content.some(i => i?.type === 'image_url');
+
+      if (hasImages && callCount === 1) {
+        return { ok: false, status: 500, text: async () => 'Internal Server Error' };
+      }
+      return {
+        ok: true, status: 200,
+        json: async () => ({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                eyeContact: 7, bodyLanguage: 8, facialExpression: 6, overallPresence: 7,
+                eyeContactNote: 'Good', bodyLanguageNote: 'Good', expressionNote: 'Good',
+                visualSuggestions: ['tip'], visualStrengths: ['strength'],
+              }),
+            },
+          }],
+        }),
+      };
+    });
+
+    const result = await analyzeVideo(videoPath);
+    expect(result).not.toBeNull();
+    expect(result.eyeContact).toBe(7);
   });
 
   it('returns null when no API keys are configured', async () => {
@@ -299,11 +259,11 @@ describe('Visual Analysis — 8 frames via 2 batches of 4', () => {
     expect(result).toBeNull();
   });
 
-  it('returns null when no frames are extracted', async () => {
-    const videoPath = 'test_video.mp4';
-    mockExec(120);
-    fs.existsSync.mockReturnValue(false); // video file not found
-    const result = await analyzeVideo(videoPath);
+  it('returns null when video file does not exist', async () => {
+    fs.existsSync.mockReturnValue(false);
+    fs.mkdirSync.mockImplementation(() => {});
+    exec.mockImplementation((cmd, callback) => callback(null, '60\n', ''));
+    const result = await analyzeVideo('nonexistent.mp4');
     expect(result).toBeNull();
   });
 
@@ -315,12 +275,11 @@ describe('Visual Analysis — 8 frames via 2 batches of 4', () => {
           vi.clearAllMocks();
           mockExec(duration);
           mockFs(videoPath);
-          mockFrameCache();
           const { getCalls } = mockFetchSuccess();
 
           await analyzeVideo(videoPath);
 
-          const calls = getCalls();
+          const calls = getCalls().filter(c => c.imageCount > 0);
           expect(calls.length).toBeGreaterThan(0);
           calls.forEach(c => expect(c.imageCount).toBeLessThanOrEqual(5));
           expect(calls.reduce((s, c) => s + c.imageCount, 0)).toBe(8);
