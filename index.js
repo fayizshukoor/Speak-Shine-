@@ -1783,7 +1783,19 @@ async function startBot() {
           `💪 _Keep submitting daily to improve your scores!_`;
 
         // Send full stats privately to the user's DM
-        await safeSend(sock, dmJid, { text: statsMsg });
+        console.log(`[/mystats] Sending DM to: ${dmJid} (actualUserJid: ${actualUserJid})`);
+        const dmSent = await safeSend(sock, dmJid, { text: statsMsg });
+        console.log(`[/mystats] DM sent result: ${dmSent}`);
+
+        if (!dmSent) {
+          // DM failed — send stats in group as a reply instead
+          console.log(`[/mystats] DM failed, sending in group as fallback`);
+          await safeSend(sock, chatId, { text: statsMsg, mentions: [actualUserJid] });
+          return safeSend(sock, chatId, {
+            text: `⚠️ @${senderPhone} _Couldn't send to your DM. Stats posted above — only you can see the details._`,
+            mentions: [actualUserJid],
+          });
+        }
 
         // Acknowledge in group with proper tappable mention
         return safeSend(sock, chatId, {
