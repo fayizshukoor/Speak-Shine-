@@ -524,8 +524,8 @@ async function startBot() {
       if (isOwnerDM && dmVideo) {
         const ownerStatus = await getStatus();
 
-        // Dedup check for owner DM
-        const ownerHash = hashBuffer(Buffer.from(dmVideo.fileSha256 || dmVideo.mediaKey || msg.key.id));
+        // Dedup check for owner DM — include sender ID so forwarded videos don't collide
+        const ownerHash = hashBuffer(Buffer.from(`${OWNER}:${dmVideo.fileSha256 || dmVideo.mediaKey || msg.key.id}`));
         const ownerCacheEntry = getCacheEntry(ownerHash);
         if (ownerCacheEntry === 'processing') {
           safeSend(sock, OWNER, { text: `⏳ _Your video is already being processed! Please wait._` });
@@ -1270,8 +1270,9 @@ async function startBot() {
         // Fetch today's topic for AI relevance check
         const todayStatus = await getStatus();
 
-        // Compute content hash for dedup
-        const hash = hashBuffer(Buffer.from(video.fileSha256 || video.mediaKey || msg.key.id));
+        // Compute content hash for dedup — include sender so forwarded videos
+        // (same fileSha256, different sender) are treated as separate submissions.
+        const hash = hashBuffer(Buffer.from(`${dbUser}:${video.fileSha256 || video.mediaKey || msg.key.id}`));
         const cacheEntry = getCacheEntry(hash);
 
         if (cacheEntry === 'processing') {
