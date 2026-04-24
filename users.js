@@ -13,21 +13,25 @@ if (!users.length) {
 }
 
 console.log(`\n👥 Total Users: ${users.length}\n`);
-console.log("─".repeat(55));
-console.log(`${"#".padEnd(4)} ${"Phone".padEnd(20)} ${"Done".padEnd(8)} ${"Fine"}`);
-console.log("─".repeat(55));
+console.log("─".repeat(65));
+console.log(`${"#".padEnd(4)} ${"Name".padEnd(20)} ${"Done".padEnd(8)} ${"Streak".padEnd(10)} ${"Fine"}`);
+console.log("─".repeat(65));
 
 users.forEach((u, i) => {
-  const phone = u.userId ? u.userId.split("@")[0] : "unknown";
+  const name = (u.name || u.userId?.split("@")[0].split(":")[0] || "unknown").slice(0, 18);
   const done = u.completed ? "✅ Yes" : "❌ No";
+  const streak = u.streak || 0;
+  const streakBadge = streak >= 7 ? `🔥${streak}` : streak >= 3 ? `⚡${streak}` : `📅${streak}`;
   const fine = `₹${u.fine || 0}`;
-  console.log(`${String(i + 1).padEnd(4)} ${phone.padEnd(20)} ${done.padEnd(8)} ${fine}`);
+  console.log(`${String(i + 1).padEnd(4)} ${name.padEnd(20)} ${done.padEnd(8)} ${streakBadge.padEnd(10)} ${fine}`);
 });
 
-console.log("─".repeat(55));
+console.log("─".repeat(65));
 const totalFine = users.reduce((sum, u) => sum + (u.fine || 0), 0);
 const completed = users.filter((u) => u.completed).length;
+const topStreak = Math.max(...users.map(u => u.streak || 0));
 console.log(`✅ Completed: ${completed} / ${users.length}`);
-console.log(`💰 Total Fine Pool: ₹${totalFine}\n`);
+console.log(`💰 Total Fine Pool: ₹${totalFine}`);
+console.log(`🔥 Top Streak: ${topStreak} days\n`);
 
 process.exit(0);
