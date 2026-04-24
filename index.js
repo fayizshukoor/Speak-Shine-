@@ -108,6 +108,34 @@ const getMentionPhone = (userRecord) => {
   return userRecord.userId.split("@")[0].split(":")[0];
 };
 
+/**
+ * Fetches the group participant map: phone → actual JID.
+ * WhatsApp mentions only work with the exact JID from groupMetadata.
+ * Cached per call — pass the result around rather than calling multiple times.
+ */
+async function getParticipantMap(sock, groupJid) {
+  try {
+    const meta = await sock.groupMetadata(groupJid);
+    const map = {};
+    for (const p of meta.participants) {
+      const phone = p.id.split("@")[0].split(":")[0];
+      map[phone] = p.id;
+    }
+    return map;
+  } catch (_) {
+    return {};
+  }
+}
+
+/**
+ * Resolves a stored userId to the actual group participant JID.
+ * Falls back to phone@s.whatsapp.net if not found in group.
+ */
+function resolveJid(userId, participantMap) {
+  const phone = userId.split("@")[0].split(":")[0];
+  return participantMap[phone] || `${phone}@s.whatsapp.net`;
+}
+
 // Returns saved name from DB record, falls back to phone number
 const getDisplayName = (userRecord) => {
   if (!userRecord) return "Unknown";
@@ -319,7 +347,17 @@ async function startBot() {
         return;
       }
 
-      // Deduplicate by phone number — keep @s.whatsapp.net version when both exist
+      // Build phone → actual group JID map from live group metadata
+      let participantMap = {};
+      try {
+        const meta = await sock.groupMetadata(TARGET_GROUP);
+        for (const p of meta.participants) {
+          const phone = p.id.split("@")[0].split(":")[0];
+          participantMap[phone] = p.id;
+        }
+      } catch (_) {}
+
+      // Deduplicate by phone number
       const getPhone = (id) => id ? id.replace(/@s\.whatsapp\.net|@lid|@c\.us/g, "").split(":")[0] : null;
       const seen = new Map();
       for (const u of pending) {
@@ -333,18 +371,19 @@ async function startBot() {
 
       let msg = `${title}\n━━━━━━━━━━━━━━━\n\n`;
       msg += `📌 *${uniquePending.length} member(s) yet to submit:*\n\n`;
+
+      const mentionJids = [];
       uniquePending.forEach((u) => {
-        const num = u.userId.split("@")[0].split(":")[0];
-        msg += `▪ @${num}\n`;
+        const phone = u.userId.split("@")[0].split(":")[0];
+        const actualJid = participantMap[phone] || `${phone}@s.whatsapp.net`;
+        mentionJids.push(actualJid);
+        msg += `▪ @${phone}\n`;
       });
       msg += `\n🎬 _Send your 1-min+ speaking video now!_`;
 
       await safeSend(sock, TARGET_GROUP, {
         text: msg,
-        mentions: uniquePending.map((u) => {
-          const num = u.userId.split("@")[0].split(":")[0];
-          return `${num}@s.whatsapp.net`;
-        }),
+        mentions: mentionJids,
       });
     } catch (err) {
       console.log("❌ Reminder error:", err);
@@ -1558,9 +1597,20 @@ async function startBot() {
         }
 
         const userPhone = dbUser.split("@")[0].split(":")[0];
+
+        // Get actual group JID for proper tappable mention
+        let actualUserJid = dbUser;
+        try {
+          const meta = await sock.groupMetadata(chatId);
+          const participant = meta.participants.find(p =>
+            p.id.split("@")[0].split(":")[0] === userPhone
+          );
+          if (participant) actualUserJid = participant.id;
+        } catch (_) {}
+
         await safeSend(sock, chatId, {
           text: `🔥 *Great work, @${userPhone}!*\n\n✅ Submission received!\n\n💪 _Keep showing up every day — consistency is what separates the best from the rest. You're on the right track!_ 🚀`,
-          mentions: [dbUser],
+          mentions: [actualUserJid],
         });
 
         // Fetch today's topic for AI relevance check
@@ -1590,7 +1640,7 @@ async function startBot() {
         // Send initial progress message and capture its key
         const progressSent = await sock.sendMessage(chatId, {
           text: `⏳ _Analysing your video, @${userPhone}..._`,
-          mentions: [dbUser],
+          mentions: [actualUserJid],
         });
         const progressMsgKey = progressSent?.key;
 
