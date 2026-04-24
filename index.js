@@ -29,35 +29,37 @@ dotenv.config();
 connectDB();
 
 // ---------------------------------------------------------------------------
-// Suppress Baileys Signal protocol session noise from console output.
-// These logs (pubKey, privKey, Closing session, ephemeralKeyPair, etc.) are
-// internal cryptographic session management — harmless but very verbose.
+// Suppress libsignal / Baileys Signal protocol session noise.
+// libsignal uses console.info() for "Closing session", "Opening session" etc.
+// Baileys uses console.log() for key material dumps (pubKey, privKey, etc.)
+// These are harmless internal cryptographic session management logs.
 // ---------------------------------------------------------------------------
-const _origLog = console.log.bind(console);
-console.log = (...args) => {
-  const msg = args[0];
-  if (typeof msg === "string" && (
-    msg.includes("pubKey") ||
-    msg.includes("privKey") ||
-    msg.includes("Closing session") ||
-    msg.includes("Closing open session") ||
-    msg.includes("ephemeralKeyPair") ||
-    msg.includes("lastRemoteEphemeralKey") ||
-    msg.includes("rootKey") ||
-    msg.includes("registrationId") ||
-    msg.includes("remoteIdentityKey") ||
-    msg.includes("baseKeyType") ||
-    msg.includes("pendingPreKey") ||
-    msg.includes("previousCounter") ||
-    msg.includes("_chains") ||
-    msg.includes("chainKey") ||
-    msg.includes("chainType") ||
-    msg.includes("messageKeys") ||
-    msg.includes("indexInfo") ||
-    msg.includes("currentRatchet")
-  )) return;
-  _origLog(...args);
+const _noisePatterns = [
+  "Closing session", "Opening session", "Closing open session",
+  "Session already", "pubKey", "privKey", "ephemeralKeyPair",
+  "lastRemoteEphemeralKey", "rootKey", "registrationId",
+  "remoteIdentityKey", "baseKeyType", "pendingPreKey",
+  "previousCounter", "_chains", "chainKey", "chainType",
+  "messageKeys", "indexInfo", "currentRatchet",
+  "prekey bundle", "incoming prekey",
+];
+const _isBaileysNoise = (args) => {
+  const first = args[0];
+  if (typeof first === "string") {
+    return _noisePatterns.some(p => first.includes(p));
+  }
+  // Also suppress when first arg is an object with session-like keys
+  if (first && typeof first === "object" && ("_chains" in first || "currentRatchet" in first)) {
+    return true;
+  }
+  return false;
 };
+const _origInfo = console.info.bind(console);
+const _origWarn = console.warn.bind(console);
+const _origLog  = console.log.bind(console);
+console.info = (...args) => { if (!_isBaileysNoise(args)) _origInfo(...args); };
+console.warn = (...args) => { if (!_isBaileysNoise(args)) _origWarn(...args); };
+console.log  = (...args) => { if (!_isBaileysNoise(args)) _origLog(...args);  };
 
 const TARGET_GROUP = process.env.TARGET_GROUP;
 const OWNER = process.env.OWNER_NUMBER;
