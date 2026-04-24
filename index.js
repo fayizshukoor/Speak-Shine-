@@ -558,7 +558,10 @@ async function startBot() {
       msg += `\n━━━━━━━━━━━━━━━
 🔥 _Consistency builds champions._`;
 
-      const allMentions = filteredUsers.map((u) => u.userId).filter(Boolean);
+      const allMentions = filteredUsers.map((u) => {
+        const phone = u.userId.split("@")[0].split(":")[0];
+        return `${phone}@s.whatsapp.net`;
+      }).filter(Boolean);
 
       await safeSend(sock, TARGET_GROUP, {
         text: msg,
@@ -898,6 +901,16 @@ async function startBot() {
         // Filter out the bot itself
         const members = users.filter(u => u.userId && !u.userId.includes(botJid.split("@")[0]));
 
+        // Get actual participant JIDs from group metadata for correct mention resolution
+        let participantMap = {}; // phone → actual JID
+        try {
+          const meta = await sock.groupMetadata(chatId);
+          for (const p of meta.participants) {
+            const phone = p.id.split("@")[0].split(":")[0];
+            participantMap[phone] = p.id;
+          }
+        } catch (_) {}
+
         // Sort by streak descending, then by fine ascending
         const sorted = [...members].sort((a, b) => {
           if ((b.streak || 0) !== (a.streak || 0)) return (b.streak || 0) - (a.streak || 0);
@@ -906,12 +919,17 @@ async function startBot() {
 
         let msgText = `╔══════════════════╗\n📊 *STREAK REPORT*\n╚══════════════════╝\n\n`;
 
-        sorted.filter(u => u.userId).forEach((u, i) => {
+        const mentionJids = [];
+        sorted.filter(u => u.userId).forEach((u) => {
+          const phone = u.userId.split("@")[0].split(":")[0];
+          const actualJid = participantMap[phone] || u.userId;
+          mentionJids.push(actualJid);
+
           const streak = u.streak || 0;
           const streakBadge = streak >= 7 ? `🔥` : streak >= 3 ? `⚡` : `📅`;
           const fine = u.fine || 0;
           const status = u.completed ? `✅` : `❌`;
-          msgText += `${status} @${getMentionPhone(u)}\n`;
+          msgText += `${status} @${phone}\n`;
           msgText += `   ${streakBadge} *${streak} day streak*  |  💸 Fine: ₹${fine}\n\n`;
         });
 
@@ -923,7 +941,7 @@ async function startBot() {
         for (const chunk of chunks) {
           await safeSend(sock, chatId, {
             text: chunk,
-            mentions: users.map(u => u.userId),
+            mentions: mentionJids,
           });
         }
         return;
