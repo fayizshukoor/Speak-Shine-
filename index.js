@@ -1534,9 +1534,14 @@ async function startBot() {
           { upsert: true },
         );
 
-        const username = getName(dbUser);
+        // Save push name on upsert too (new user submitting first video)
+        if (pushName) {
+          await User.updateOne({ userId: dbUser }, { $set: { name: pushName } });
+        }
+
+        const userPhone = dbUser.split("@")[0].split(":")[0];
         await safeSend(sock, chatId, {
-          text: `🔥 *Great work, @${username}!*\n\n✅ Submission received!\n\n💪 _Keep showing up every day — consistency is what separates the best from the rest. You're on the right track!_ 🚀`,
+          text: `🔥 *Great work, @${userPhone}!*\n\n✅ Submission received!\n\n💪 _Keep showing up every day — consistency is what separates the best from the rest. You're on the right track!_ 🚀`,
           mentions: [dbUser],
         });
 
@@ -1566,7 +1571,7 @@ async function startBot() {
 
         // Send initial progress message and capture its key
         const progressSent = await sock.sendMessage(chatId, {
-          text: `⏳ _Analysing your video, @${username}..._`,
+          text: `⏳ _Analysing your video, @${userPhone}..._`,
           mentions: [dbUser],
         });
         const progressMsgKey = progressSent?.key;
