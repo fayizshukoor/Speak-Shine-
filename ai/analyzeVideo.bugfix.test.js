@@ -1,20 +1,8 @@
 /**
- * Bug Condition Exploration Test for visual-analysis-failure-fix
+ * Bug Condition + Fix Verification Tests for visual-analysis-failure-fix
  *
- * Task 1: Write bug condition exploration property test
- * Feature: visual-analysis-failure-fix
- *
- * **Validates: Requirements 1.1, 1.2, 1.3, 1.4**
- *
- * Property 1: Bug Condition - Too Many Frames Cause API Rejection
- *
- * The Groq Vision API enforces a maximum of 5 images per request.
- * The original code used FRAME_COUNT = 8 (previously 6), causing HTTP 400.
- * The fix reduces FRAME_COUNT to 5.
- *
- * This test encodes the expected behavior after the fix.
- * On unfixed code (FRAME_COUNT > 5) it will FAIL, confirming the bug.
- * After the fix (FRAME_COUNT = 5) it will PASS.
+ * Validates that 8 frames are extracted and sent in 2 batches of 4,
+ * each batch staying within the Groq Vision API 5-image limit.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -22,101 +10,99 @@ import fc from 'fast-check';
 import fs from 'fs';
 import { exec } from 'child_process';
 
-// Mock modules before importing analyzeVideo
 vi.mock('fs');
 vi.mock('child_process');
 vi.mock('node-fetch');
 
-// Mock FrameCache (MongoDB model used by current architecture)
 vi.mock('../models/frameCacheSchema.js', () => {
-  const mockCreate = vi.fn();
-  const mockFind = vi.fn();
-  const mockDeleteMany = vi.fn();
-
   const FrameCache = {
-    create: mockCreate,
-    find: mockFind,
-    deleteMany: mockDeleteMany,
+    create: vi.fn(),
+    find: vi.fn(),
+    deleteMany: vi.fn(),
   };
-
   return { default: FrameCache };
 });
 
-// Import after mocking
 const { analyzeVideo } = await import('./analyzeVideo.js');
 const fetch = (await import('node-fetch')).default;
 const FrameCache = (await import('../models/frameCacheSchema.js')).default;
 
-/**
- * Builds a mock FrameCache.find() chain that returns frameDocs.
- * Supports .sort().lean() chaining.
- */
-function mockFindChain(frameDocs) {
-  const chain = { sort: vi.fn(), lean: vi.fn() };
-  chain.sort.mockReturnValue(chain);
-  chain.lean.mockResolvedValue(frameDocs);
-  FrameCache.find.mockReturnValue(chain);
-}
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-/**
- * Sets up exec mock: ffprobe returns `duration`, ffmpeg succeeds.
- */
-function mockExec(duration = 60) {
+function mockExec(duration = 120) {
   exec.mockImplementation((cmd, callback) => {
     if (cmd.includes('ffprobe')) {
       callback(null, `${duration}\n`, '');
     } else {
-      // ffmpeg frame extraction — always succeeds
       callback(null, '', '');
     }
   });
 }
 
-/**
- * Sets up fs mocks so the video file exists and frame files exist after ffmpeg.
- */
 function mockFs(videoPath) {
-  fs.existsSync.mockImplementation((p) => {
-    if (p === videoPath) return true;
-    if (p.includes('_frame_')) return true;
-    return false;
-  });
-  // Return a buffer large enough to pass the 1000-byte check
+  fs.existsSync.mockImplementation((p) => p === videoPath || p.includes('_frame_'));
   fs.readFileSync.mockReturnValue(Buffer.alloc(2000, 0xff));
   fs.unlinkSync.mockImplementation(() => {});
 }
 
-/**
- * Sets up FrameCache mocks.
- * create() stores a fake doc and returns an _id.
- * find() returns frameDocs built from the stored frames.
- * deleteMany() resolves immediately.
- */
-function mockFrameCache(videoPath) {
-  let storedFrames = [];
+function mockFrameCache() {
+  let stored = [];
 
   FrameCache.create.mockImplementation(async ({ videoId, frameIndex, timestamp, base64 }) => {
-    const id = `id_${frameIndex}`;
-    storedFrames.push({ _id: id, videoId, frameIndex, timestamp, base64 });
-    return { _id: id };
+    const _id = `id_${frameIndex}`;
+    stored.push({ _id, videoId, frameIndex, timestamp, base64 });
+    return { _id };
   });
 
-  // find() returns whatever was stored, sorted by frameIndex
   FrameCache.find.mockImplementation(() => {
-    const sorted = [...storedFrames].sort((a, b) => a.frameIndex - b.frameIndex);
-    const chain = {
-      sort: vi.fn().mockReturnThis(),
-      lean: vi.fn().mockResolvedValue(sorted),
-    };
-    return chain;
+    const sorted = [...stored].sort((a, b) => a.frameIndex - b.frameIndex);
+    return { sort: vi.fn().mockReturnThis(), lean: vi.fn().mockResolvedValue(sorted) };
   });
 
   FrameCache.deleteMany.mockResolvedValue({});
 
-  return { getStored: () => storedFrames };
+  return { getStored: () => stored };
 }
 
-describe('Bug Condition Exploration - Frame Count Exceeds Groq Vision API Limit', () => {
+/** Returns a mock fetch that records each call's image count and always succeeds. */
+function mockFetchSuccess() {
+  const calls = []; // [{imageCount}]
+
+  fetch.mockImplementation(async (_url, options) => {
+    const body = JSON.parse(options.body);
+    const content = body.messages[0].content;
+    const imageCount = content.filter(i => i.type === 'image_url').length;
+    calls.push({ imageCount });
+
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              eyeContact: 7, bodyLanguage: 8, facialExpression: 6, overallPresence: 7,
+              eyeContactNote: 'Good engagement', bodyLanguageNote: 'Confident posture',
+              expressionNote: 'Natural expressions',
+              visualSuggestions: ['Maintain eye contact'],
+              visualStrengths: ['Strong presence'],
+            }),
+          },
+        }],
+      }),
+    };
+  });
+
+  return { getCalls: () => calls };
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe('Visual Analysis — 8 frames via 2 batches of 4', () => {
   beforeEach(() => {
     process.env.GROQ_API_KEY = 'test-api-key';
     vi.clearAllMocks();
@@ -126,140 +112,148 @@ describe('Bug Condition Exploration - Frame Count Exceeds Groq Vision API Limit'
     vi.restoreAllMocks();
   });
 
-  /**
-   * Property 1 (scoped PBT): For any valid video path, analyzeVideo() must:
-   *   - Send ≤ 5 images to the Groq Vision API
-   *   - Receive HTTP 200
-   *   - Return a valid visual analysis object (not null)
-   *
-   * UNFIXED code (FRAME_COUNT = 8): sends 8 images → HTTP 400 → returns null → FAILS
-   * FIXED code  (FRAME_COUNT = 5): sends 5 images → HTTP 200 → returns object → PASSES
-   */
-  it('Property 1: analyzeVideo sends ≤5 frames and returns valid result (fails on unfixed code)', async () => {
-    await fc.assert(
-      fc.asyncProperty(
-        fc.string({ minLength: 1, maxLength: 30 }).map(s => `test_${s}.mp4`),
-        async (videoPath) => {
-          mockExec(60);
-          mockFs(videoPath);
-          mockFrameCache(videoPath);
+  it('extracts 8 frames and sends them in 2 API calls, each with ≤5 images', async () => {
+    const videoPath = 'test_video.mp4';
+    mockExec(120); // 2-minute video → interval = 120/8 = 15s
+    mockFs(videoPath);
+    mockFrameCache();
+    const { getCalls } = mockFetchSuccess();
 
-          let imageCount = 0;
+    const result = await analyzeVideo(videoPath);
 
-          fetch.mockImplementation(async (url, options) => {
-            if (url.includes('api.groq.com')) {
-              const body = JSON.parse(options.body);
-              const content = body.messages[0].content;
-              imageCount = content.filter(item => item.type === 'image_url').length;
+    const calls = getCalls();
+    expect(calls).toHaveLength(2);                          // 2 batches
+    calls.forEach(c => expect(c.imageCount).toBeLessThanOrEqual(5)); // each ≤ 5
+    expect(calls.reduce((s, c) => s + c.imageCount, 0)).toBe(8);    // total = 8
 
-              if (imageCount > 5) {
-                return {
-                  ok: false,
-                  status: 400,
-                  text: async () => 'Bad Request: Maximum 5 images per request allowed',
-                };
-              }
-
-              return {
-                ok: true,
-                status: 200,
-                json: async () => ({
-                  choices: [{
-                    message: {
-                      content: JSON.stringify({
-                        eyeContact: 7,
-                        bodyLanguage: 8,
-                        facialExpression: 6,
-                        overallPresence: 7,
-                        eyeContactNote: 'Good engagement',
-                        bodyLanguageNote: 'Confident posture',
-                        expressionNote: 'Natural expressions',
-                        visualSuggestions: ['Maintain eye contact'],
-                        visualStrengths: ['Strong presence'],
-                      }),
-                    },
-                  }],
-                }),
-              };
-            }
-          });
-
-          const result = await analyzeVideo(videoPath);
-
-          // After fix: ≤5 images sent, result is a valid object
-          expect(imageCount).toBeLessThanOrEqual(5);
-          expect(result).not.toBeNull();
-          expect(result).toHaveProperty('eyeContact');
-          expect(result).toHaveProperty('bodyLanguage');
-          expect(result).toHaveProperty('facialExpression');
-          expect(result).toHaveProperty('overallPresence');
-        }
-      ),
-      { numRuns: 5 }
-    );
+    expect(result).not.toBeNull();
+    expect(result).toHaveProperty('eyeContact');
+    expect(result).toHaveProperty('bodyLanguage');
+    expect(result).toHaveProperty('facialExpression');
+    expect(result).toHaveProperty('overallPresence');
   });
 
-  /**
-   * Concrete case: explicit verification that exactly 5 frames are sent.
-   */
-  it('Concrete case: exactly 5 frames are sent to Groq Vision API after fix', async () => {
+  it('timestamps are spaced by duration/8 (e.g. 120s → every 15s)', async () => {
     const videoPath = 'test_video.mp4';
-
-    mockExec(60);
+    mockExec(120);
     mockFs(videoPath);
-    mockFrameCache(videoPath);
+    const { getStored } = mockFrameCache();
+    mockFetchSuccess();
 
-    let capturedBody = null;
+    await analyzeVideo(videoPath);
 
-    fetch.mockImplementation(async (url, options) => {
-      if (url.includes('api.groq.com')) {
-        capturedBody = JSON.parse(options.body);
-        const content = capturedBody.messages[0].content;
-        const imageCount = content.filter(item => item.type === 'image_url').length;
+    const timestamps = getStored().map(f => f.timestamp);
+    expect(timestamps).toHaveLength(8);
+    // 120/8 = 15 → expected: 15, 30, 45, 60, 75, 90, 105, 120
+    expect(timestamps).toEqual([15, 30, 45, 60, 75, 90, 105, 120]);
+  });
 
-        if (imageCount > 5) {
-          return {
-            ok: false,
-            status: 400,
-            text: async () => 'Bad Request: Maximum 5 images per request allowed',
-          };
-        }
+  it('merges scores from both batches by averaging', async () => {
+    const videoPath = 'test_video.mp4';
+    mockExec(120);
+    mockFs(videoPath);
+    mockFrameCache();
 
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            choices: [{
-              message: {
-                content: JSON.stringify({
-                  eyeContact: 7,
-                  bodyLanguage: 8,
-                  facialExpression: 6,
-                  overallPresence: 7,
-                  eyeContactNote: 'Good',
-                  bodyLanguageNote: 'Good',
-                  expressionNote: 'Good',
-                  visualSuggestions: ['tip'],
-                  visualStrengths: ['strength'],
-                }),
-              },
-            }],
-          }),
-        };
-      }
+    let callCount = 0;
+    fetch.mockImplementation(async (_url, options) => {
+      callCount++;
+      const scores = callCount === 1
+        ? { eyeContact: 6, bodyLanguage: 8, facialExpression: 6, overallPresence: 6 }
+        : { eyeContact: 8, bodyLanguage: 6, facialExpression: 8, overallPresence: 8 };
+
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                ...scores,
+                eyeContactNote: 'note', bodyLanguageNote: 'note',
+                expressionNote: 'note', visualSuggestions: ['tip'], visualStrengths: ['strength'],
+              }),
+            },
+          }],
+        }),
+      };
     });
 
     const result = await analyzeVideo(videoPath);
 
-    expect(capturedBody).not.toBeNull();
-    const imageCount = capturedBody.messages[0].content.filter(
-      item => item.type === 'image_url'
-    ).length;
+    expect(result.eyeContact).toBe(7);       // avg(6, 8)
+    expect(result.bodyLanguage).toBe(7);     // avg(8, 6)
+    expect(result.facialExpression).toBe(7); // avg(6, 8)
+    expect(result.overallPresence).toBe(7);  // avg(6, 8)
+  });
 
-    // After fix: exactly 5 images (FRAME_COUNT = 5)
-    expect(imageCount).toBe(5);
+  it('returns partial result if one batch fails', async () => {
+    const videoPath = 'test_video.mp4';
+    mockExec(120);
+    mockFs(videoPath);
+    mockFrameCache();
+
+    let callCount = 0;
+    fetch.mockImplementation(async (_url, options) => {
+      callCount++;
+      if (callCount === 1) {
+        return { ok: false, status: 500, text: async () => 'Internal Server Error' };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                eyeContact: 7, bodyLanguage: 8, facialExpression: 6, overallPresence: 7,
+                eyeContactNote: 'Good', bodyLanguageNote: 'Good', expressionNote: 'Good',
+                visualSuggestions: ['tip'], visualStrengths: ['strength'],
+              }),
+            },
+          }],
+        }),
+      };
+    });
+
+    const result = await analyzeVideo(videoPath);
     expect(result).not.toBeNull();
     expect(result.eyeContact).toBe(7);
-    expect(result.bodyLanguage).toBe(8);
+  });
+
+  it('returns null when GROQ_API_KEY is not set', async () => {
+    delete process.env.GROQ_API_KEY;
+    const result = await analyzeVideo('test_video.mp4');
+    expect(result).toBeNull();
+  });
+
+  it('returns null when no frames are extracted', async () => {
+    const videoPath = 'test_video.mp4';
+    mockExec(120);
+    fs.existsSync.mockReturnValue(false); // video file not found
+    const result = await analyzeVideo(videoPath);
+    expect(result).toBeNull();
+  });
+
+  it('Property: for any video duration, each batch has ≤5 images and total = 8', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 10, max: 600 }).map(d => ({ duration: d, path: `vid_${d}.mp4` })),
+        async ({ duration, path: videoPath }) => {
+          vi.clearAllMocks();
+          mockExec(duration);
+          mockFs(videoPath);
+          mockFrameCache();
+          const { getCalls } = mockFetchSuccess();
+
+          await analyzeVideo(videoPath);
+
+          const calls = getCalls();
+          expect(calls.length).toBeGreaterThan(0);
+          calls.forEach(c => expect(c.imageCount).toBeLessThanOrEqual(5));
+          expect(calls.reduce((s, c) => s + c.imageCount, 0)).toBe(8);
+        }
+      ),
+      { numRuns: 20 }
+    );
   });
 });
