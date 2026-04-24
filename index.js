@@ -42,6 +42,9 @@ const _noisePatterns = [
   "previousCounter", "_chains", "chainKey", "chainType",
   "messageKeys", "indexInfo", "currentRatchet",
   "prekey bundle", "incoming prekey",
+  // libsignal Bad MAC / session decrypt errors — Baileys handles these internally
+  "Bad MAC", "Session error:", "Failed to decrypt message",
+  "decryptWithSessions", "doDecryptWhisperMessage", "verifyMAC",
 ];
 const _isBaileysNoise = (args) => {
   const first = args[0];
@@ -54,12 +57,14 @@ const _isBaileysNoise = (args) => {
   }
   return false;
 };
-const _origInfo = console.info.bind(console);
-const _origWarn = console.warn.bind(console);
-const _origLog  = console.log.bind(console);
-console.info = (...args) => { if (!_isBaileysNoise(args)) _origInfo(...args); };
-console.warn = (...args) => { if (!_isBaileysNoise(args)) _origWarn(...args); };
-console.log  = (...args) => { if (!_isBaileysNoise(args)) _origLog(...args);  };
+const _origInfo  = console.info.bind(console);
+const _origWarn  = console.warn.bind(console);
+const _origLog   = console.log.bind(console);
+const _origError = console.error.bind(console);
+console.info  = (...args) => { if (!_isBaileysNoise(args)) _origInfo(...args); };
+console.warn  = (...args) => { if (!_isBaileysNoise(args)) _origWarn(...args); };
+console.log   = (...args) => { if (!_isBaileysNoise(args)) _origLog(...args);  };
+console.error = (...args) => { if (!_isBaileysNoise(args)) _origError(...args); };
 
 const TARGET_GROUP = process.env.TARGET_GROUP;
 const OWNER = process.env.OWNER_NUMBER;

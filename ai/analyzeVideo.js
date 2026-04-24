@@ -125,7 +125,9 @@ Return ONLY valid JSON (no markdown, no extra text):
 
   if (!res.ok) {
     const e = await res.text();
+    const is429 = res.status === 429;
     console.log(`[Visual] ${batchLabel} Groq HTTP ${res.status}:`, e.slice(0, 300));
+    if (is429) console.log(`[Visual] ⚠️ Daily token limit reached — visual analysis will be skipped until quota resets`);
     return null;
   }
 
