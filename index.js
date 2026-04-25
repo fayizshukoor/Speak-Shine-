@@ -2062,7 +2062,7 @@ async function startBot() {
     cron.schedule("0 21 * * 0", weeklySummary, { timezone: TIMEZONE });
 
     // ================= TEST CRON (sends question to owner every min, no delete) =================
-    if (true) {
+    if (false) {
       cron.schedule("* * * * *", async () => {
         try {
           const q = await Question.aggregate([{ $sample: { size: 1 } }]);

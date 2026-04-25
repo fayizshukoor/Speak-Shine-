@@ -40,8 +40,9 @@ const pushQuestions = async () => {
 //pushQuestions();
 
 const getCount = async () => {
-  const count = await Question.find({},{project:{_id:0,__v:0,category:1}}).distinct('category');
-  console.log("Total Categories:", count);
+  const ques = await Question.find();
+  console.log("✅ Questions ", ques);
+  console.log("Total Questions:", ques.length);
 };
 
 const questionStatusUpdate = async () => {
