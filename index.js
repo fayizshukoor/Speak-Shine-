@@ -589,13 +589,15 @@ async function startBot() {
       const streakRewardUsers = completed.filter(u => u.streak > 0 && u.streak % STREAK_REWARD_DAYS === 0);
 
       if (streakRewardUsers.length > 0) {
+        const bulkOps = [];
         for (const u of streakRewardUsers) {
           const deduct = Math.min(u.fine || 0, STREAK_REWARD_AMOUNT);
           if (deduct > 0) {
-            await User.updateOne({ userId: u.userId }, { $inc: { fine: -deduct } });
+            bulkOps.push({ updateOne: { filter: { userId: u.userId }, update: { $inc: { fine: -deduct } } } });
             u.fine = Math.max(0, (u.fine || 0) - deduct);
           }
         }
+        if (bulkOps.length > 0) await User.bulkWrite(bulkOps);
       }
 
       let msg = `╔══════════════════╗
