@@ -1418,23 +1418,28 @@ async function startBot() {
         // No mention = clear own scores
         const targets = mentioned.length > 0 ? mentioned : [normalizedUser];
 
+        // Resolve actual group JIDs for proper tappable mentions
+        const pMap = await getParticipantMap(sock, chatId);
+
         const results = [];
+        const mentionJids = [];
         for (const userId of targets) {
-          const normalizedId = normalizeUserId(userId);
-          const u = await User.findOne({ userId: { $regex: normalizedId.split("@")[0].split(":")[0] } });
+          const phone = userId.split("@")[0].split(":")[0];
+          const actualJid = pMap[phone] || `${phone}@s.whatsapp.net`;
+          mentionJids.push(actualJid);
+
+          const u = await User.findOne({ userId: { $regex: phone } });
           if (!u) {
-            const phone = normalizedId.split("@")[0].split(":")[0];
             results.push(`@${phone} → ❌ not found`);
             continue;
           }
           await User.updateOne({ _id: u._id }, { $set: { feedbackScores: [] } });
-          const phone = normalizedId.split("@")[0].split(":")[0];
           results.push(`@${phone} → ✅ scores cleared`);
         }
 
         return safeSend(sock, chatId, {
           text: `🧹 *Score Reset*\n\n━━━━━━━━━━━━━━━\n${results.join("\n")}\n\n_Fluency, Grammar, Confidence & Vocabulary history removed._`,
-          mentions: targets,
+          mentions: mentionJids,
         });
       }
 
