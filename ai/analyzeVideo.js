@@ -165,34 +165,73 @@ Return ONLY valid JSON (no markdown, no extra text):
   }
 }
 
-function mergeBatchResults(a, b) {
-  if (!a && !b) return null;
-  if (!a) return b;
-  if (!b) return a;
+/**
+ * Merges all batch results with positional 60/40 weighting.
+ * The second half of the video gets 60% weight, first half gets 40%.
+ * For >2 batches, weight increases linearly toward the end.
+ * Falls back to equal weighting if only one valid result exists.
+ *
+ * @param {Array<object|null>} results - ordered array of batch results
+ * @returns {object|null}
+ */
+function mergeWeightedBatchResults(results) {
+  const valid = results
+    .map((r, i) => ({ result: r, index: i, total: results.length }))
+    .filter(({ result }) => result != null);
 
-  const avg = (x, y) => Math.round((x + y) / 2);
-  const combineNotes = (noteA, noteB) => {
-    const a = (noteA || "").trim();
-    const b = (noteB || "").trim();
-    if (!a) return b;
-    if (!b) return a;
-    if (a === b) return a;
-    if (a === "Analysis partially available." || b === "Analysis partially available.") {
-      return a === "Analysis partially available." ? b : a;
-    }
-    return `${a} ${b}`;
+  if (valid.length === 0) return null;
+  if (valid.length === 1) return valid[0].result;
+
+  // Assign weights: linearly scale from 0.4 (first) to 0.6 (last)
+  // For 2 batches: [0.4, 0.6]
+  // For 3 batches: [0.267, 0.333, 0.4] — still back-weighted
+  const n = valid.length;
+  const rawWeights = valid.map(({ index, total }) => {
+    // position 0 = 0.4 weight, position (total-1) = 0.6 weight
+    const pos = index / Math.max(total - 1, 1); // 0.0 → 1.0
+    return 0.4 + pos * 0.2;
+  });
+  const weightSum = rawWeights.reduce((s, w) => s + w, 0);
+  const weights = rawWeights.map(w => w / weightSum); // normalize to sum=1
+
+  const SCORE_KEYS = ['eyeContact', 'bodyLanguage', 'facialExpression', 'overallPresence'];
+
+  // Weighted average for numeric scores
+  const weightedScore = (key) => {
+    let sum = 0, wSum = 0;
+    valid.forEach(({ result }, i) => {
+      const v = result[key];
+      if (v != null) { sum += v * weights[i]; wSum += weights[i]; }
+    });
+    return wSum > 0 ? Math.round(sum / wSum) : null;
   };
 
+  // Pick note from the highest-weighted valid batch that has a real note
+  const pickNote = (key) => {
+    const candidates = valid
+      .map(({ result }, i) => ({ text: (result[key] || '').trim(), weight: weights[i] }))
+      .filter(c => c.text && c.text !== 'Analysis partially available.')
+      .sort((a, b) => b.weight - a.weight);
+    if (candidates.length === 0) return valid[valid.length - 1].result[key] || '';
+    if (candidates.length === 1) return candidates[0].text;
+    // Combine top two if they differ
+    const [first, second] = candidates;
+    return first.text === second.text ? first.text : `${first.text} ${second.text}`;
+  };
+
+  const allArrays = (key) =>
+    [...new Set(valid.flatMap(({ result }) => result[key] ?? []))];
+
   return {
-    eyeContact:       avg(a.eyeContact,       b.eyeContact),
-    bodyLanguage:     avg(a.bodyLanguage,      b.bodyLanguage),
-    facialExpression: avg(a.facialExpression,  b.facialExpression),
-    overallPresence:  avg(a.overallPresence,   b.overallPresence),
-    eyeContactNote:   combineNotes(a.eyeContactNote,   b.eyeContactNote),
-    bodyLanguageNote: combineNotes(a.bodyLanguageNote, b.bodyLanguageNote),
-    expressionNote:   combineNotes(a.expressionNote,   b.expressionNote),
-    visualSuggestions: [...new Set([...(a.visualSuggestions ?? []), ...(b.visualSuggestions ?? [])])],
-    visualStrengths:   [...new Set([...(a.visualStrengths ?? []),   ...(b.visualStrengths ?? [])])],
+    eyeContact:       weightedScore('eyeContact'),
+    bodyLanguage:     weightedScore('bodyLanguage'),
+    facialExpression: weightedScore('facialExpression'),
+    overallPresence:  weightedScore('overallPresence'),
+    eyeContactNote:   pickNote('eyeContactNote'),
+    bodyLanguageNote: pickNote('bodyLanguageNote'),
+    expressionNote:   pickNote('expressionNote'),
+    visualSuggestions: allArrays('visualSuggestions'),
+    visualStrengths:   allArrays('visualStrengths'),
   };
 }
 
@@ -316,8 +355,8 @@ export async function analyzeVideo(videoPath) {
     })
   );
 
-  // Merge all batch results
-  const merged = batchResults.reduce((acc, result) => mergeBatchResults(acc, result), null);
+  // Merge all batch results with 60/40 second-half weighting
+  const merged = mergeWeightedBatchResults(batchResults);
 
   if (!merged) {
     console.log("[Visual] All batches failed");
