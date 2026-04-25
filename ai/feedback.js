@@ -46,7 +46,7 @@ export async function generateFeedback(
 
   const pipelineStart = Date.now();
   const id = Date.now();
-  let videoPath, audioPath, qualityWarning;
+  let videoPath, audioPath, qualityWarning, meanVolume;
 
   try {
     // -----------------------------------------------------------------------
@@ -67,12 +67,11 @@ export async function generateFeedback(
     // Stage 2: Extract audio
     // -----------------------------------------------------------------------
     const extractStage = startStage("extractAudio");
-    let audioPath, qualityWarning;
     try {
       const extracted = await extractAudio(videoPath, id);
       audioPath = extracted.audioPath;
       qualityWarning = extracted.qualityWarning;
-      const meanVolume = extracted.meanVolume ?? null;
+      meanVolume = extracted.meanVolume ?? null;
       extractStage.end();
     } catch (err) {
       extractStage.end(err);
