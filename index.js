@@ -875,6 +875,7 @@ async function startBot() {
         // ── Owner DM text commands ──────────────────────────────────────────
         if (isOwnerDM && !dmVideo) {
           const ownerCmd = text.trim().toLowerCase();
+          console.log(`[OwnerDM] cmd="${ownerCmd}"`);
 
           // /genq [count] — generate AI questions
           // Examples: /genq  /genq 14  /genq 21
