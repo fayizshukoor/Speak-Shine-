@@ -212,6 +212,83 @@ function fixUnescapedQuotes(str) {
   return result;
 }
 
+const MAX_TRANSCRIPT_CHARS = 3000;
+
+/**
+ * Splits a transcript into two halves at a word boundary near the midpoint.
+ */
+function splitTranscript(text) {
+  const mid = Math.floor(text.length / 2);
+  // Walk back from midpoint to find a space
+  let splitAt = mid;
+  while (splitAt > 0 && text[splitAt] !== " ") splitAt--;
+  if (splitAt === 0) splitAt = mid; // fallback: hard split
+  return [text.slice(0, splitAt).trim(), text.slice(splitAt).trim()];
+}
+
+/**
+ * Merges two Llama score objects from split-transcript analysis into one.
+ * Numeric scores are averaged; arrays are deduped and combined; strings pick the better half.
+ */
+function mergeScores(a, b) {
+  const avg = (x, y) => {
+    const nx = typeof x === "number" ? x : null;
+    const ny = typeof y === "number" ? y : null;
+    if (nx === null && ny === null) return null;
+    if (nx === null) return ny;
+    if (ny === null) return nx;
+    return Math.round((nx + ny) / 2);
+  };
+
+  const dedup = (...arrays) => [...new Set(arrays.flat().filter(Boolean))];
+
+  // For topic relevance: average only if both non-null
+  const topicRelevance = avg(a.topicRelevance, b.topicRelevance);
+
+  // For topicFeedback: combine both observations
+  const topicFeedback = [a.topicFeedback, b.topicFeedback]
+    .filter(Boolean)
+    .join(" ")
+    .trim() || null;
+
+  // CEFR: pick the higher level (more conservative = better for the student)
+  const cefrOrder = ["A1", "A2", "B1", "B2", "C1", "C2"];
+  const cefrA = cefrOrder.indexOf(a.cefrLevel ?? "");
+  const cefrB = cefrOrder.indexOf(b.cefrLevel ?? "");
+  const cefrLevel = cefrA >= cefrB ? a.cefrLevel : b.cefrLevel;
+
+  // Grammar errors: merge and dedup by original text, cap at 6
+  const seenOriginals = new Set();
+  const grammarErrors = [...(a.grammarErrors ?? []), ...(b.grammarErrors ?? [])]
+    .filter(e => {
+      const key = e.original?.toLowerCase().trim();
+      if (!key || seenOriginals.has(key)) return false;
+      seenOriginals.add(key);
+      return true;
+    })
+    .slice(0, 6);
+
+  return {
+    fluency:    avg(a.fluency,    b.fluency),
+    grammar:    avg(a.grammar,    b.grammar),
+    confidence: avg(a.confidence, b.confidence),
+    vocabulary: avg(a.vocabulary, b.vocabulary),
+    grammarErrors,
+    strongPoints: dedup(a.strongPoints, b.strongPoints).slice(0, 4),
+    suggestions:  dedup(a.suggestions,  b.suggestions).slice(0, 4),
+    topicRelevance,
+    topicFeedback,
+    pronunciationNote: a.pronunciationNote || b.pronunciationNote || null,
+    rhythmNote:        a.rhythmNote        || b.rhythmNote        || null,
+    cefrLevel,
+    vocabularyHighlights: {
+      strong: dedup(a.vocabularyHighlights?.strong, b.vocabularyHighlights?.strong).slice(0, 4),
+      weak:   dedup(a.vocabularyHighlights?.weak,   b.vocabularyHighlights?.weak).slice(0, 4),
+    },
+    overallComment: [a.overallComment, b.overallComment].filter(Boolean).join(" ").trim(),
+  };
+}
+
 export async function analyzeSpeech(transcript, durationSeconds, words = [], questionTopic = null, questionText = null, pronunciationIssues = [], rhythm = null) {
 
   // --- Compute real stats from Whisper data ---
@@ -297,7 +374,12 @@ export async function analyzeSpeech(transcript, durationSeconds, words = [], que
     : `- topicRelevance: null (no topic was provided)
 - topicFeedback: null`;
 
-  const prompt = `You are an expert English speaking coach analyzing a student's spoken English video submission.
+  // ---------------------------------------------------------------------------
+  // Build prompt for a given transcript chunk (used for both single + split mode)
+  // ---------------------------------------------------------------------------
+  const buildPrompt = (transcriptChunk, partLabel = null) => {
+    const partNote = partLabel ? `\nNOTE: This is ${partLabel} of the full transcript. Score accordingly.\n` : "";
+    return `You are an expert English speaking coach analyzing a student's spoken English video submission.
 
 AUDIO STATS (measured objectively from the recording):
 - Duration: ${durationStr}
@@ -307,14 +389,14 @@ AUDIO STATS (measured objectively from the recording):
 - Pauses: ${pauseSummary}
 - Pronunciation clarity: ${pronunciationSummary}
 - Speaking rhythm: ${rhythmSummary || "not available"}
-
+${partNote}
 ${hasTopic ? `TODAY'S SPEAKING TASK:
 - ${topicLine}
 
 IMPORTANT: The student was asked to speak about this specific topic. You MUST evaluate how well their transcript addresses it.` : "No specific topic was assigned."}
 
 TRANSCRIPT:
-${transcript.replace(/"/g, "'").replace(/\\/g, "")}
+${transcriptChunk.replace(/"/g, "'").replace(/\\/g, "")}
 
 TASK: Analyze this spoken English and return ONLY a valid JSON object with this exact structure. No extra text, no markdown, no explanation — just the JSON:
 
@@ -371,10 +453,12 @@ RULES:
 - If pace is too fast or slow, mention it
 - Keep overallComment encouraging but honest
 - IMPORTANT: All string values in the JSON must use only single quotes inside text, never double quotes. For grammar corrections with alternatives, use "X or Y" format without inner quotes.`;
+  };
 
-  // Run Llama speech analysis and LanguageTool grammar check in parallel
-  // Llama call uses key rotation with retry on 429
-  const llamaFetch = async () => {
+  // ---------------------------------------------------------------------------
+  // Helper: send one prompt to Llama and parse the JSON response
+  // ---------------------------------------------------------------------------
+  const llamaCall = async (prompt) => {
     while (true) {
       const apiKey = getTextKey();
       if (!apiKey) throw new Error("All Groq API keys exhausted — speech analysis unavailable");
@@ -401,57 +485,61 @@ RULES:
         throw new Error(`Groq analysis failed: ${err}`);
       }
 
-      return res;
+      const data = await res.json();
+      const raw = data.choices[0].message.content.trim();
+
+      let jsonStr = raw;
+      const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (fenceMatch) {
+        jsonStr = fenceMatch[1].trim();
+      } else {
+        const start = raw.indexOf("{");
+        const end = raw.lastIndexOf("}");
+        if (start !== -1 && end !== -1 && end > start) jsonStr = raw.slice(start, end + 1);
+      }
+
+      jsonStr = jsonStr
+        .replace(/,\s*([}\]])/g, "$1")
+        .replace(/[\u0000-\u001F]/g, " ");
+      jsonStr = fixUnescapedQuotes(jsonStr);
+
+      try {
+        return JSON.parse(jsonStr);
+      } catch (parseErr) {
+        console.error("JSON parse failed, raw response:", raw.slice(0, 500));
+        throw new Error(`Failed to parse Llama response as JSON: ${parseErr.message}`);
+      }
     }
   };
 
-  const [res, ltErrors] = await Promise.all([llamaFetch(), checkGrammar(transcript)]);
-
-  const data = await res.json();
-  const raw = data.choices[0].message.content.trim();
-
-  // Extract JSON — handle markdown code blocks and stray text
-  let jsonStr = raw;
-
-  // Strip markdown code fences if present
-  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenceMatch) {
-    jsonStr = fenceMatch[1].trim();
-  } else {
-    // Find the outermost { ... }
-    const start = raw.indexOf("{");
-    const end = raw.lastIndexOf("}");
-    if (start !== -1 && end !== -1 && end > start) {
-      jsonStr = raw.slice(start, end + 1);
-    }
-  }
-
-  // Fix common Llama JSON issues:
-  // 1. Trailing commas before } or ]
-  // 2. Control characters
-  // 3. Unescaped double quotes inside string values (e.g. "correction": "foo" or "bar")
-  jsonStr = jsonStr
-    .replace(/,\s*([}\]])/g, "$1")       // remove trailing commas
-    .replace(/[\u0000-\u001F]/g, " ");   // remove control characters
-
-  // Fix unescaped double quotes inside JSON string values.
-  // Strategy: walk char by char tracking whether we're inside a string,
-  // and escape any " that isn't a structural delimiter.
-  jsonStr = fixUnescapedQuotes(jsonStr);
-
+  // ---------------------------------------------------------------------------
+  // Run Llama (single or split) + LanguageTool in parallel
+  // ---------------------------------------------------------------------------
   let scores;
-  try {
-    scores = JSON.parse(jsonStr);
-  } catch (parseErr) {
-    // Last resort: try to extract just the numeric scores with regex
-    console.error("JSON parse failed, raw response:", raw.slice(0, 500));
-    throw new Error(`Failed to parse Llama response as JSON: ${parseErr.message}`);
+  if (transcript.length <= MAX_TRANSCRIPT_CHARS) {
+    // Short transcript — single call
+    console.log(`[Speech] transcript ${transcript.length} chars — single Llama call`);
+    const [result, ltErrors] = await Promise.all([
+      llamaCall(buildPrompt(transcript)),
+      checkGrammar(transcript),
+    ]);
+    scores = result;
+    scores.grammarErrors = mergeGrammarErrors(scores.grammarErrors || [], ltErrors);
+  } else {
+    // Long transcript — split into 2 halves, fire both in parallel
+    const [half1, half2] = splitTranscript(transcript);
+    console.log(`[Speech] transcript ${transcript.length} chars — split Llama calls (${half1.length} + ${half2.length} chars)`);
+    const [result1, result2, ltErrors] = await Promise.all([
+      llamaCall(buildPrompt(half1, "the first half")),
+      llamaCall(buildPrompt(half2, "the second half")),
+      checkGrammar(transcript),
+    ]);
+    scores = mergeScores(result1, result2);
+    scores.grammarErrors = mergeGrammarErrors(scores.grammarErrors || [], ltErrors);
   }
 
   return {
     ...scores,
-    // Merge LanguageTool errors with AI errors (dedup by original text)
-    grammarErrors: mergeGrammarErrors(scores.grammarErrors || [], ltErrors),
     // Attach computed stats so feedback.js can use them
     _stats: {
       duration: durationStr,
