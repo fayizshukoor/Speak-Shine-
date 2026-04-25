@@ -815,7 +815,7 @@ async function startBot() {
 
         // Dedup check for owner DM — include sender ID so forwarded videos don't collide
         const ownerHash = hashBuffer(Buffer.from(`${OWNER}:${dmVideo.fileSha256 || dmVideo.mediaKey || msg.key.id}`));
-        const ownerCacheEntry = getCacheEntry(ownerHash);
+        const ownerCacheEntry = await getCacheEntry(ownerHash);
         if (ownerCacheEntry === 'processing') {
           safeSend(sock, OWNER, { text: `⏳ _Your video is already being processed! Please wait._` });
           return;
@@ -826,7 +826,7 @@ async function startBot() {
           return;
         }
 
-        markProcessing(ownerHash);
+        await markProcessing(ownerHash);
 
         const ownerProgressSent = await sock.sendMessage(OWNER, {
           text: `⏳ _Analysing your video…_`,
@@ -1910,7 +1910,7 @@ async function startBot() {
         // Compute content hash for dedup — include sender so forwarded videos
         // (same fileSha256, different sender) are treated as separate submissions.
         const hash = hashBuffer(Buffer.from(`${dbUser}:${video.fileSha256 || video.mediaKey || msg.key.id}`));
-        const cacheEntry = getCacheEntry(hash);
+        const cacheEntry = await getCacheEntry(hash);
 
         if (cacheEntry === 'processing') {
           await safeSend(sock, chatId, {
@@ -1926,7 +1926,7 @@ async function startBot() {
           return;
         }
 
-        markProcessing(hash);
+        await markProcessing(hash);
 
         // Send initial progress message and capture its key
         const progressSent = await sock.sendMessage(chatId, {
