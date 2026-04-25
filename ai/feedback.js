@@ -268,7 +268,7 @@ Rules:
           model: "llama-3.3-70b-versatile",
           messages: [{ role: "user", content: prompt }],
           temperature: 0.4,
-          max_tokens: 150,
+          max_tokens: 200,
         }),
       });
 

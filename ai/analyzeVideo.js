@@ -208,32 +208,44 @@ function mergeWeightedBatchResults(results) {
     return wSum > 0 ? Math.round(sum / wSum) : null;
   };
 
-  // Pick note from the highest-weighted valid batch that has a real note
-  const pickNote = (key) => {
+  // Deduplicate tips by normalising to lowercase + stripping punctuation,
+  // then keep only the longest version of near-duplicate tips. Cap at 4.
+  const deduplicateTips = (key) => {
+    const all = valid.flatMap(({ result }) => result[key] ?? []).filter(Boolean);
+    const seen = new Map(); // normalised key → best (longest) tip
+    for (const tip of all) {
+      // Normalise: lowercase, strip punctuation, collapse spaces
+      const norm = tip.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+      // Use first 6 words as the dedup key so near-identical tips collapse
+      const shortKey = norm.split(" ").slice(0, 6).join(" ");
+      if (!seen.has(shortKey) || tip.length > seen.get(shortKey).length) {
+        seen.set(shortKey, tip);
+      }
+    }
+    return [...seen.values()].slice(0, 4);
+  };
+
+  // Pick the single best note — highest-weighted batch that has a real, non-generic note
+  const pickBestNote = (key) => {
     const candidates = valid
       .map(({ result }, i) => ({ text: (result[key] || '').trim(), weight: weights[i] }))
       .filter(c => c.text && c.text !== 'Analysis partially available.')
       .sort((a, b) => b.weight - a.weight);
     if (candidates.length === 0) return valid[valid.length - 1].result[key] || '';
-    if (candidates.length === 1) return candidates[0].text;
-    // Combine top two if they differ
-    const [first, second] = candidates;
-    return first.text === second.text ? first.text : `${first.text} ${second.text}`;
+    // Return only the top-weighted note — no concatenation
+    return candidates[0].text;
   };
-
-  const allArrays = (key) =>
-    [...new Set(valid.flatMap(({ result }) => result[key] ?? []))];
 
   return {
     eyeContact:       weightedScore('eyeContact'),
     bodyLanguage:     weightedScore('bodyLanguage'),
     facialExpression: weightedScore('facialExpression'),
     overallPresence:  weightedScore('overallPresence'),
-    eyeContactNote:   pickNote('eyeContactNote'),
-    bodyLanguageNote: pickNote('bodyLanguageNote'),
-    expressionNote:   pickNote('expressionNote'),
-    visualSuggestions: allArrays('visualSuggestions'),
-    visualStrengths:   allArrays('visualStrengths'),
+    eyeContactNote:   pickBestNote('eyeContactNote'),
+    bodyLanguageNote: pickBestNote('bodyLanguageNote'),
+    expressionNote:   pickBestNote('expressionNote'),
+    visualSuggestions: deduplicateTips('visualSuggestions'),
+    visualStrengths:   deduplicateTips('visualStrengths'),
   };
 }
 
