@@ -2021,18 +2021,18 @@ async function startBot() {
     cronsRegistered = true;
     console.log("⏰ Registering cron jobs...");
 
-    cron.schedule("30 7 * * *", sendGoodMorning, { timezone: TIMEZONE });
+    cron.schedule("30 8 * * *", sendGoodMorning, { timezone: TIMEZONE });
 
-    cron.schedule("0 8 * * *", sendQuestion, { timezone: TIMEZONE });
+    // First attempt at 9:00 AM sharp
+    cron.schedule("0 9 * * *", sendQuestion, { timezone: TIMEZONE });
 
+    // Retry every 2 min from 9:02 to 9:30 in case first attempt failed
     cron.schedule(
       "*/2 9 * * *",
       async () => {
-        const now = new Date();
+        const now = new Date(new Date().toLocaleString("en-US", { timeZone: TIMEZONE }));
         const minutes = now.getMinutes();
-
-        if (minutes < 2 || minutes > 30) return; // only run 8:02 to 8:30
-
+        if (minutes < 2 || minutes > 30) return; // only retry 9:02–9:30
         await sendQuestion();
       },
       { timezone: TIMEZONE },
@@ -2092,7 +2092,7 @@ async function startBot() {
       }, { timezone: TIMEZONE });
     }
 
-    console.log("✅ All cron jobs registered (7:30, 8:00, 8:02-8:30, 15:00, 21:00, 22:30, 23:30, 00:00, 00:05, Sun 21:00)");
+    console.log("✅ All cron jobs registered (8:30 GM, 9:00, 9:02-9:30, 15:00, 21:00, 22:30, 23:30, 00:00, 00:05, Sun 21:00)");
   } // end cronsRegistered guard
 
   // ================= CONNECTION =================
