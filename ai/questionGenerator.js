@@ -1,6 +1,5 @@
 /**
- * ai/questionGenerator.js — AI question generation logic (reusable module).
- * Used by both generateQuestions.js (CLI) and the /genq bot command.
+ * ai/questionGenerator.js — AI question generation with human-style enforcement.
  */
 
 import fetch from "node-fetch";
@@ -17,7 +16,156 @@ export const CATEGORIES = [
 ];
 
 // ---------------------------------------------------------------------------
-// Similarity check — Jaccard word overlap to catch near-duplicate topics
+// AI pattern detection
+// ---------------------------------------------------------------------------
+
+const AI_PHRASES = [
+  "share your thoughts",
+  "elaborate on",
+  "reflect on",
+  "in what ways",
+  "to what extent",
+  "delve into",
+  "shed light on",
+  "it is important to",
+  "in today's world",
+  "in today's society",
+  "have you ever considered",
+  "what are your thoughts on",
+  "how does this make you feel",
+  "what impact does",
+  "what role does",
+  "how would you describe",
+  "can you elaborate",
+  "please describe",
+  "discuss the",
+  "explain the importance",
+  "what are the key",
+  "what are some ways",
+  "in your opinion, what",
+];
+
+const AI_ENDINGS = [
+  "and why?",
+  "explain your reasoning.",
+  "explain your answer.",
+  "give reasons for your answer.",
+  "support your answer with examples.",
+  "why or why not?",
+  "justify your response.",
+];
+
+const AI_OPENERS = [
+  "can you describe",
+  "could you describe",
+  "would you say",
+  "do you think that",
+  "what do you think about",
+  "how do you feel about",
+  "what are your thoughts",
+  "in your opinion",
+  "do you believe that",
+];
+
+/**
+ * Returns true if the question text has AI-generated patterns.
+ */
+function hasAIPatterns(text) {
+  const lower = text.toLowerCase().trim();
+
+  if (AI_PHRASES.some(p => lower.includes(p))) return true;
+  if (AI_ENDINGS.some(e => lower.endsWith(e))) return true;
+  if (text.length > 180) return true; // AI over-explains
+
+  return false;
+}
+
+/**
+ * Checks opener diversity across a batch.
+ * Returns a map of opener → count.
+ */
+function getOpenerCounts(questions) {
+  const counts = {};
+  for (const q of questions) {
+    const first3 = q.question.toLowerCase().split(" ").slice(0, 3).join(" ");
+    counts[first3] = (counts[first3] || 0) + 1;
+  }
+  return counts;
+}
+
+// ---------------------------------------------------------------------------
+// Rewrite a single question to sound human
+// ---------------------------------------------------------------------------
+async function rewriteAsHuman(q, apiKey) {
+  const prompt = `Rewrite this English speaking practice question to sound like a real person casually asking a friend — not a formal exam or AI-generated question.
+
+Original question: "${q.question}"
+Topic: "${q.topic}"
+
+Rules:
+- Keep it SHORT (under 120 characters ideally)
+- Sound natural and conversational, like a WhatsApp message
+- No formal phrases like "share your thoughts", "elaborate", "reflect on", "in what ways"
+- Don't end with "and why?" or "explain your reasoning"
+- Start with something direct: "What's...", "Tell me...", "Have you...", "Do you...", "Which...", "When did...", "How often..."
+- Keep the same topic/meaning
+
+Return ONLY the rewritten question text, nothing else.`;
+
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "llama-3.3-70b-versatile",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.7,
+      max_tokens: 150,
+    }),
+  });
+
+  if (!res.ok) return null;
+  const data = await res.json();
+  const rewritten = data.choices?.[0]?.message?.content?.trim();
+  if (!rewritten || rewritten.length < 10) return null;
+
+  // Strip surrounding quotes if LLM added them
+  return rewritten.replace(/^["']|["']$/g, "").trim();
+}
+
+// ---------------------------------------------------------------------------
+// Humanize a batch — detect + rewrite flagged questions
+// ---------------------------------------------------------------------------
+async function humanizeBatch(questions, apiKey) {
+  const results = [];
+  const openerCounts = getOpenerCounts(questions);
+
+  for (const q of questions) {
+    const lower = q.question.toLowerCase().trim();
+    const opener = lower.split(" ").slice(0, 3).join(" ");
+    const repeatedOpener = (openerCounts[opener] || 0) > 2;
+    const needsRewrite = hasAIPatterns(q.question) || repeatedOpener;
+
+    if (needsRewrite) {
+      console.log(`[Humanize] Rewriting: "${q.question.slice(0, 60)}..."`);
+      const rewritten = await rewriteAsHuman(q, apiKey);
+      if (rewritten) {
+        console.log(`[Humanize] → "${rewritten.slice(0, 60)}"`);
+        results.push({ ...q, question: rewritten });
+        // Update opener counts after rewrite
+        const newOpener = rewritten.toLowerCase().split(" ").slice(0, 3).join(" ");
+        openerCounts[newOpener] = (openerCounts[newOpener] || 0) + 1;
+        if (openerCounts[opener] > 0) openerCounts[opener]--;
+        continue;
+      }
+    }
+    results.push(q);
+  }
+
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Similarity check
 // ---------------------------------------------------------------------------
 function topicSimilarity(a, b) {
   const wordsA = new Set(a.toLowerCase().match(/\b\w{4,}\b/g) || []);
@@ -35,10 +183,7 @@ function isTooSimilar(newTopic, existingTopics, threshold = 0.4) {
 // ---------------------------------------------------------------------------
 // Generate questions via Groq Llama
 // ---------------------------------------------------------------------------
-async function generateWithAI(categories, existingTopics, countPerCategory) {
-  const GROQ_API_KEY = process.env.GROQ_API_KEY;
-  if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY not set in .env");
-
+async function generateWithAI(categories, existingTopics, countPerCategory, apiKey) {
   const existingList = existingTopics.length > 0
     ? `\nALREADY USED TOPICS (do NOT repeat or create similar ones):\n${existingTopics.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n`
     : "";
@@ -57,30 +202,41 @@ ${existingList}
 CATEGORIES TO GENERATE FOR:
 ${categoryList}
 
-REQUIREMENTS:
-- Each question must be fresh, engaging, and different from the already-used topics above
-- topic: a 1-sentence description of what the student should talk about (used as the speaking prompt title)
-- question: a specific follow-up question to guide their answer (1 sentence)
-- Keep language at B1-B2 level — clear, natural, not too academic
-- Vary the style: some personal, some opinion-based, some hypothetical, some reflective
-- Do NOT repeat or closely paraphrase any already-used topic
+STYLE RULES — questions must sound like a real person asking a friend, NOT a formal exam:
+✅ GOOD examples:
+- "What's the weirdest food you've ever tried and actually liked?"
+- "If you could swap jobs with anyone for a week, who would it be?"
+- "What's one habit you keep trying to build but always give up on?"
+- "Tell me about a time you were completely lost — literally or figuratively."
+- "Which do you prefer: working early morning or late at night?"
+
+❌ BAD examples (do NOT write like this):
+- "Can you elaborate on how your morning routine reflects your personal values?"
+- "Share your thoughts on the importance of work-life balance in today's society."
+- "In what ways has technology impacted your daily life? Explain your reasoning."
+- "Reflect on a personal experience that shaped your perspective."
+
+HARD RULES:
+- NO phrases: "share your thoughts", "elaborate", "reflect on", "in what ways", "to what extent", "in today's world/society", "what are your thoughts on", "explain your reasoning", "why or why not"
+- NO questions ending with "and why?" or "explain your answer"
+- Keep questions under 130 characters
+- Vary the openers — don't start more than 2 questions with the same word
+- topic: short 1-sentence speaking prompt title
+- question: the actual question (conversational, direct, specific)
 
 Return ONLY a valid JSON array, no markdown, no extra text:
 [
-  {"category":"<category>","topic":"<topic sentence>","question":"<question sentence>"},
+  {"category":"<category>","topic":"<topic>","question":"<question>"},
   ...
 ]`;
 
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${GROQ_API_KEY}`,
-      "Content-Type": "application/json",
-    },
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: "llama-3.3-70b-versatile",
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.85,
+      temperature: 0.9,
       max_tokens: 3000,
     }),
   });
@@ -108,31 +264,29 @@ Return ONLY a valid JSON array, no markdown, no extra text:
 }
 
 // ---------------------------------------------------------------------------
-// Main export — generates and inserts questions, returns a summary object
+// Main export — generate + humanize + insert
 // ---------------------------------------------------------------------------
-
-/**
- * Generates AI questions and inserts them into MongoDB.
- *
- * @param {number} totalCount - Total questions to generate (should be multiple of 7)
- * @returns {Promise<{ inserted: object[], skipped: object[], totalInDb: number }>}
- */
 export async function generateAndInsertQuestions(totalCount = 7) {
+  const GROQ_API_KEY = process.env.GROQ_API_KEY;
+  if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY not set in .env");
+
   const countPerCategory = Math.ceil(totalCount / CATEGORIES.length);
 
-  // Fetch existing topics for no-repeat check
   const existing = await Question.find({}, { topic: 1, _id: 0 }).lean();
   const existingTopics = existing.map(q => q.topic).filter(Boolean);
 
   // Generate
-  const generated = await generateWithAI(CATEGORIES, existingTopics, countPerCategory);
+  const generated = await generateWithAI(CATEGORIES, existingTopics, countPerCategory, GROQ_API_KEY);
 
-  // Validate and filter duplicates
+  // Humanize — detect AI patterns and rewrite
+  const humanized = await humanizeBatch(generated, GROQ_API_KEY);
+
+  // Validate and dedup
   const allTopics = [...existingTopics];
   const toInsert = [];
   const skipped = [];
 
-  for (const q of generated) {
+  for (const q of humanized) {
     if (!q.category || !q.topic || !q.question) {
       skipped.push({ reason: "missing fields", q });
       continue;
@@ -154,6 +308,42 @@ export async function generateAndInsertQuestions(totalCount = 7) {
   }
 
   const totalInDb = await Question.countDocuments();
-
   return { inserted: toInsert, skipped, totalInDb };
+}
+
+// ---------------------------------------------------------------------------
+// Humanize all existing DB questions — called by /humanizedb command
+// ---------------------------------------------------------------------------
+export async function humanizeAllDbQuestions() {
+  const GROQ_API_KEY = process.env.GROQ_API_KEY;
+  if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY not set in .env");
+
+  const all = await Question.find().lean();
+  if (!all.length) return { updated: 0, skipped: 0, total: 0 };
+
+  let updated = 0;
+  let skipped = 0;
+
+  for (const q of all) {
+    if (!hasAIPatterns(q.question)) {
+      skipped++;
+      continue;
+    }
+
+    console.log(`[HumanizeDB] Rewriting: "${q.question.slice(0, 70)}"`);
+    const rewritten = await rewriteAsHuman(q, GROQ_API_KEY);
+
+    if (rewritten && rewritten !== q.question) {
+      await Question.updateOne({ _id: q._id }, { $set: { question: rewritten } });
+      console.log(`[HumanizeDB] → "${rewritten.slice(0, 70)}"`);
+      updated++;
+    } else {
+      skipped++;
+    }
+
+    // Small delay to avoid rate limiting
+    await new Promise(r => setTimeout(r, 300));
+  }
+
+  return { updated, skipped, total: all.length };
 }

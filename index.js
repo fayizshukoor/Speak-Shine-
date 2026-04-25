@@ -21,7 +21,7 @@ import { chunkMessage, sendChunks as _sendChunks } from "./helpers.js";
 import { hashBuffer, markProcessing, storeResult, getCacheEntry, evict } from "./ai/dedupCache.js";
 import { processMessage, formatResponse } from "./grammar/processor.js";
 import { isOnCooldown, setCooldown, getRemainingCooldown } from "./grammar/cooldown.js";
-import { generateAndInsertQuestions } from "./ai/questionGenerator.js";
+import { generateAndInsertQuestions, humanizeAllDbQuestions } from "./ai/questionGenerator.js";
 import fs from "fs";
 import { exec } from "child_process";
 import pino from "pino";
@@ -940,6 +940,27 @@ async function startBot() {
             const chunks = chunkMessage(msg);
             for (const chunk of chunks) {
               await safeSend(sock, OWNER, { text: chunk });
+            }
+            return;
+          }
+
+          // /humanizedb — rewrite all existing DB questions to sound human
+          if (ownerCmd === "/humanizedb") {
+            const total = await Question.countDocuments();
+            if (total === 0) {
+              await safeSend(sock, OWNER, { text: `📭 No questions in DB to humanize.` });
+              return;
+            }
+            await safeSend(sock, OWNER, {
+              text: `🤖 *Humanizing ${total} questions...*\n\n⏳ _Detecting AI patterns and rewriting. This may take a minute._`,
+            });
+            try {
+              const { updated, skipped, total: tot } = await humanizeAllDbQuestions();
+              await safeSend(sock, OWNER, {
+                text: `✅ *Humanize Complete!*\n\n━━━━━━━━━━━━━━━\n✍️ *Rewritten:* ${updated}\n⏭️ *Already natural:* ${skipped}\n📊 *Total:* ${tot}`,
+              });
+            } catch (err) {
+              await safeSend(sock, OWNER, { text: `❌ *Humanize failed:* _${err.message}_` });
             }
             return;
           }
