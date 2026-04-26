@@ -34,9 +34,16 @@ export default defineConfig({
     minify: "esbuild",
     sourcemap: false,
     target: "es2020",
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
-        manualChunks: undefined, // Disable code splitting for faster builds
+        manualChunks: {
+          // React core — changes rarely, cached by browser long-term
+          "vendor-react": ["react", "react-dom", "react-router-dom"],
+          // Socket.io — large, separate chunk
+          "vendor-socket": ["socket.io-client"],
+          // Chart/UI libs if any
+        },
       },
     },
   },
