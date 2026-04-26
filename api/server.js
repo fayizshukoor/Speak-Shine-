@@ -113,10 +113,25 @@ io.on("connection", (socket) => {
     const room = roomKey(phone, peerPhone);
     socket.join(room);
 
-    // Send history on join
     if (isRedisAvailable()) {
       const redis = getRedisClient();
       const messages = await getMessages(redis, room);
+
+      // Mark peer's undelivered messages as delivered now that we're in the room
+      let changed = false;
+      for (const msg of messages) {
+        if (msg.from === peerPhone && msg.status === "sent") {
+          msg.status = "delivered";
+          changed = true;
+        }
+      }
+      if (changed) {
+        await saveMessages(redis, room, messages);
+        // Tell sender their messages are delivered
+        const peerSocketId = onlineUsers.get(peerPhone);
+        if (peerSocketId) io.to(peerSocketId).emit("chat:delivered", { room });
+      }
+
       socket.emit("chat:history", { room, messages });
     }
   });
@@ -126,12 +141,20 @@ io.on("connection", (socket) => {
     if (!peerPhone || !text?.trim()) return;
 
     const room = roomKey(phone, peerPhone);
+    const peerOnline = onlineUsers.has(peerPhone);
+    const peerSocketId = onlineUsers.get(peerPhone);
+    const peerInRoom = peerSocketId
+      ? io.sockets.sockets.get(peerSocketId)?.rooms?.has(room)
+      : false;
+
     const message = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       from: phone,
       fromName: name,
       text: text.trim(),
       ts: Date.now(),
+      // sent → delivered (peer online) → seen (peer has room open)
+      status: peerInRoom ? "seen" : peerOnline ? "delivered" : "sent",
     };
 
     // Persist to Redis
@@ -139,7 +162,6 @@ io.on("connection", (socket) => {
       const redis = getRedisClient();
       const messages = await getMessages(redis, room);
       messages.push(message);
-      // Keep only last MAX_MESSAGES
       if (messages.length > MAX_MESSAGES) messages.splice(0, messages.length - MAX_MESSAGES);
       await saveMessages(redis, room, messages);
     }
@@ -147,18 +169,39 @@ io.on("connection", (socket) => {
     // Broadcast to both users in the room
     io.to(room).emit("chat:message", { room, message });
 
-    // If peer is online but not in the room, send a notification
+    // Notify peer if not in room
+    if (peerSocketId && !peerInRoom) {
+      io.to(peerSocketId).emit("chat:notify", {
+        from: phone,
+        fromName: name,
+        preview: text.trim().slice(0, 60),
+      });
+    }
+  });
+
+  // ── Mark messages as seen ───────────────────────────────────────────────
+  socket.on("chat:seen", async ({ peerPhone }) => {
+    if (!peerPhone) return;
+    const room = roomKey(phone, peerPhone);
+
+    if (isRedisAvailable()) {
+      const redis = getRedisClient();
+      const messages = await getMessages(redis, room);
+      let changed = false;
+      for (const msg of messages) {
+        // Only update messages sent by the peer (not mine)
+        if (msg.from === peerPhone && msg.status !== "seen") {
+          msg.status = "seen";
+          changed = true;
+        }
+      }
+      if (changed) await saveMessages(redis, room, messages);
+    }
+
+    // Tell the sender their messages were seen
     const peerSocketId = onlineUsers.get(peerPhone);
     if (peerSocketId) {
-      const peerSocket = io.sockets.sockets.get(peerSocketId);
-      const rooms = peerSocket?.rooms || new Set();
-      if (!rooms.has(room)) {
-        io.to(peerSocketId).emit("chat:notify", {
-          from: phone,
-          fromName: name,
-          preview: text.trim().slice(0, 60),
-        });
-      }
+      io.to(peerSocketId).emit("chat:seen", { by: phone, room });
     }
   });
 

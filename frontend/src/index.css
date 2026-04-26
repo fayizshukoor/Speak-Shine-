@@ -794,3 +794,14 @@ input, select, textarea { font-family: inherit; outline: none; -webkit-appearanc
   border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 .group-entry:hover { background: rgba(108,99,255,0.15) !important; }
+
+/* ── Read receipts (ticks) ──────────────────────────────────────────────── */
+.msg-tick {
+  font-size: 11px;
+  margin-left: 4px;
+  font-style: normal;
+  letter-spacing: -1px;
+}
+.tick-sent      { color: rgba(255,255,255,0.45); }
+.tick-delivered { color: rgba(255,255,255,0.45); }
+.tick-seen      { color: #60a5fa; } /* blue like WhatsApp */
