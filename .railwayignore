@@ -1,0 +1,39 @@
+# WhatsApp bot files (not needed for web deployment)
+auth/
+index.js
+poster.js
+quns.js
+generateQuestions.js
+generateVoice.js
+helpers.js
+humanizedb.js
+resetStatus.js
+status.js
+testFeedback.js
+testVisual.js
+users.js
+chunkMessage.test.js
+
+# Grammar assistant files (WhatsApp bot only)
+grammar/
+GRAMMAR_ASSISTANT.md
+
+# Documentation
+*.md
+!README.md
+
+# Tests
+*.test.js
+**/*.test.js
+
+# Development files
+.vscode/
+.kiro/
+
+# Node modules (will be installed during build)
+node_modules/
+frontend/node_modules/
+
+# Environment files (use Railway env vars)
+.env
+frontend/.env.local

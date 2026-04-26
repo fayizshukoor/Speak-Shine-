@@ -1,15 +1,15 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "ffmpeg", "cairo", "pango", "libjpeg", "giflib", "librsvg", "pkg-config", "python3"]
+nixPkgs = ["nodejs_20", "ffmpeg", "pkg-config", "python3"]
 
 [phases.install]
 cmds = [
-  "npm install --omit=dev",
-  "npm install --prefix frontend --omit=dev"
+  "npm ci --omit=dev --omit=optional --ignore-scripts || npm install --omit=dev --omit=optional --ignore-scripts",
+  "cd frontend && npm ci --omit=dev || npm install --omit=dev"
 ]
 
 [phases.build]
 cmds = [
-  "npm run build --prefix frontend"
+  "cd frontend && npm run build"
 ]
 
 [start]
