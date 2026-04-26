@@ -1,5 +1,6 @@
 [build]
 builder = "NIXPACKS"
+nixpacksConfigPath = "nixpacks.webapp.toml"
 
 [deploy]
 startCommand = "NODE_ENV=production node api/server.js"
