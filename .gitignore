@@ -3,3 +3,6 @@ node_modules/
 .kiro/ 
 frontend/.env.local
 frontend/dist/
+# Video upload temporary files
+tmp/uploads/*
+!tmp/uploads/.gitkeep

@@ -9,6 +9,7 @@ import authRoutes from "./routes/auth.js";
 import userRoutes from "./routes/users.js";
 import dashboardRoutes from "./routes/dashboard.js";
 import questionRoutes from "./routes/questions.js";
+import videoAnalysisRoutes from "./routes/videoAnalysis.js";
 
 dotenv.config();
 
@@ -26,6 +27,7 @@ app.use("/api/auth",      authRoutes);
 app.use("/api/users",     userRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/questions", questionRoutes);
+app.use("/api/video",     videoAnalysisRoutes);
 
 // API 404 — must be before the React catch-all
 app.use("/api", (_, res) => res.status(404).json({ error: "API route not found" }));

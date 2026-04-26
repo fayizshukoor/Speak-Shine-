@@ -21,12 +21,17 @@ export default function Layout({ children, title }) {
       { to: "/admin",     label: "🛡️ Admin" },
       { to: "/trainer",   label: "🎓 Trainer" },
       { to: "/dashboard", label: "👤 User View" },
+      { to: "/video-analysis", label: "📹 Video Analysis" },
     ];
     if (user?.role === "trainer") return [
       { to: "/trainer",   label: "🎓 Dashboard" },
       { to: "/dashboard", label: "👤 User View" },
+      { to: "/video-analysis", label: "📹 Video Analysis" },
     ];
-    return [];
+    return [
+      { to: "/dashboard", label: "📊 Dashboard" },
+      { to: "/video-analysis", label: "📹 Video Analysis" },
+    ];
   };
 
   const links = navLinks();
