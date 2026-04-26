@@ -429,7 +429,9 @@ function RecordCard({ onAnalysisStarted }) {
     recorderRef.current = recorder;
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
     recorder.onstop = () => {
+      console.log(`[Recording] Creating blob with MIME type: ${mimeType}`);
       const blob = new Blob(chunksRef.current, { type: mimeType });
+      console.log(`[Recording] Blob created - type: ${blob.type}, size: ${blob.size}`);
       pendingBlobRef.current = blob; // store for useEffect to pick up after render
       setRecordedBlob(blob);
       setStep("preview");
@@ -486,18 +488,29 @@ function RecordCard({ onAnalysisStarted }) {
     setUploadProgress(0);
     setError(null);
     try {
-      // Use the stored MIME type from recording
-      const mimeType = mimeTypeRef.current || "video/webm";
+      // Use the stored MIME type from recording (fallback to blob.type, then default)
+      let mimeType = mimeTypeRef.current || recordedBlob.type || "video/webm";
+      
+      // Ensure it's a video type
+      if (!mimeType.startsWith("video/")) {
+        console.warn(`[Upload] Invalid MIME type detected: ${mimeType}, forcing to video/webm`);
+        mimeType = "video/webm";
+      }
+      
       const ext = mimeType.includes("mp4") ? "mp4" : "webm";
+      
+      console.log(`[Upload] Creating file with MIME type: ${mimeType}, size: ${recordedBlob.size}`);
       
       // Create File with explicit MIME type
       const file = new File([recordedBlob], `recording.${ext}`, { type: mimeType });
       
-      console.log(`[Upload] File type: ${file.type}, size: ${file.size}`);
+      console.log(`[Upload] File created - type: ${file.type}, size: ${file.size}, name: ${file.name}`);
       
       const formData = new FormData();
       formData.append("video", file);
       formData.append("isPublic", "true"); // Always public
+      
+      console.log(`[Upload] FormData created, starting upload...`);
       
       const res = await api.post("/video/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -509,6 +522,7 @@ function RecordCard({ onAnalysisStarted }) {
       setRecordedBlob(null);
       setElapsed(0);
     } catch (err) {
+      console.error("[Upload] Error:", err);
       setError(err.response?.data?.error || "Upload failed");
       setStep("preview");
     }
