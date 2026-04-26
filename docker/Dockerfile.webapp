@@ -1,0 +1,39 @@
+FROM node:20-slim AS base
+
+# ── System deps (cached unless this layer changes) ───────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# ── Root deps (cached unless package*.json changes) ──────────────────────────
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
+
+# ── API deps ──────────────────────────────────────────────────────────────────
+COPY api/package.json api/package-lock.json* ./api/
+RUN cd api && npm install --omit=dev --no-audit --no-fund
+
+# ── Frontend deps (separate layer — changes most often) ──────────────────────
+COPY frontend/package.json frontend/package-lock.json ./frontend/
+RUN cd frontend && npm ci --no-audit --no-fund
+
+# ── Frontend build ────────────────────────────────────────────────────────────
+COPY frontend/ ./frontend/
+RUN cd frontend && NODE_ENV=production npm run build
+
+# ── Copy rest of source ───────────────────────────────────────────────────────
+COPY . .
+
+# Remove frontend node_modules after build — not needed at runtime
+RUN rm -rf frontend/node_modules
+
+# ── Runtime ───────────────────────────────────────────────────────────────────
+ENV NODE_ENV=production
+EXPOSE 3001
+
+CMD ["node", "api/server.js"]

@@ -11,7 +11,6 @@ npm-debug.log*
 # Development files
 .git/
 .gitignore
-README.md
 *.md
 .env.local
 .env.development
@@ -36,5 +35,8 @@ tmp/
 temp/
 *.tmp
 
-# Auth files (keep these but they're large)
+# Auth files
 auth/
+
+# Kiro specs
+.kiro/
