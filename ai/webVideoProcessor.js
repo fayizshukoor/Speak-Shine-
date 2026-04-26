@@ -88,36 +88,33 @@ export async function processWebVideo(videoPath, userId, phone, displayName, onP
 
 /**
  * Get video duration using ffprobe
- * Adds .mp4 extension temporarily so ffprobe can detect the container format
+ * Uses JSON output format — works without file extension
  */
 function getVideoDuration(videoPath) {
   return new Promise((resolve, reject) => {
-    const needsRename = !videoPath.match(/\.(mp4|mov|avi|webm|mpeg|3gp|flv|wmv)$/i);
-    const probePath = needsRename ? videoPath + ".mp4" : videoPath;
+    const cmd = `ffprobe -v quiet -print_format json -show_format -show_streams "${videoPath}"`;
 
-    if (needsRename) {
-      try { fs.renameSync(videoPath, probePath); } catch (e) {
-        return reject(new Error("Failed to prepare video file"));
+    exec(cmd, { timeout: 30000 }, (err, stdout, stderr) => {
+      if (err || !stdout) {
+        console.error("[ffprobe] failed:", stderr || err?.message);
+        return reject(new Error("Could not read video duration. Please ensure the file is a valid video."));
       }
-    }
 
-    exec(
-      `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${probePath}"`,
-      (err, stdout, stderr) => {
-        if (needsRename) {
-          try { fs.renameSync(probePath, videoPath); } catch (_) {}
-        }
-        if (err) {
-          console.error("[ffprobe] error:", stderr || err.message);
-          return reject(new Error("Could not read video duration. Please ensure the file is a valid video."));
-        }
-        const duration = parseFloat((stdout || "").trim());
-        if (isNaN(duration) || duration <= 0) {
+      try {
+        const info = JSON.parse(stdout);
+        const dur =
+          parseFloat(info?.format?.duration) ||
+          parseFloat(info?.streams?.find(s => s.codec_type === "video")?.duration) ||
+          0;
+
+        if (!dur || dur <= 0) {
           return reject(new Error("Could not determine video duration. Please try a different file."));
         }
-        resolve(Math.round(duration));
+        resolve(Math.round(dur));
+      } catch (parseErr) {
+        return reject(new Error("Could not read video metadata. Please try a different file."));
       }
-    );
+    });
   });
 }
 
