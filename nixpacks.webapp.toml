@@ -3,19 +3,17 @@ nixPkgs = ["nodejs_20", "ffmpeg", "pkg-config", "python3", "cairo", "pango", "li
 
 [phases.install]
 cmds = [
-  # Root dependencies - try with optional deps first, fallback without
+  # Root dependencies
   "npm ci --prefer-offline --no-audit --no-fund --omit=dev || npm ci --prefer-offline --no-audit --no-fund --omit=dev --omit=optional",
-  # API dependencies
-  "cd api && npm ci --prefer-offline --no-audit --no-fund --omit=dev",
-  # Frontend dependencies (build-time only)
+  # API has no package-lock.json, use npm install
+  "cd api && npm install --prefer-offline --no-audit --no-fund --omit=dev",
+  # Frontend has package-lock.json, use npm ci
   "cd frontend && npm ci --prefer-offline --no-audit --no-fund"
 ]
 
 [phases.build]
 cmds = [
-  # Build frontend with production optimizations
   "cd frontend && NODE_ENV=production npm run build",
-  # Clean up frontend node_modules after build to save space
   "rm -rf frontend/node_modules"
 ]
 
