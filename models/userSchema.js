@@ -2,13 +2,14 @@ import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema({
   userId: { type: String, unique: true },
-  name: { type: String, default: null }, // WhatsApp push name
+  name: { type: String, default: null },
+  phone: { type: String, default: null },   // e.g. "8848096746" — auto-saved on first login
   fine: { type: Number, default: 0 },
   completed: { type: Boolean, default: false },
-  streak: { type: Number, default: 0 }, // consecutive days submitted
-  weeklySubmissions: { type: Number, default: 0 }, // resets every Sunday
-  weeklyFine: { type: Number, default: 0 }, // fines collected this week, resets every Sunday
-  monthlySubmissions: { type: Number, default: 0 }, // resets on 1st of each month
+  streak: { type: Number, default: 0 },
+  weeklySubmissions: { type: Number, default: 0 },
+  weeklyFine: { type: Number, default: 0 },
+  monthlySubmissions: { type: Number, default: 0 },
   feedbackScores: {
     type: [{
       fluency: Number,
@@ -20,5 +21,7 @@ const userSchema = new mongoose.Schema({
     default: [],
   },
 });
+
+userSchema.index({ phone: 1 });
 
 export default mongoose.model("User", userSchema);
