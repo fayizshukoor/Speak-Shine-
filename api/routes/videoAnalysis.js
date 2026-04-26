@@ -124,6 +124,17 @@ router.post("/upload", authMiddleware, (req, res, next) => {
 
     // Create report
     const user = await User.findOne({ phone });
+
+    // ── Mark submitted (same as WhatsApp bot) ───────────────────────────
+    await User.findOneAndUpdate(
+      { phone },
+      {
+        completed: true,
+        $inc: { weeklySubmissions: 1 },
+        ...(req.user.name ? { $set: { name: req.user.name } } : {}),
+      }
+    );
+
     const report = await VideoReport.create({
       userId,
       phone,
@@ -220,6 +231,24 @@ async function processInBackground(reportId, videoPath, displayName) {
       status: "completed",
       analysis: result.analysis,
     });
+
+    // ── Same actions as WhatsApp submission ──────────────────────────────
+    // Save scores to user profile (feedbackScores + monthlySubmissions)
+    const { fluency, grammar, confidence, vocabulary } = result.analysis;
+    if (fluency != null || grammar != null) {
+      await User.findOneAndUpdate(
+        { phone },
+        {
+          $push: {
+            feedbackScores: {
+              $each: [{ fluency, grammar, confidence, vocabulary, date: new Date() }],
+              $slice: -30,
+            },
+          },
+          $inc: { monthlySubmissions: 1 },
+        }
+      );
+    }
 
     // Push completion to SSE client
     pushProgress(reportId, { status: "completed" });
