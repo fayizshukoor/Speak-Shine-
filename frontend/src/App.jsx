@@ -5,6 +5,7 @@ import Register from "./pages/Register.jsx";
 import UserDashboard from "./pages/UserDashboard.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
 import TrainerDashboard from "./pages/TrainerDashboard.jsx";
+import VideoAnalysis from "./pages/VideoAnalysis.jsx";
 
 // Redirect to role-based home if already logged in
 function GuestRoute({ children, loginFor }) {
@@ -73,6 +74,13 @@ export default function App() {
           <Route path="/dashboard" element={
             <ProtectedRoute roles={["user", "admin", "trainer"]} loginPath="/login">
               <UserDashboard />
+            </ProtectedRoute>
+          } />
+
+          {/* Video Analysis — all roles can access */}
+          <Route path="/video-analysis" element={
+            <ProtectedRoute roles={["user", "admin", "trainer"]} loginPath="/login">
+              <VideoAnalysis />
             </ProtectedRoute>
           } />
 

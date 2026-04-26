@@ -1,0 +1,99 @@
+import mongoose from "mongoose";
+
+/**
+ * Temporary video analysis reports — auto-deleted after 12 hours.
+ * Users can submit videos via the website and view their analysis report.
+ * Reports are NOT permanently stored — only cached for quick review.
+ */
+const videoReportSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  phone: { type: String, required: true },
+  
+  // Video metadata
+  videoFileName: { type: String },
+  videoDuration: { type: Number }, // seconds
+  submittedAt: { type: Date, default: Date.now },
+  
+  // Analysis results (same structure as WhatsApp feedback)
+  analysis: {
+    // Speech scores
+    fluency: { type: Number, min: 0, max: 10 },
+    grammar: { type: Number, min: 0, max: 10 },
+    confidence: { type: Number, min: 0, max: 10 },
+    vocabulary: { type: Number, min: 0, max: 10 },
+    topicRelevance: { type: Number, min: 0, max: 10 },
+    
+    // Visual scores
+    eyeContact: { type: Number, min: 0, max: 10 },
+    bodyLanguage: { type: Number, min: 0, max: 10 },
+    facialExpression: { type: Number, min: 0, max: 10 },
+    overallPresence: { type: Number, min: 0, max: 10 },
+    
+    // Detailed feedback
+    transcription: { type: String },
+    overallComment: { type: String },
+    strongPoints: [String],
+    suggestions: [String],
+    grammarErrors: [{
+      original: String,
+      correction: String,
+      rule: String,
+    }],
+    vocabularyHighlights: {
+      strong: [String],
+      weak: [String],
+    },
+    
+    // Visual observations
+    eyeContactNote: String,
+    bodyLanguageNote: String,
+    expressionNote: String,
+    visualSuggestions: [String],
+    visualStrengths: [String],
+    
+    // Stats
+    stats: {
+      duration: String,
+      wpm: Number,
+      fillerWords: mongoose.Schema.Types.Mixed,
+      fillerTotal: Number,
+      pauses: Number,
+      cefrLevel: {
+        level: String,
+        description: String,
+      },
+      rhythm: {
+        speechRatio: Number,
+        rushesAtStart: Boolean,
+        rushesAtEnd: Boolean,
+        paceConsistency: Number,
+      },
+    },
+    
+    pronunciationNote: String,
+    rhythmNote: String,
+    topicFeedback: String,
+    qualityWarning: String,
+  },
+  
+  // Processing status
+  status: {
+    type: String,
+    enum: ["processing", "completed", "failed"],
+    default: "processing",
+  },
+  errorMessage: String,
+  
+  // Auto-delete after 12 hours
+  expiresAt: {
+    type: Date,
+    default: () => new Date(Date.now() + 12 * 60 * 60 * 1000), // 12 hours from now
+  },
+});
+
+// Indexes
+videoReportSchema.index({ userId: 1, submittedAt: -1 });
+videoReportSchema.index({ phone: 1, submittedAt: -1 });
+videoReportSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL index
+
+export default mongoose.model("VideoReport", videoReportSchema);
