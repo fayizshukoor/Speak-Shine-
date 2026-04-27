@@ -19,6 +19,17 @@ const MOTIVATIONAL = [
   "Speak with confidence. The world is ready to listen. 🌍",
 ];
 
+const SUBMIT_MOTIVATIONAL = [
+  "Your streak is on the line! Submit now to keep it alive! 🔥",
+  "The clock is ticking! Show us what you've got! ⏰",
+  "Don't let today slip away — your voice matters! 💪",
+  "Every second counts! Make your submission before midnight! 🌟",
+  "You're so close! Just one video away from another win! 🎯",
+  "Time waits for no one! Submit and keep your momentum! 🚀",
+  "Your future self will thank you for submitting today! ✨",
+  "Beat the deadline! Your consistency is your superpower! 💎",
+];
+
 const SCORES = { fluency: "#7c6fff", grammar: "#4ade80", confidence: "#fbbf24", vocabulary: "#ff6b9d" };
 
 function QuestionCountdown({ posterSendTime, name, streak }) {
@@ -132,6 +143,212 @@ function QuestionCountdown({ posterSendTime, name, streak }) {
       }}>
         "{quote}"
       </div>
+    </div>
+  );
+}
+
+function SubmitNudge({ name, streak, navigate }) {
+  const [remaining, setRemaining] = useState(null);
+  const [quote] = useState(() => SUBMIT_MOTIVATIONAL[Math.floor(Math.random() * SUBMIT_MOTIVATIONAL.length)]);
+  const timerRef = useRef(null);
+
+  const calcRemaining = () => {
+    const now = new Date();
+    const nowIST = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+    
+    // Calculate time until midnight IST
+    const midnight = new Date(nowIST);
+    midnight.setHours(23, 59, 59, 999);
+    
+    const diffMs = midnight - nowIST;
+    const totalSec = Math.floor(diffMs / 1000);
+    const hrs = Math.floor(totalSec / 3600);
+    const mins = Math.floor((totalSec % 3600) / 60);
+    const secs = totalSec % 60;
+    return { hrs, mins, secs, totalSec };
+  };
+
+  useEffect(() => {
+    setRemaining(calcRemaining());
+    timerRef.current = setInterval(() => setRemaining(calcRemaining()), 1000);
+    return () => clearInterval(timerRef.current);
+  }, []);
+
+  const pad = n => String(n).padStart(2, "0");
+  const urgency = remaining && remaining.hrs < 3 ? "high" : remaining && remaining.hrs < 8 ? "medium" : "low";
+
+  return (
+    <div style={{
+      background: urgency === "high" 
+        ? "linear-gradient(135deg, #7f1d1d 0%, #991b1b 60%, #7f1d1d 100%)"
+        : urgency === "medium"
+        ? "linear-gradient(135deg, #78350f 0%, #92400e 60%, #78350f 100%)"
+        : "linear-gradient(135deg, #1e3a8a 0%, #1e40af 60%, #1e3a8a 100%)",
+      border: urgency === "high" 
+        ? "2px solid rgba(248,113,113,0.5)"
+        : urgency === "medium"
+        ? "2px solid rgba(251,191,36,0.5)"
+        : "2px solid rgba(96,165,250,0.5)",
+      borderRadius: 16,
+      padding: "1.75rem 1.5rem",
+      marginBottom: "1.5rem",
+      position: "relative",
+      overflow: "hidden",
+      animation: urgency === "high" ? "pulse 2s ease-in-out infinite" : "none",
+    }}>
+      {/* Animated glow */}
+      <div style={{
+        position: "absolute", top: -60, right: -60,
+        width: 200, height: 200, borderRadius: "50%",
+        background: urgency === "high"
+          ? "radial-gradient(circle, rgba(248,113,113,0.3) 0%, transparent 70%)"
+          : urgency === "medium"
+          ? "radial-gradient(circle, rgba(251,191,36,0.3) 0%, transparent 70%)"
+          : "radial-gradient(circle, rgba(96,165,250,0.3) 0%, transparent 70%)",
+        pointerEvents: "none",
+        animation: "float 3s ease-in-out infinite",
+      }} />
+
+      {/* Urgency badge */}
+      <div style={{
+        position: "absolute", top: "1rem", right: "1rem",
+        background: urgency === "high" ? "#f87171" : urgency === "medium" ? "#fbbf24" : "#60a5fa",
+        color: urgency === "high" ? "#7f1d1d" : urgency === "medium" ? "#78350f" : "#1e3a8a",
+        padding: "0.4rem 0.8rem", borderRadius: 20,
+        fontSize: "0.7rem", fontWeight: 800, textTransform: "uppercase",
+        letterSpacing: "0.05em",
+      }}>
+        {urgency === "high" ? "⚠️ URGENT" : urgency === "medium" ? "⏰ HURRY" : "📌 PENDING"}
+      </div>
+
+      {/* Header */}
+      <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.7)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "0.5rem" }}>
+        {name ? `${name.split(" ")[0]}, ` : ""}Time is Running Out!
+      </div>
+
+      {/* Main message */}
+      <div style={{ fontSize: "1.3rem", fontWeight: 800, color: "#fff", marginBottom: "0.5rem", lineHeight: 1.3 }}>
+        {urgency === "high" 
+          ? "⚡ Submit NOW or Lose Your Streak!"
+          : urgency === "medium"
+          ? "🎯 Don't Wait! Submit Your Video Today!"
+          : "📹 Question is Live — Time to Shine!"}
+      </div>
+
+      {/* Countdown */}
+      {remaining && (
+        <div style={{ marginTop: "1.25rem", marginBottom: "1.25rem" }}>
+          <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.8)", marginBottom: "0.75rem", fontWeight: 600 }}>
+            ⏰ Time Remaining Until Midnight:
+          </div>
+          <div style={{ display: "flex", gap: "0.6rem", justifyContent: "center" }}>
+            {[
+              { val: pad(remaining.hrs),  label: "Hours", icon: "⏰" },
+              { val: pad(remaining.mins), label: "Minutes", icon: "⏱️" },
+              { val: pad(remaining.secs), label: "Seconds", icon: "⚡" },
+            ].map(({ val, label, icon }) => (
+              <div key={label} style={{
+                flex: 1, 
+                background: "rgba(255,255,255,0.15)", 
+                backdropFilter: "blur(10px)",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: 12, 
+                padding: "0.9rem 0.5rem", 
+                textAlign: "center",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+              }}>
+                <div style={{ fontSize: "0.9rem", marginBottom: "0.2rem" }}>{icon}</div>
+                <div style={{ fontSize: "2.2rem", fontWeight: 900, color: "#fff", lineHeight: 1, fontVariantNumeric: "tabular-nums", textShadow: "0 2px 8px rgba(0,0,0,0.3)" }}>{val}</div>
+                <div style={{ fontSize: "0.65rem", color: "rgba(255,255,255,0.8)", marginTop: "0.35rem", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>{label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Streak warning */}
+      {streak > 0 && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: "0.6rem",
+          background: "rgba(249,115,22,0.2)", 
+          border: "2px solid rgba(249,115,22,0.4)",
+          borderRadius: 12, 
+          padding: "0.8rem 1rem", 
+          marginBottom: "1.25rem",
+          fontSize: "0.9rem",
+          boxShadow: "0 4px 12px rgba(249,115,22,0.2)",
+        }}>
+          <span style={{ fontSize: "1.5rem" }}>🔥</span>
+          <div>
+            <div style={{ color: "#fff", fontWeight: 700, marginBottom: "0.1rem" }}>
+              {streak}-Day Streak at Risk!
+            </div>
+            <div style={{ color: "rgba(255,255,255,0.8)", fontSize: "0.8rem" }}>
+              Don't break your amazing streak — submit before midnight!
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CTA Button */}
+      <button
+        onClick={() => navigate('/video-analysis')}
+        style={{
+          width: "100%",
+          background: urgency === "high"
+            ? "linear-gradient(135deg, #f87171 0%, #ef4444 100%)"
+            : urgency === "medium"
+            ? "linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)"
+            : "linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%)",
+          color: urgency === "high" || urgency === "medium" ? "#000" : "#fff",
+          border: "none",
+          borderRadius: 12,
+          padding: "1rem 1.5rem",
+          fontSize: "1.05rem",
+          fontWeight: 800,
+          cursor: "pointer",
+          transition: "all 0.3s ease",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          boxShadow: "0 6px 20px rgba(0,0,0,0.3)",
+          marginBottom: "1rem",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = "translateY(-3px) scale(1.02)";
+          e.currentTarget.style.boxShadow = "0 10px 30px rgba(0,0,0,0.4)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = "translateY(0) scale(1)";
+          e.currentTarget.style.boxShadow = "0 6px 20px rgba(0,0,0,0.3)";
+        }}
+      >
+        🎥 {urgency === "high" ? "SUBMIT NOW!" : urgency === "medium" ? "Upload Video Now!" : "Record Your Answer"}
+      </button>
+
+      {/* Motivational quote */}
+      <div style={{
+        borderLeft: "3px solid rgba(255,255,255,0.4)",
+        paddingLeft: "0.85rem",
+        color: "rgba(255,255,255,0.9)",
+        fontSize: "0.85rem",
+        fontStyle: "italic",
+        lineHeight: 1.5,
+        fontWeight: 500,
+      }}>
+        💡 {quote}
+      </div>
+
+      {/* Add keyframes for animations */}
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { box-shadow: 0 0 20px rgba(248,113,113,0.4); }
+          50% { box-shadow: 0 0 40px rgba(248,113,113,0.7); }
+        }
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-20px); }
+        }
+      `}</style>
     </div>
   );
 }
@@ -359,9 +576,13 @@ export default function UserDashboard() {
       )}
 
       {profile && data?.today?.question && (
-        <div className={`status-banner ${profile.completed ? "done" : "pending"}`}>
-          {profile.completed ? "✅ You've submitted today — great work!" : "⏳ Haven't submitted today yet. Send your video on WhatsApp or upload here!"}
-        </div>
+        profile.completed
+          ? <div className="status-banner done">✅ You've submitted today — great work! Keep the streak alive! 🔥</div>
+          : <SubmitNudge
+              name={profile?.name}
+              streak={profile?.streak || 0}
+              navigate={navigate}
+            />
       )}
 
       <div className="stat-grid">
