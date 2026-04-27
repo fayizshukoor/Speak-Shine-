@@ -1,14 +1,9 @@
 /**
- * poster.js - Generates poster using SVG + sharp (no canvas native deps needed)
- * Uses the same SVG template as the webapp for consistent design.
- */
-import sharp from "sharp";
-
-/**
  * Server-side SVG poster generator ΓÇö matches the WhatsApp poster format exactly.
  * No canvas/native deps required.
  */
 
+import Status from "../models/statusSchema.js";
 
 // ΓöÇΓöÇ Theme map ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 const THEMES = {
@@ -247,31 +242,37 @@ export function generateSVGPoster({ topic, question, category }) {
  * If the WhatsApp bot already stored one, use it as-is.
  * Only generate a new one if there's genuinely no poster stored.
  */
+export async function ensurePoster(status) {
+  if (!status || !status.todayQuestion) return status;
 
-/**
- * Generate a PNG poster buffer for the given question.
- * Returns a Buffer (PNG) or null if generation fails.
- */
-export default async function generatePoster(question) {
+  // ΓöÇΓöÇ If poster exists and not expired, use it directly ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  if (status.todayPosterImage) {
+    const isExpired = status.posterExpiresAt && new Date() > new Date(status.posterExpiresAt);
+    if (!isExpired) return status; // Γ£à use bot's poster as-is
+
+    // Expired ΓÇö clear it so we regenerate below
+    await Status.updateOne({}, { $set: { todayPosterImage: null, posterExpiresAt: null } });
+    status = { ...status, todayPosterImage: null, posterExpiresAt: null };
+  }
+
+  // ΓöÇΓöÇ No poster stored ΓÇö generate one (fallback only) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   try {
-    const svgDataUri = generateSVGPoster({
-      topic:    question.topic    || "Speaking Practice",
-      question: question.question || "",
-      category: question.category || "General",
+    console.log("[Poster] No poster in DB ΓÇö generating fallback SVG...");
+    const posterDataUri = generateSVGPoster({
+      topic:    status.todayTopic    || "Speaking Practice",
+      question: status.todayQuestion,
+      category: status.todayCategory || "General",
     });
 
-    // Extract SVG string from data URI
-    const base64 = svgDataUri.replace("data:image/svg+xml;base64,", "");
-    const svgBuffer = Buffer.from(base64, "base64");
-
-    // Convert SVG to PNG using sharp (memory-efficient, no canvas needed)
-    const pngBuffer = await sharp(svgBuffer)
-      .png()
-      .toBuffer();
-
-    return pngBuffer;
+    const expiresAt = new Date(Date.now() + 14 * 60 * 60 * 1000); // 14 hours
+    await Status.updateOne(
+      {},
+      { $set: { todayPosterImage: posterDataUri, posterExpiresAt: expiresAt } }
+    );
+    console.log("[Poster] Fallback poster saved to DB");
+    return { ...status, todayPosterImage: posterDataUri, posterExpiresAt: expiresAt };
   } catch (err) {
-    console.log("Poster generation failed:", err.message);
-    return null;
+    console.error("[Poster] Generation failed:", err.message);
+    return status;
   }
 }

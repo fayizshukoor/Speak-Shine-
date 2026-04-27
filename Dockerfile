@@ -1,14 +1,9 @@
 FROM node:20-slim
 
-# Install ffmpeg + canvas native build dependencies
+# Install ffmpeg + sharp/libvips dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    build-essential \
-    libcairo2-dev \
-    libpango1.0-dev \
-    libjpeg-dev \
-    libgif-dev \
-    librsvg2-dev \
+    libvips-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
