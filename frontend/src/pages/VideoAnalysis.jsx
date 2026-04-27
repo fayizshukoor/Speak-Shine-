@@ -151,7 +151,28 @@ export default function VideoAnalysis() {
               </div>
             )}
             {report.status === "failed" && (
-              <div className="error-box"><p>{report.errorMessage || "Analysis failed. Please try again."}</p></div>
+              <div className="error-box">
+                <p>{report.errorMessage || "Analysis failed. Please try again."}</p>
+                <button 
+                  className="btn-primary" 
+                  style={{ marginTop: "1rem" }}
+                  onClick={async () => {
+                    try {
+                      setReport({ status: "processing" });
+                      setProgressStage("Retrying analysis...");
+                      await api.post(`/video/retry/${reportId}`);
+                      // Will be updated via SSE
+                    } catch (err) {
+                      setReport({ 
+                        status: "failed", 
+                        errorMessage: err.response?.data?.error || "Retry failed" 
+                      });
+                    }
+                  }}
+                >
+                  🔄 Retry Analysis
+                </button>
+              </div>
             )}
             {report.status === "completed" && report.analysis && (
               <ReportView analysis={report.analysis} expiresAt={report.expiresAt} formatTimeRemaining={formatTimeRemaining} />

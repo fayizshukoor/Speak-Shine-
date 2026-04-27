@@ -80,6 +80,8 @@ router.post("/upload", authMiddleware, (req, res, next) => {
   });
 }, async (req, res) => {
   let videoPath = null;
+  let videoKey = null;
+  let videoUrl = null;
 
   try {
     if (!req.file) return res.status(400).json({ error: "No video file uploaded" });
@@ -112,6 +114,18 @@ router.post("/upload", authMiddleware, (req, res, next) => {
       return res.status(400).json({ error: `Video is too long (${duration}s). Maximum is 5 minutes.` });
     }
 
+    // ── SAVE VIDEO TO R2 FIRST (before processing) ──────────────────────
+    // This ensures the video is never lost, even if processing fails
+    try {
+      videoKey = getR2Key(userId.toString(), req.file.originalname);
+      videoUrl = await uploadToR2(videoPath, videoKey, req.file.mimetype);
+      console.log(`[R2] Video saved: ${videoUrl}`);
+    } catch (r2Err) {
+      console.error(`[R2] Upload failed:`, r2Err);
+      if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
+      return res.status(500).json({ error: "Failed to save video. Please try again." });
+    }
+
     // Create report
     const user = await User.findOne({ phone });
 
@@ -132,6 +146,8 @@ router.post("/upload", authMiddleware, (req, res, next) => {
       videoFileName: req.file.originalname,
       videoDuration: duration,
       status: "processing",
+      videoUrl,      // Video is already saved
+      videoKey,      // Key for deletion later
       isPublic: req.body.isPublic === "true" || req.body.isPublic === true,
       uploaderName: user?.name || phone,
     });
@@ -146,12 +162,22 @@ router.post("/upload", authMiddleware, (req, res, next) => {
       estimatedTime: "2-3 minutes",
     });
 
-    // Process in background
+    // Process in background (video is already in R2, so safe to delete local file)
     processInBackground(report._id, videoPath, phone, user?.name || phone, req.file.mimetype);
 
   } catch (err) {
     console.error("[VideoUpload] Error:", err);
+    
+    // Clean up local file
     if (videoPath && fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
+    
+    // If R2 upload succeeded but something else failed, clean up R2
+    if (videoKey) {
+      try {
+        await deleteFromR2(videoKey);
+      } catch {}
+    }
+    
     res.status(500).json({ error: err.message || "Failed to upload video" });
   }
 });
@@ -247,6 +273,56 @@ router.delete("/report/:reportId", authMiddleware, async (req, res) => {
   }
 });
 
+// ── Retry failed analysis ────────────────────────────────────────────────────
+// POST /api/video/retry/:reportId
+// Retries analysis for a failed report (video is already in R2)
+router.post("/retry/:reportId", authMiddleware, async (req, res) => {
+  try {
+    const report = await VideoReport.findById(req.params.reportId);
+    if (!report) return res.status(404).json({ error: "Report not found" });
+    if (report.userId.toString() !== req.user.id) return res.status(403).json({ error: "Access denied" });
+    
+    // Only allow retry for failed reports
+    if (report.status !== "failed") {
+      return res.status(400).json({ error: "Can only retry failed reports" });
+    }
+    
+    // Check if video exists in R2
+    if (!report.videoUrl || !report.videoKey) {
+      return res.status(400).json({ error: "Video not found. Please re-upload." });
+    }
+    
+    // Reset status to processing
+    await VideoReport.findByIdAndUpdate(req.params.reportId, {
+      status: "processing",
+      errorMessage: null,
+      analysis: {
+        vocabularyHighlights: { strong: [], weak: [] },
+        strongPoints: [],
+        suggestions: [],
+        visualSuggestions: [],
+        visualStrengths: [],
+        grammarErrors: [],
+      },
+    });
+    
+    console.log(`[VideoRetry] Retrying analysis for ${req.params.reportId}`);
+    
+    res.json({
+      success: true,
+      message: "Retrying analysis...",
+      reportId: req.params.reportId,
+    });
+    
+    // Download from R2 and process
+    retryProcessing(req.params.reportId, report.videoUrl, report.phone, report.uploaderName);
+    
+  } catch (err) {
+    console.error("[VideoRetry] Error:", err);
+    res.status(500).json({ error: "Failed to retry analysis" });
+  }
+});
+
 // ── Background processor ─────────────────────────────────────────────────────
 async function processInBackground(reportId, videoPath, phone, displayName, mimeType = "video/webm") {
   // Set a timeout for the entire processing (10 minutes max)
@@ -275,28 +351,11 @@ async function processInBackground(reportId, videoPath, phone, displayName, mime
       }
     );
 
-    // ── Upload to R2 after analysis ──────────────────────────────────────
-    let videoUrl = null;
-    let videoKey = null;
-    const report = await VideoReport.findById(reportId).lean();
-
-    if (report && fs.existsSync(videoPath)) {
-      try {
-        pushProgress(reportId, { status: "processing", stage: "Saving video to cloud…" });
-        videoKey = getR2Key(report.userId.toString(), report.videoFileName || `recording.webm`);
-        videoUrl = await uploadToR2(videoPath, videoKey, mimeType);
-        console.log(`[R2] Uploaded: ${videoUrl}`);
-      } catch (r2Err) {
-        console.log(`[R2] Upload failed (non-fatal): ${r2Err.message}`);
-        videoUrl = null;
-        videoKey = null;
-      }
-    }
-
+    // Video is already in R2 (uploaded before processing started)
+    // Just update the analysis results
     await VideoReport.findByIdAndUpdate(reportId, {
       status:   "completed",
       analysis: result.analysis,
-      ...(videoUrl ? { videoUrl, videoKey } : {}),
     });
 
     // ── Save feedback scores after analysis ────────────────────────────
@@ -340,6 +399,38 @@ async function processInBackground(reportId, videoPath, phone, displayName, mime
     
     // Always delete the local temp file
     if (videoPath && fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
+  }
+}
+
+// ── Retry processor (downloads from R2 and processes) ────────────────────────
+async function retryProcessing(reportId, videoUrl, phone, displayName) {
+  const tempPath = `./tmp/retry-${reportId}-${Date.now()}.mp4`;
+  
+  try {
+    console.log(`[VideoRetry] Downloading from R2: ${videoUrl}`);
+    
+    // Download video from R2
+    const response = await fetch(videoUrl);
+    if (!response.ok) throw new Error("Failed to download video from R2");
+    
+    const buffer = await response.arrayBuffer();
+    fs.writeFileSync(tempPath, Buffer.from(buffer));
+    
+    console.log(`[VideoRetry] Downloaded, starting processing...`);
+    
+    // Process the video
+    await processInBackground(reportId, tempPath, phone, displayName, "video/mp4");
+    
+  } catch (err) {
+    console.error(`[VideoRetry] ${reportId} failed:`, err);
+    
+    await VideoReport.findByIdAndUpdate(reportId, {
+      status: "failed",
+      errorMessage: "Retry failed: " + err.message,
+    });
+    
+    // Clean up temp file
+    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
   }
 }
 
