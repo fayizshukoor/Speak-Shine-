@@ -6,6 +6,7 @@ import makeWASocket, {
 import { Boom } from "@hapi/boom";
 import qrcode from "qrcode-terminal";
 import { updateQR } from "./api/routes/qr.js";
+import { getRedisClient } from "./redis.js";
 import cron from "node-cron";
 import dotenv from "dotenv";
 import { connectDB, safeDB, startDBHealthCheck } from "./db.js";
@@ -29,6 +30,9 @@ import pino from "pino";
 
 dotenv.config();
 connectDB();
+
+// Initialize Redis for QR code sharing between bot and API server
+getRedisClient();
 
 // ---------------------------------------------------------------------------
 // Suppress libsignal / Baileys Signal protocol session noise.
