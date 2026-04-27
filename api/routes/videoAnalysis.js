@@ -115,14 +115,13 @@ router.post("/upload", authMiddleware, (req, res, next) => {
     // Create report
     const user = await User.findOne({ phone });
 
-    // ── Mark submitted (same as WhatsApp bot) ───────────────────────────
-    // completed=true + weeklySubmissions+1 at submission time (matches WhatsApp)
-    // monthlySubmissions is incremented after analysis (matches WhatsApp)
+    // ── Mark submitted ───────────────────────────────────────────────────
+    // Set completed=true at submission time
+    // Weekly/monthly submissions are incremented at midnight reset (not here)
     await User.findOneAndUpdate(
       { phone },
       {
         completed: true,
-        $inc: { weeklySubmissions: 1 },
         ...(req.user.name ? { $set: { name: req.user.name } } : {}),
       }
     );
@@ -286,7 +285,7 @@ async function processInBackground(reportId, videoPath, phone, displayName, mime
       ...(videoUrl ? { videoUrl, videoKey } : {}),
     });
 
-    // ── Save feedback scores + monthlySubmissions after analysis ────────
+    // ── Save feedback scores after analysis ────────────────────────────
     const { fluency, grammar, confidence, vocabulary } = result.analysis;
     if (fluency != null || grammar != null) {
       await User.findOneAndUpdate(
@@ -298,7 +297,6 @@ async function processInBackground(reportId, videoPath, phone, displayName, mime
               $slice: -30,
             },
           },
-          $inc: { monthlySubmissions: 1 },
         }
       );
     }
