@@ -21,6 +21,7 @@ import submissionRoutes from "./routes/submissions.js";
 import chatRoutes from "./routes/chat.js";
 import qrRoutes from "./routes/qr.js";
 import { startScheduler } from "./scheduler.js";
+import { startDailyReset } from "./scheduler.js";
 
 dotenv.config();
 
@@ -271,6 +272,7 @@ connectDB()
       console.log(`🌐 Health check: http://localhost:${PORT}/api/health`);
     });
     startScheduler();
+    startDailyReset();
   })
   .catch((err) => {
     console.error("❌ Failed to start server:", err);

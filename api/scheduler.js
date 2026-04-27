@@ -7,7 +7,9 @@
 import cron from "node-cron";
 import Status from "../models/statusSchema.js";
 import Question from "../models/questionSchema.js";
+import User from "../models/userSchema.js";
 import { generateAndInsertQuestions } from "../ai/questionGenerator.js";
+import { resetStatus } from "../resetStatus.js";
 
 const TIMEZONE = "Asia/Kolkata";
 
@@ -124,4 +126,54 @@ export function startScheduler() {
   }, 5000); // wait 5s for DB to connect
 
   console.log("[Scheduler] ✅ Question scheduler running");
+}
+
+/**
+ * Daily reset at 12:05 AM IST
+ * Resets daily flags, increments counters, handles weekly/monthly resets
+ */
+async function dailyReset() {
+  try {
+    console.log("[Scheduler] 🔄 Running daily reset...");
+
+    // Increment weekly/monthly submissions for users who completed today
+    await User.updateMany({ completed: true }, { $inc: { weeklySubmissions: 1, monthlySubmissions: 1 } });
+    console.log("[Scheduler] ✅ Incremented weekly/monthly submissions");
+
+    // Reset all users' daily completed flag
+    await User.updateMany({}, { completed: false });
+    console.log("[Scheduler] ✅ Reset completed flags");
+
+    // On Sunday midnight (IST) reset weekly submissions + weekly fines
+    const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: TIMEZONE }));
+    const dayOfWeek = nowIST.getDay(); // 0 = Sunday
+    if (dayOfWeek === 0) {
+      await User.updateMany({}, { $set: { weeklySubmissions: 0, weeklyFine: 0 } });
+      console.log("[Scheduler] ✅ Weekly submissions + fines reset (Sunday)");
+    }
+
+    // On 1st of month reset monthly submissions
+    const dayOfMonth = nowIST.getDate();
+    if (dayOfMonth === 1) {
+      await User.updateMany({}, { $set: { monthlySubmissions: 0 } });
+      console.log("[Scheduler] ✅ Monthly submissions reset (1st of month)");
+    }
+
+    // Reset status flags
+    await resetStatus();
+    console.log("[Scheduler] ✅ Status flags reset");
+
+    console.log("[Scheduler] 🔄 Daily reset complete");
+  } catch (err) {
+    console.error("[Scheduler] ❌ Daily reset error:", err);
+  }
+}
+
+export function startDailyReset() {
+  console.log("[Scheduler] Starting daily reset scheduler...");
+  
+  // Run at 00:05 (12:05 AM) IST every day
+  cron.schedule("5 0 * * *", dailyReset, { timezone: TIMEZONE });
+  
+  console.log("[Scheduler] ✅ Daily reset scheduler running (00:05 IST)");
 }
