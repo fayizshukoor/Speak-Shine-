@@ -14,7 +14,7 @@ import Status from "./models/statusSchema.js";
 import GrammarSettings from "./models/grammarSettingsSchema.js";
 import UserStats from "./models/userStatsSchema.js";
 import generateVoice from "./generateVoice.js";
-import { ensurePoster } from "./api/posterGenerator.js";
+import generatePoster from "./poster.js";
 import { resetStatus } from "./resetStatus.js";
 import { generateFeedback } from "./ai/feedback.js";
 import { chunkMessage, sendChunks as _sendChunks } from "./helpers.js";
@@ -339,19 +339,27 @@ async function startBot() {
       const question = q[0];
 
       // ── Generate & send poster ───────────────────────────────────────────
-      // Store question info first, then use ensurePoster to generate SVG
-      const tempStatus = {
-        todayTopic: question.topic || null,
-        todayQuestion: question.question || null,
-        todayCategory: question.category || null,
-      };
-      
-      // Generate SVG poster
-      const updatedStatus = await ensurePoster(tempStatus);
-      const posterBase64 = updatedStatus.todayPosterImage;
+      let imageBuffer = null;
+      try {
+        imageBuffer = await generatePoster(question);
+      } catch (posterErr) {
+        console.log("❌ Poster generation failed:", posterErr.message);
+        return;
+      }
+
+      if (!imageBuffer) {
+        console.log("❌ Poster returned empty buffer");
+        return;
+      }
+
+      if (!TARGET_GROUP) {
+        console.log("❌ TARGET_GROUP not set — cannot send poster");
+        return;
+      }
 
       const sent = await safeSend(sock, TARGET_GROUP, {
-        image: { url: posterBase64 }, // Use the SVG data URI directly
+        image: imageBuffer,
+        mimetype: "image/png",
       });
 
       if (sent) {
@@ -367,9 +375,6 @@ async function startBot() {
             questionSentToday: true,
             todayTopic: question.topic || null,
             todayQuestion: question.question || null,
-            todayCategory: question.category || null,
-            todayPosterImage: posterBase64 || null,
-            posterExpiresAt: posterBase64 ? new Date(Date.now() + 15 * 60 * 60 * 1000) : null,
             recentCategories: updatedRecent,
           }
         });
@@ -675,20 +680,27 @@ async function startBot() {
   // ================= DAILY RESET (12:00 AM) =================
   const dailyReset = async () => {
     try {
-      // Reset all users for next day
+      // ── Increment weekly/monthly submissions for users who submitted today ──
+      // This is the ONLY place these counters are incremented (not at video send time)
+      await User.updateMany({ completed: true }, { $inc: { weeklySubmissions: 1, monthlySubmissions: 1 } });
+      console.log("🔄 Incremented weekly/monthly submissions for today's submitters");
+
+      // Reset all users' daily completed flag for next day
       await User.updateMany({}, { completed: false });
 
-      // On Sunday (day 0) reset weekly submissions
-      const dayOfWeek = new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata", weekday: "short" });
-      if (dayOfWeek === "Sun") {
-        await User.updateMany({}, { weeklySubmissions: 0, weeklyFine: 0 });
-        console.log("🔄 Weekly submissions + fines reset (Sunday)");
+      // On Sunday midnight (IST) reset weekly submissions + weekly fines
+      // dailyReset runs at 00:05 — check if it's Sunday (day 0)
+      const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+      const dayOfWeek = nowIST.getDay(); // 0 = Sunday
+      if (dayOfWeek === 0) {
+        await User.updateMany({}, { $set: { weeklySubmissions: 0, weeklyFine: 0 } });
+        console.log("🔄 Weekly submissions + fines reset (Sunday midnight)");
       }
 
       // On 1st of month reset monthly submissions
-      const dayOfMonth = new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata", day: "numeric" });
-      if (dayOfMonth === "1") {
-        await User.updateMany({}, { monthlySubmissions: 0 });
+      const dayOfMonth = nowIST.getDate();
+      if (dayOfMonth === 1) {
+        await User.updateMany({}, { $set: { monthlySubmissions: 0 } });
         console.log("🔄 Monthly submissions reset (1st of month)");
       }
 
@@ -1965,7 +1977,7 @@ async function startBot() {
 
         await User.findOneAndUpdate(
           { userId: dbUser },
-          { completed: true, $inc: { weeklySubmissions: 1 } },
+          { completed: true },
           { upsert: true },
         );
 
@@ -2044,7 +2056,6 @@ async function startBot() {
                 { userId: dbUser },
                 {
                   $push: { feedbackScores: { $each: [{ ...scores, date: new Date() }], $slice: -30 } },
-                  $inc: { monthlySubmissions: 1 },
                 }
               ).catch(() => { });
             }
@@ -2124,22 +2135,21 @@ async function startBot() {
     cronsRegistered = true;
     console.log("⏰ Registering cron jobs...");
 
-    // ── Dynamic schedule state ────────────────────────────────────────────
-    // Tracks the currently active poster send time and generate time so we
-    // can reschedule when an admin changes them via the web dashboard.
-    let activePosterSendTime = "08:00";       // HH:MM IST
-    let activeGenerateTime   = "07:00";       // HH:MM IST
-    let posterCronTask       = null;          // cron.schedule handle
-    let posterRetryCronTask  = null;          // retry window handle
-    let generateCronTask     = null;          // pre-generate handle
+    // ── Dynamic schedule: poster send time + question generate time ───────
+    // These are read from DB and can be changed via the admin web dashboard.
+    // The bot polls DB every minute and reschedules automatically.
+    let activePosterSendTime = "08:00";
+    let activeGenerateTime   = "07:00";
+    let posterCronTask       = null;
+    let posterRetryCronTask  = null;
+    let generateCronTask     = null;
 
-    /** Convert "HH:MM" → cron expression "MM HH * * *" */
+    /** "HH:MM" → cron expression "MM HH * * *" */
     const timeToCron = (hhmm) => {
       const [h, m] = hhmm.split(":").map(Number);
       return `${m} ${h} * * *`;
     };
 
-    /** (Re)schedule the poster-send cron and its retry window */
     const schedulePosterCron = (hhmm) => {
       if (posterCronTask)      { posterCronTask.stop();      posterCronTask = null; }
       if (posterRetryCronTask) { posterRetryCronTask.stop(); posterRetryCronTask = null; }
@@ -2147,12 +2157,12 @@ async function startBot() {
       const [h] = hhmm.split(":").map(Number);
       posterCronTask = cron.schedule(timeToCron(hhmm), sendQuestion, { timezone: TIMEZONE });
 
-      // Retry every 2 min for 30 min after the scheduled hour
+      // Retry every 2 min for 30 min after the scheduled time
       posterRetryCronTask = cron.schedule(`*/2 ${h} * * *`, async () => {
         const now = new Date(new Date().toLocaleString("en-US", { timeZone: TIMEZONE }));
         const [schedH, schedM] = hhmm.split(":").map(Number);
-        const nowMins = now.getHours() * 60 + now.getMinutes();
-        const startMins = schedH * 60 + schedM + 5;
+        const nowMins   = now.getHours() * 60 + now.getMinutes();
+        const startMins = schedH * 60 + schedM + 2;
         const endMins   = schedH * 60 + schedM + 30;
         if (nowMins < startMins || nowMins > endMins) return;
         await sendQuestion();
@@ -2162,7 +2172,6 @@ async function startBot() {
       console.log(`[Cron] Poster send scheduled at ${hhmm} IST`);
     };
 
-    /** (Re)schedule the question pre-generate cron */
     const scheduleGenerateCron = (hhmm) => {
       if (generateCronTask) { generateCronTask.stop(); generateCronTask = null; }
 
@@ -2170,14 +2179,12 @@ async function startBot() {
         try {
           const cnt = await Question.countDocuments();
           if (cnt <= 7) {
-            console.log(`[Cron] Pre-generate: low stock (${cnt}), generating 14 questions...`);
+            console.log(`[Cron] Pre-generate: low stock (${cnt}), generating 14...`);
             const { inserted, totalInDb } = await generateAndInsertQuestions(14);
-            console.log(`[Cron] Pre-generated ${inserted.length} questions. Total: ${totalInDb}`);
+            console.log(`[Cron] Pre-generated ${inserted.length}. Total: ${totalInDb}`);
             safeSend(sock, OWNER, {
               text: `🔄 *Scheduled Pre-generate:* Added ${inserted.length} questions _(${cnt} were left)_\n📊 Total: ${totalInDb}`,
             });
-          } else {
-            console.log(`[Cron] Pre-generate check: ${cnt} questions available, no action needed`);
           }
         } catch (err) {
           console.log("[Cron] Pre-generate error:", err.message);
@@ -2188,7 +2195,7 @@ async function startBot() {
       console.log(`[Cron] Question pre-generate scheduled at ${hhmm} IST`);
     };
 
-    // Load saved times from DB, then schedule
+    // Load saved times from DB on startup, then schedule
     (async () => {
       try {
         const s = await Status.findOne().lean();
@@ -2199,7 +2206,7 @@ async function startBot() {
       scheduleGenerateCron(activeGenerateTime);
     })();
 
-    // Poll DB every minute — reschedule if admin changed the times
+    // Poll DB every minute — reschedule if admin changed the times via web dashboard
     cron.schedule("* * * * *", async () => {
       try {
         const s = await Status.findOne().lean();
@@ -2214,6 +2221,9 @@ async function startBot() {
         }
       } catch (_) {}
     }, { timezone: TIMEZONE });
+    // ─────────────────────────────────────────────────────────────────────
+
+    cron.schedule("30 7 * * *", sendGoodMorning, { timezone: TIMEZONE });
 
     cron.schedule(
       "0 15 * * *",
@@ -2248,24 +2258,6 @@ async function startBot() {
 
     cron.schedule("0 21 * * 0", weeklySummary, { timezone: TIMEZONE });
 
-    // R2 cleanup — delete expired video objects from Cloudflare R2 every hour
-    cron.schedule("0 * * * *", async () => {
-      try {
-        const { deleteFromR2 } = await import("./r2.js");
-        const VideoReport = (await import("./models/videoReportSchema.js")).default;
-        const expired = await VideoReport.find({
-          videoKey: { $ne: null },
-          expiresAt: { $lt: new Date() },
-        }).select("videoKey").lean();
-        for (const r of expired) {
-          await deleteFromR2(r.videoKey);
-        }
-        if (expired.length > 0) console.log(`[R2 Cleanup] Deleted ${expired.length} expired video(s)`);
-      } catch (err) {
-        console.log("[R2 Cleanup] Error:", err.message);
-      }
-    }, { timezone: TIMEZONE });
-
     // ================= TEST CRON (sends question to owner every min, no delete) =================
     if (false) {
       cron.schedule("* * * * *", async () => {
@@ -2274,13 +2266,7 @@ async function startBot() {
           if (!q || !q.length) return;
           const question = q[0];
 
-          // Generate poster for testing
-          const tempStatus = {
-            todayTopic: question.topic || null,
-            todayQuestion: question.question || null,
-            todayCategory: question.category || null,
-          };
-          await ensurePoster(tempStatus);
+          await generatePoster(question);
 
           await safeSend(sock, OWNER, {
             image: { url: "./daily.png" },
