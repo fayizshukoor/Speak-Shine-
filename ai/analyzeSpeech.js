@@ -470,7 +470,7 @@ RULES:
           model: "llama-3.3-70b-versatile",
           messages: [{ role: "user", content: prompt }],
           temperature: 0.2,
-          max_tokens: 1400,
+          max_tokens: 2000,
         }),
       });
 
@@ -507,7 +507,24 @@ RULES:
         return JSON.parse(jsonStr);
       } catch (parseErr) {
         console.error("JSON parse failed, raw response:", raw.slice(0, 500));
-        throw new Error(`Failed to parse Llama response as JSON: ${parseErr.message}`);
+        // Attempt to salvage a truncated response by closing open structures
+        try {
+          // Count open braces/brackets to close them
+          let fixed = jsonStr;
+          const openBraces = (fixed.match(/\{/g) || []).length - (fixed.match(/\}/g) || []).length;
+          const openBrackets = (fixed.match(/\[/g) || []).length - (fixed.match(/\]/g) || []).length;
+          // Remove trailing incomplete property (cut at last complete comma or opening)
+          fixed = fixed.replace(/,\s*"[^"]*"\s*:\s*[^,}\]]*$/, '');
+          fixed = fixed.replace(/,\s*\{[^}]*$/, '');
+          for (let i = 0; i < openBrackets; i++) fixed += ']';
+          for (let i = 0; i < openBraces; i++) fixed += '}';
+          fixed = fixed.replace(/,\s*([}\]])/g, '$1');
+          const recovered = JSON.parse(fixed);
+          console.log('[Speech] Recovered partial JSON response');
+          return recovered;
+        } catch (_) {
+          throw new Error(`Failed to parse Llama response as JSON: ${parseErr.message}`);
+        }
       }
     }
   };
