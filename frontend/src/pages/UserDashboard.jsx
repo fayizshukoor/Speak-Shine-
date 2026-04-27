@@ -102,12 +102,54 @@ export default function UserDashboard() {
                   <div style={{ fontSize: "0.75rem", color: "#8888aa" }}>This Month</div>
                 </div>
               </div>
+
+              {/* Fine Information */}
+              <div style={{ marginTop: "1.5rem", display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.75rem" }}>
+                <div style={{ background: "rgba(248, 113, 113, 0.1)", padding: "0.75rem", borderRadius: "8px", textAlign: "center", border: "1px solid rgba(248, 113, 113, 0.2)" }}>
+                  <div style={{ fontSize: "1.5rem", marginBottom: "0.25rem" }}>💸</div>
+                  <div style={{ fontSize: "0.75rem", color: "#8888aa", marginBottom: "0.25rem" }}>Total Fine</div>
+                  <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#f87171" }}>₹{data.dailyReport.fine || 0}</div>
+                </div>
+                <div style={{ background: "rgba(251, 191, 36, 0.1)", padding: "0.75rem", borderRadius: "8px", textAlign: "center", border: "1px solid rgba(251, 191, 36, 0.2)" }}>
+                  <div style={{ fontSize: "1.5rem", marginBottom: "0.25rem" }}>📊</div>
+                  <div style={{ fontSize: "0.75rem", color: "#8888aa", marginBottom: "0.25rem" }}>Weekly Fine</div>
+                  <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#fbbf24" }}>₹{data.dailyReport.weeklyFine || 0}</div>
+                </div>
+              </div>
+
+              {/* Fine Added Warning */}
+              {data.dailyReport.fineAdded && (
+                <div style={{ marginTop: "1rem", background: "rgba(248, 113, 113, 0.1)", padding: "1rem", borderRadius: "8px", border: "1px solid rgba(248, 113, 113, 0.2)", textAlign: "center" }}>
+                  <div style={{ fontSize: "1.2rem", marginBottom: "0.5rem" }}>⚠️</div>
+                  <div style={{ fontSize: "0.9rem", color: "#f87171", fontWeight: "bold" }}>Fine was added yesterday for missing submission</div>
+                </div>
+              )}
             </>
           ) : (
             <div style={{ marginTop: "1.5rem", textAlign: "center", padding: "2rem" }}>
               <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>😔</div>
               <div style={{ fontSize: "1.1rem", fontWeight: "bold", marginBottom: "0.5rem" }}>You missed yesterday's challenge</div>
-              <div style={{ fontSize: "0.9rem", color: "#8888aa" }}>Don't worry! Today is a new opportunity to shine.</div>
+              <div style={{ fontSize: "0.9rem", color: "#8888aa", marginBottom: "1rem" }}>Don't worry! Today is a new opportunity to shine.</div>
+              
+              {/* Fine Information for Missed Day */}
+              <div style={{ marginTop: "1.5rem", display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.75rem", maxWidth: "300px", margin: "1.5rem auto 0" }}>
+                <div style={{ background: "rgba(248, 113, 113, 0.1)", padding: "0.75rem", borderRadius: "8px", textAlign: "center", border: "1px solid rgba(248, 113, 113, 0.2)" }}>
+                  <div style={{ fontSize: "1.5rem", marginBottom: "0.25rem" }}>💸</div>
+                  <div style={{ fontSize: "0.75rem", color: "#8888aa", marginBottom: "0.25rem" }}>Total Fine</div>
+                  <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#f87171" }}>₹{data.dailyReport.fine || 0}</div>
+                </div>
+                <div style={{ background: "rgba(251, 191, 36, 0.1)", padding: "0.75rem", borderRadius: "8px", textAlign: "center", border: "1px solid rgba(251, 191, 36, 0.2)" }}>
+                  <div style={{ fontSize: "1.5rem", marginBottom: "0.25rem" }}>📊</div>
+                  <div style={{ fontSize: "0.75rem", color: "#8888aa", marginBottom: "0.25rem" }}>Weekly Fine</div>
+                  <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#fbbf24" }}>₹{data.dailyReport.weeklyFine || 0}</div>
+                </div>
+              </div>
+              
+              {data.dailyReport.fineAdded && (
+                <div style={{ marginTop: "1rem", background: "rgba(248, 113, 113, 0.1)", padding: "1rem", borderRadius: "8px", border: "1px solid rgba(248, 113, 113, 0.2)" }}>
+                  <div style={{ fontSize: "0.9rem", color: "#f87171", fontWeight: "bold" }}>⚠️ Fine was added for missing submission</div>
+                </div>
+              )}
             </div>
           )}
 

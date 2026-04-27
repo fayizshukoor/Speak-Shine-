@@ -25,6 +25,11 @@ const dailyReportSchema = new mongoose.Schema({
   weeklySubmissions: { type: Number, default: 0 },
   monthlySubmissions: { type: Number, default: 0 },
   
+  // Fine information
+  fine: { type: Number, default: 0 },
+  weeklyFine: { type: Number, default: 0 },
+  fineAdded: { type: Boolean, default: false }, // Was fine added yesterday?
+  
   // Overall feedback
   overallComment: { type: String, default: null },
   strongPoints: { type: [String], default: [] },

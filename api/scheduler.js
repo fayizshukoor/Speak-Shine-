@@ -228,6 +228,11 @@ async function generateDailyReports() {
         weeklySubmissions: user.weeklySubmissions || 0,
         monthlySubmissions: user.monthlySubmissions || 0,
         
+        // Fine information
+        fine: user.fine || 0,
+        weeklyFine: user.weeklyFine || 0,
+        fineAdded: !videoReport, // Fine was added if they didn't submit
+        
         // Feedback
         overallComment: videoReport?.analysis?.overallComment || null,
         strongPoints: videoReport?.analysis?.strongPoints || [],
