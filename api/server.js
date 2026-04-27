@@ -20,6 +20,7 @@ import attendanceRoutes from "./routes/attendance.js";
 import submissionRoutes from "./routes/submissions.js";
 import chatRoutes from "./routes/chat.js";
 import qrRoutes from "./routes/qr.js";
+import { startScheduler } from "./scheduler.js";
 
 dotenv.config();
 
@@ -269,6 +270,7 @@ connectDB()
       console.log(`✅ Speak & Shine API running on port ${PORT} [${isProd ? "production" : "development"}]`);
       console.log(`🌐 Health check: http://localhost:${PORT}/api/health`);
     });
+    startScheduler();
   })
   .catch((err) => {
     console.error("❌ Failed to start server:", err);
