@@ -152,4 +152,39 @@ router.get("/scores/:phone", authMiddleware, async (req, res) => {
   }
 });
 
+// GET /api/dashboard/settings — get configurable bot schedule times (admin only)
+router.get("/settings", authMiddleware, requireRole("admin"), async (req, res) => {
+  try {
+    let status = await Status.findOne().lean();
+    if (!status) status = await Status.create({});
+    res.json({
+      posterSendTime: status.posterSendTime || "08:00",
+      questionGenerateTime: status.questionGenerateTime || "07:00",
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/dashboard/settings — update bot schedule times (admin only)
+router.patch("/settings", authMiddleware, requireRole("admin"), async (req, res) => {
+  try {
+    const { posterSendTime, questionGenerateTime } = req.body;
+    const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+    const updates = {};
+    if (posterSendTime !== undefined) {
+      if (!timeRegex.test(posterSendTime)) return res.status(400).json({ error: "Invalid posterSendTime format (HH:MM)" });
+      updates.posterSendTime = posterSendTime;
+    }
+    if (questionGenerateTime !== undefined) {
+      if (!timeRegex.test(questionGenerateTime)) return res.status(400).json({ error: "Invalid questionGenerateTime format (HH:MM)" });
+      updates.questionGenerateTime = questionGenerateTime;
+    }
+    await Status.updateOne({}, { $set: updates }, { upsert: true });
+    res.json({ success: true, ...updates });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

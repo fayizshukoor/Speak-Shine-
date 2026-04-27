@@ -11,7 +11,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 const CATS = ["Daily Life","Opinion","Personal Experience","English Growth","Future Goals","Fun Topic","Free Talk"];
 const PIE_COLORS = ["#7c6fff","#4ade80","#fbbf24","#ff6b9d","#38bdf8","#fb923c","#a78bfa"];
 const tt = { background:"#16162a", border:"1px solid #252545", borderRadius:10, fontSize:12 };
-const TABS = [{id:"overview",l:"📊 Overview"},{id:"today",l:"📅 Today"},{id:"users",l:"👥 Users"},{id:"reports",l:"📈 Reports"},{id:"fines",l:"💸 Fines"},{id:"attendance",l:"📋 Attendance"},{id:"questions",l:"❓ Questions"}];
+const TABS = [{id:"overview",l:"📊 Overview"},{id:"today",l:"📅 Today"},{id:"users",l:"👥 Users"},{id:"reports",l:"📈 Reports"},{id:"fines",l:"💸 Fines"},{id:"attendance",l:"📋 Attendance"},{id:"questions",l:"❓ Questions"},{id:"settings",l:"⚙️ Settings"}];
 
 export default function AdminDashboard() {
   const [tab, setTab] = useState("overview");
@@ -30,12 +30,15 @@ export default function AdminDashboard() {
   const [modal, setModal] = useState(null);
   const [fineInput, setFineInput] = useState("");
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const [settings, setSettings] = useState({ posterSendTime: "08:00", questionGenerateTime: "07:00" });
+  const [settingsSaving, setSettingsSaving] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [d,u,q,w,m] = await Promise.all([api.get("/dashboard"),api.get("/users"),api.get("/questions?limit=200"),api.get("/dashboard/report/weekly"),api.get("/dashboard/report/monthly")]);
+      const [d,u,q,w,m,s] = await Promise.all([api.get("/dashboard"),api.get("/users"),api.get("/questions?limit=200"),api.get("/dashboard/report/weekly"),api.get("/dashboard/report/monthly"),api.get("/dashboard/settings")]);
       setDash(d.data); setUsers(u.data); setQuestions(q.data.questions); setWeekly(w.data); setMonthly(m.data);
+      setSettings({ posterSendTime: s.data.posterSendTime || "08:00", questionGenerateTime: s.data.questionGenerateTime || "07:00" });
     } finally { setLoading(false); }
   };
   useEffect(()=>{load();},[]);
@@ -105,6 +108,19 @@ export default function AdminDashboard() {
     });
   };
   const startEdit = (q) => { setEditQ(q); setQForm({category:q.category,topic:q.topic,question:q.question}); window.scrollTo({top:0,behavior:"smooth"}); };
+
+  const saveSettings = async (e) => {
+    e.preventDefault();
+    setSettingsSaving(true);
+    try {
+      await api.patch("/dashboard/settings", settings);
+      msg("Schedule times saved! Bot will apply changes within 1 minute.");
+    } catch (err) {
+      msg(err?.response?.data?.error || "Failed to save settings", "danger");
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
 
   const filteredUsers = useMemo(()=>users.filter(u=>{const s=search.toLowerCase();return(u.registeredName||u.name||"").toLowerCase().includes(s)||(u.phone||"").includes(s)}),[users,search]);
   const filteredQ = useMemo(()=>questions.filter(q=>(qCat?q.category===qCat:true)&&(q.question.toLowerCase().includes(qSearch.toLowerCase())||q.topic.toLowerCase().includes(qSearch.toLowerCase()))),[questions,qSearch,qCat]);
@@ -437,6 +453,59 @@ export default function AdminDashboard() {
             </div>
           </div>
         </>
+      )}
+
+      {/* SETTINGS */}
+      {tab==="settings" && (
+        <div className="card" style={{maxWidth:480}}>
+          <div className="section-title">⚙️ Bot Schedule Settings</div>
+          <p style={{color:"var(--muted)",fontSize:"0.85rem",marginBottom:"1.5rem"}}>
+            Configure when the WhatsApp bot sends the daily poster and pre-generates questions. Times are in IST (24-hour format). Changes apply within 1 minute.
+          </p>
+          <form onSubmit={saveSettings}>
+            <div className="form-group" style={{marginBottom:"1.25rem"}}>
+              <label className="form-label" style={{display:"flex",alignItems:"center",gap:"0.5rem"}}>
+                🖼️ Poster Send Time
+                <span style={{color:"var(--muted)",fontWeight:400,fontSize:"0.8rem"}}>(daily question sent to WhatsApp group)</span>
+              </label>
+              <input
+                className="form-input"
+                type="time"
+                value={settings.posterSendTime}
+                onChange={e=>setSettings(s=>({...s,posterSendTime:e.target.value}))}
+                required
+                style={{width:160,fontSize:"1.1rem"}}
+              />
+              <div style={{color:"var(--muted)",fontSize:"0.78rem",marginTop:"0.35rem"}}>
+                Currently: <strong style={{color:"var(--accent)"}}>{settings.posterSendTime} IST</strong>
+              </div>
+            </div>
+            <div className="form-group" style={{marginBottom:"1.5rem"}}>
+              <label className="form-label" style={{display:"flex",alignItems:"center",gap:"0.5rem"}}>
+                🤖 Question Generate Time
+                <span style={{color:"var(--muted)",fontWeight:400,fontSize:"0.8rem"}}>(auto-generate questions if stock is low)</span>
+              </label>
+              <input
+                className="form-input"
+                type="time"
+                value={settings.questionGenerateTime}
+                onChange={e=>setSettings(s=>({...s,questionGenerateTime:e.target.value}))}
+                required
+                style={{width:160,fontSize:"1.1rem"}}
+              />
+              <div style={{color:"var(--muted)",fontSize:"0.78rem",marginTop:"0.35rem"}}>
+                Currently: <strong style={{color:"var(--accent)"}}>{settings.questionGenerateTime} IST</strong>
+              </div>
+            </div>
+            <button type="submit" className="btn-primary" disabled={settingsSaving}>
+              {settingsSaving ? "Saving…" : "💾 Save Schedule"}
+            </button>
+          </form>
+          <div style={{marginTop:"1.5rem",padding:"0.75rem 1rem",background:"rgba(124,111,255,0.08)",borderRadius:10,border:"1px solid rgba(124,111,255,0.2)",fontSize:"0.82rem",color:"var(--muted)"}}>
+            <strong style={{color:"var(--accent)"}}>ℹ️ How it works:</strong><br/>
+            The bot checks for time changes every minute. After saving, the new schedule takes effect automatically — no restart needed.
+          </div>
+        </div>
       )}
 
       {/* STUDENT DETAIL */}
