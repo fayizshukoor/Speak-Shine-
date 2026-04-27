@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import Layout from "../components/Layout.jsx";
 import StatCard from "../components/StatCard.jsx";
+import Modal from "../components/Modal.jsx";
 import AttendancePanel from "../components/AttendancePanel.jsx";
 import SubmissionControls from "../components/SubmissionControls.jsx";
 import api from "../api/client.js";
@@ -23,6 +24,39 @@ export default function TrainerDashboard() {
   const [scoresLoading, setScoresLoading] = useState(false);
   const [sortBy, setSortBy] = useState("streak");
   const [search, setSearch] = useState("");
+  const [flash, setFlash] = useState(null);
+  const [resetting, setResetting] = useState("");
+  const [modal, setModal] = useState(null);
+
+  const msg = (text, type="success") => { setFlash({text,type}); setTimeout(()=>setFlash(null),3000); };
+
+  const resetWeekly = () => {
+    setModal({
+      type:"danger", title:"Reset Weekly Submissions",
+      message:"This will reset ALL users' weekly submission count and weekly fines to 0. Are you sure?",
+      confirmText:"Reset Weekly",
+      onConfirm: async () => {
+        setModal(null); setResetting("weekly");
+        try { await api.post("/users/reset/weekly"); msg("Weekly submissions + fines reset"); const [d,u]=await Promise.all([api.get("/dashboard"),api.get("/users")]); setDash(d.data); setUsers(u.data); }
+        catch(err){ msg(err?.response?.data?.error||"Reset failed","danger"); }
+        finally { setResetting(""); }
+      },
+    });
+  };
+
+  const resetMonthly = () => {
+    setModal({
+      type:"danger", title:"Reset Monthly Submissions",
+      message:"This will reset ALL users' monthly submission count to 0. Are you sure?",
+      confirmText:"Reset Monthly",
+      onConfirm: async () => {
+        setModal(null); setResetting("monthly");
+        try { await api.post("/users/reset/monthly"); msg("Monthly submissions reset"); const [d,u]=await Promise.all([api.get("/dashboard"),api.get("/users")]); setDash(d.data); setUsers(u.data); }
+        catch(err){ msg(err?.response?.data?.error||"Reset failed","danger"); }
+        finally { setResetting(""); }
+      },
+    });
+  };
 
   useEffect(()=>{
     Promise.all([api.get("/dashboard"),api.get("/users")])
@@ -96,6 +130,13 @@ export default function TrainerDashboard() {
 
   return (
     <Layout title="Trainer Dashboard">
+      {modal && (
+        <Modal
+          type={modal.type} title={modal.title} message={modal.message}
+          confirmText={modal.confirmText} onConfirm={modal.onConfirm} onCancel={()=>setModal(null)}
+        />
+      )}
+      {flash && <div className={`flash ${flash.type}`}>{flash.text}</div>}
       <div className="stat-grid">
         <StatCard icon="👥" label="Total Students"  value={dash?.stats?.total||0}     color="#7c6fff"/>
         <StatCard icon="✅" label="Submitted Today" value={dash?.stats?.completed||0} color="#4ade80"/>
@@ -145,11 +186,19 @@ export default function TrainerDashboard() {
       {/* STUDENTS */}
       {tab==="students"&&(
         <>
-          <div style={{display:"flex",gap:"0.5rem",marginBottom:"1rem",flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:"0.5rem",marginBottom:"1rem",flexWrap:"wrap",alignItems:"center"}}>
             <input className="form-input" style={{width:200}} placeholder="Search students…" value={search} onChange={e=>setSearch(e.target.value)}/>
             <select className="form-input" style={{width:"auto"}} value={sortBy} onChange={e=>setSortBy(e.target.value)}>
               {[["streak","Streak"],["weekly","Weekly"],["fine","Fine"],["name","Name"]].map(([v,l])=><option key={v} value={v}>Sort: {l}</option>)}
             </select>
+            <div style={{marginLeft:"auto",display:"flex",gap:"0.5rem"}}>
+              <button className="btn-ghost danger" onClick={resetWeekly} disabled={resetting==="weekly"} style={{fontSize:"0.82rem"}}>
+                {resetting==="weekly"?"Resetting…":"🔄 Reset Weekly"}
+              </button>
+              <button className="btn-ghost danger" onClick={resetMonthly} disabled={resetting==="monthly"} style={{fontSize:"0.82rem"}}>
+                {resetting==="monthly"?"Resetting…":"🔄 Reset Monthly"}
+              </button>
+            </div>
           </div>
           <div className="user-grid">
             {filteredUsers.map(u=>(

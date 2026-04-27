@@ -32,6 +32,7 @@ export default function AdminDashboard() {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [settings, setSettings] = useState({ posterSendTime: "08:00", questionGenerateTime: "07:00" });
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [resetting, setResetting] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -120,6 +121,44 @@ export default function AdminDashboard() {
     } finally {
       setSettingsSaving(false);
     }
+  };
+
+  const resetWeekly = () => {
+    setModal({
+      type: "danger", title: "Reset Weekly Submissions",
+      message: "This will reset ALL users' weekly submission count and weekly fines to 0. Are you sure?",
+      confirmText: "Reset Weekly",
+      onConfirm: async () => {
+        setModal(null);
+        setResetting("weekly");
+        try {
+          await api.post("/users/reset/weekly");
+          msg("Weekly submissions + fines reset for all users");
+          load();
+        } catch (err) {
+          msg(err?.response?.data?.error || "Reset failed", "danger");
+        } finally { setResetting(""); }
+      },
+    });
+  };
+
+  const resetMonthly = () => {
+    setModal({
+      type: "danger", title: "Reset Monthly Submissions",
+      message: "This will reset ALL users' monthly submission count to 0. Are you sure?",
+      confirmText: "Reset Monthly",
+      onConfirm: async () => {
+        setModal(null);
+        setResetting("monthly");
+        try {
+          await api.post("/users/reset/monthly");
+          msg("Monthly submissions reset for all users");
+          load();
+        } catch (err) {
+          msg(err?.response?.data?.error || "Reset failed", "danger");
+        } finally { setResetting(""); }
+      },
+    });
   };
 
   const filteredUsers = useMemo(()=>users.filter(u=>{const s=search.toLowerCase();return(u.registeredName||u.name||"").toLowerCase().includes(s)||(u.phone||"").includes(s)}),[users,search]);
@@ -297,6 +336,14 @@ export default function AdminDashboard() {
       {/* REPORTS */}
       {tab==="reports" && (
         <>
+          <div style={{display:"flex",gap:"0.75rem",marginBottom:"1rem",flexWrap:"wrap"}}>
+            <button className="btn-ghost danger" onClick={resetWeekly} disabled={resetting==="weekly"} style={{display:"flex",alignItems:"center",gap:"0.4rem"}}>
+              {resetting==="weekly" ? "Resetting…" : "🔄 Reset Weekly Submissions"}
+            </button>
+            <button className="btn-ghost danger" onClick={resetMonthly} disabled={resetting==="monthly"} style={{display:"flex",alignItems:"center",gap:"0.4rem"}}>
+              {resetting==="monthly" ? "Resetting…" : "🔄 Reset Monthly Submissions"}
+            </button>
+          </div>
           <div className="card" style={{marginBottom:"1rem"}}>
             <div className="section-title">📅 Weekly Report</div>
             <ResponsiveContainer width="100%" height={240}>

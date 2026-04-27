@@ -108,4 +108,24 @@ router.patch("/:phone/fine", authMiddleware, requireRole("admin"), async (req, r
   }
 });
 
+// POST /api/users/reset/weekly — admin/trainer: manually reset all weekly submissions
+router.post("/reset/weekly", authMiddleware, requireRole("admin", "trainer"), async (req, res) => {
+  try {
+    await User.updateMany({}, { $set: { weeklySubmissions: 0, weeklyFine: 0 } });
+    res.json({ success: true, message: "Weekly submissions and fines reset for all users" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/users/reset/monthly — admin/trainer: manually reset all monthly submissions
+router.post("/reset/monthly", authMiddleware, requireRole("admin", "trainer"), async (req, res) => {
+  try {
+    await User.updateMany({}, { $set: { monthlySubmissions: 0 } });
+    res.json({ success: true, message: "Monthly submissions reset for all users" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
