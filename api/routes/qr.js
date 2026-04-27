@@ -23,29 +23,14 @@ export async function updateQR(qrData) {
       const redis = getRedisClient();
       await redis.set('whatsapp:qr:data', qrData);
       await redis.set('whatsapp:qr:timestamp', qrTimestamp.toISOString());
-      await redis.expire('whatsapp:qr:data', 120); // Expire after 2 minutes
-      await redis.expire('whatsapp:qr:timestamp', 120);
+      await redis.expire('whatsapp:qr:data', 60); // Expire after 60 seconds (matches WhatsApp QR lifetime)
+      await redis.expire('whatsapp:qr:timestamp', 60);
       console.log('[QR] Successfully stored in Redis');
     } catch (error) {
       console.error('[QR] Failed to store QR in Redis:', error);
     }
   } else {
     console.log('[QR] Using in-memory storage (Redis not available)');
-    // Retry storing in Redis after a delay
-    setTimeout(async () => {
-      if (isRedisAvailable() && latestQR) {
-        try {
-          const redis = getRedisClient();
-          await redis.set('whatsapp:qr:data', latestQR);
-          await redis.set('whatsapp:qr:timestamp', qrTimestamp.toISOString());
-          await redis.expire('whatsapp:qr:data', 120);
-          await redis.expire('whatsapp:qr:timestamp', 120);
-          console.log('[QR] Successfully stored in Redis (delayed)');
-        } catch (error) {
-          console.error('[QR] Failed to store QR in Redis (delayed):', error);
-        }
-      }
-    }, 1000); // Retry after 1 second
   }
   
   console.log('📱 QR code updated, accessible at /api/qr');
@@ -86,7 +71,6 @@ router.get('/', async (req, res) => {
         <head>
           <title>WhatsApp Bot QR Code</title>
           <meta http-equiv="refresh" content="5">
-          <style>
             body { font-family: Arial; text-align: center; padding: 50px; background: #0f172a; color: white; }
             .container { max-width: 600px; margin: 0 auto; }
             h1 { color: #10b981; }
@@ -123,7 +107,7 @@ router.get('/', async (req, res) => {
       <html>
       <head>
         <title>WhatsApp Bot QR Code</title>
-        <meta http-equiv="refresh" content="30">
+        <meta http-equiv="refresh" content="15">
         <style>
           body { 
             font-family: Arial; 
