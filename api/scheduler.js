@@ -42,12 +42,12 @@ export const MONTHLY_GOALS_CATEGORY = "Monthly Goals";
 
 // Weekly reflection questions — shown every Sunday
 export const WEEKLY_REFLECTION_QUESTIONS = [
+  "Did you attend your review this week? If yes, did you pass or fail? Why?",
   "How many days did you submit your speaking video this week?",
   "What was the best speaking moment you had this week?",
   "What was the most difficult part of speaking this week?",
   "What new word or phrase did you learn and use this week?",
-  "How confident did you feel speaking compared to last week?",
-  "What is your focus for next week to improve your communication?",
+  "What is your focus for next week — in both review preparation and communication?",
 ];
 export const WEEKLY_REFLECTION_TOPIC    = "Weekly Reflection";
 export const WEEKLY_REFLECTION_CATEGORY = "Weekly Reflection";

@@ -170,12 +170,12 @@ export default function VideoAnalysis() {
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:"0.6rem", marginBottom:"1.25rem" }}>
               {[
-                { n:"1", q:"How many days did you submit your speaking video this week?" },
-                { n:"2", q:"What was the best speaking moment you had this week?" },
-                { n:"3", q:"What was the most difficult part of speaking this week?" },
-                { n:"4", q:"What new word or phrase did you learn and use this week?" },
-                { n:"5", q:"How confident did you feel speaking compared to last week?" },
-                { n:"6", q:"What is your focus for next week to improve your communication?" },
+                { n:"1", q:"Did you attend your review this week? If yes, did you pass or fail? Why?" },
+                { n:"2", q:"How many days did you submit your speaking video this week?" },
+                { n:"3", q:"What was the best speaking moment you had this week?" },
+                { n:"4", q:"What was the most difficult part of speaking this week?" },
+                { n:"5", q:"What new word or phrase did you learn and use this week?" },
+                { n:"6", q:"What is your focus for next week — in both review preparation and communication?" },
               ].map(({ n, q }) => (
                 <div key={n} style={{ display:"flex", gap:"0.75rem", alignItems:"flex-start", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(56,189,248,0.2)", borderRadius:12, padding:"0.75rem 1rem" }}>
                   <div style={{ minWidth:26, height:26, borderRadius:"50%", background:"rgba(14,165,233,0.25)", border:"1px solid rgba(56,189,248,0.5)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"0.75rem", fontWeight:800, color:"#38bdf8", flexShrink:0 }}>{n}</div>
@@ -923,12 +923,12 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
             }}>
               📅 <strong style={{ color: "#38bdf8" }}>Weekly Reflection Sunday!</strong> Answer all 6 questions:
               <ol style={{ marginTop: "0.5rem", paddingLeft: "1.2rem", display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                <li>Did you attend your review this week? Pass or fail? Why?</li>
                 <li>How many days did you submit this week?</li>
                 <li>Best speaking moment this week?</li>
                 <li>Most difficult part of speaking this week?</li>
                 <li>New word or phrase you learned this week?</li>
-                <li>How confident vs last week?</li>
-                <li>Focus for next week?</li>
+                <li>Focus for next week — review prep &amp; communication?</li>
               </ol>
             </div>
           )}

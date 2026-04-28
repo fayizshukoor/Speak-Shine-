@@ -730,7 +730,7 @@ export default function UserDashboard() {
             <div style={{ marginTop: "1rem" }}>
               <div className="daily-poster-section-label">📅 WEEKLY REFLECTION QUESTIONS</div>
               <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", marginTop: "0.75rem" }}>
-                {["How many days did you submit your speaking video this week?","What was the best speaking moment you had this week?","What was the most difficult part of speaking this week?","What new word or phrase did you learn and use this week?","How confident did you feel speaking compared to last week?","What is your focus for next week to improve your communication?"].map((q, i) => (
+                {["Did you attend your review this week? If yes, did you pass or fail? Why?","How many days did you submit your speaking video this week?","What was the best speaking moment you had this week?","What was the most difficult part of speaking this week?","What new word or phrase did you learn and use this week?","What is your focus for next week — in both review preparation and communication?"].map((q, i) => (
                   <div key={i} style={{ display:"flex", gap:"0.75rem", alignItems:"flex-start", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(56,189,248,0.2)", borderRadius:10, padding:"0.65rem 0.85rem" }}>
                     <div style={{ minWidth:24, height:24, borderRadius:"50%", background:"rgba(14,165,233,0.25)", border:"1px solid rgba(56,189,248,0.5)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"0.72rem", fontWeight:800, color:"#38bdf8", flexShrink:0 }}>{i+1}</div>
                     <div style={{ fontSize:"0.85rem", color:"rgba(255,255,255,0.9)", lineHeight:1.5 }}>{q}</div>
