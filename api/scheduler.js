@@ -263,21 +263,23 @@ export async function generateDailyReports() {
 // ── Clean expired R2 videos ──────────────────────────────────────────────────
 async function cleanExpiredVideos() {
   try {
-    const expired = await VideoReport.find({
-      expiresAt: { $lt: new Date() },
+    // Find reports expiring in the next hour OR already expired, that still have a video key
+    const cutoff = new Date(Date.now() + 60 * 60 * 1000); // now + 1hr buffer
+    const toClean = await VideoReport.find({
+      expiresAt: { $lt: cutoff },
       videoKey:  { $ne: null },
     }).select("_id videoKey").lean();
 
-    if (expired.length === 0) return;
+    if (toClean.length === 0) return;
 
-    console.log(`[Scheduler] Cleaning ${expired.length} expired video(s) from R2…`);
+    console.log(`[Scheduler] Cleaning ${toClean.length} expired/expiring video(s) from R2…`);
 
-    for (const report of expired) {
+    for (const report of toClean) {
       await deleteFromR2(report.videoKey);
       await VideoReport.updateOne({ _id: report._id }, { $set: { videoKey: null, videoUrl: null } });
     }
 
-    console.log(`[Scheduler] ✅ Cleaned ${expired.length} expired video(s)`);
+    console.log(`[Scheduler] ✅ Cleaned ${toClean.length} video(s)`);
   } catch (err) {
     console.error("[Scheduler] Video cleanup error:", err.message);
   }
@@ -294,6 +296,9 @@ export function startDailyReset() {
 
   // Clean up expired R2 videos every hour
   cron.schedule("0 * * * *", cleanExpiredVideos, { timezone: TIMEZONE });
+
+  // Run once on startup to catch any orphaned videos from previous sessions
+  setTimeout(cleanExpiredVideos, 5000);
   
   console.log("[Scheduler] ✅ Daily reset scheduler running (00:00 reports, 00:05 reset)");
 }
