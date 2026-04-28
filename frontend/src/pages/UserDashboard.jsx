@@ -906,6 +906,18 @@ export default function UserDashboard() {
                 <span className="streak-name">{u.name || u.userId?.split("@")[0]}</span>
                 <span className="streak-val">🔥 {u.streak} days</span>
                 <span className="streak-sub">{u.weeklySubmissions}/7</span>
+                <span style={{
+                  marginLeft: "auto",
+                  fontSize: "0.75rem",
+                  fontWeight: 600,
+                  padding: "0.2rem 0.6rem",
+                  borderRadius: 20,
+                  background: u.completed ? "rgba(74,222,128,0.15)" : "rgba(248,113,113,0.12)",
+                  color: u.completed ? "#4ade80" : "#f87171",
+                  whiteSpace: "nowrap",
+                }}>
+                  {u.completed ? "✅ Done" : "⏳ Pending"}
+                </span>
               </div>
             ))}
           </div>

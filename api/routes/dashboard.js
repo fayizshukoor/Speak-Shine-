@@ -52,6 +52,7 @@ router.get("/", authMiddleware, async (req, res) => {
         userId: u.userId,
         streak: u.streak || 0,
         weeklySubmissions: u.weeklySubmissions || 0,
+        completed: u.completed || false,
       })),
     });
   } catch (err) {
@@ -114,7 +115,7 @@ router.get("/me", authMiddleware, async (req, res) => {
     const topStreak = [...allUsers]
       .sort((a, b) => (b.streak || 0) - (a.streak || 0))
       .slice(0, 5)
-      .map(u => ({ name: u.name, userId: u.userId, streak: u.streak || 0, weeklySubmissions: u.weeklySubmissions || 0 }));
+      .map(u => ({ name: u.name, userId: u.userId, streak: u.streak || 0, weeklySubmissions: u.weeklySubmissions || 0, completed: u.completed || false }));
 
     // Check if we should show daily report (12 AM - 8 AM)
     let dailyReport = null;
