@@ -93,6 +93,26 @@ router.post("/confirm", authMiddleware, async (req, res) => {
   // Normalise phone — strip country code so it matches the WhatsApp User document
   const strippedPhone = phone.replace(/^(\+91|91)/, "");
 
+  // ── Check file size before accepting for analysis ────────────────────────
+  // Railway has limited RAM — large files cause OOM crashes during download+processing
+  // Safe limit: 150MB (leaves headroom for Node.js + ffmpeg + other processes)
+  const MAX_ANALYSIS_MB = 150;
+  try {
+    const headRes = await fetch(publicUrl, { method: "HEAD" });
+    const contentLength = parseInt(headRes.headers.get("content-length") || "0", 10);
+    const fileMB = contentLength / 1024 / 1024;
+    if (contentLength > 0 && fileMB > MAX_ANALYSIS_MB) {
+      // Delete from R2 since we won't process it
+      try { await deleteFromR2(key); } catch {}
+      return res.status(400).json({
+        error: `Video file is too large for analysis (${fileMB.toFixed(0)}MB). Maximum is ${MAX_ANALYSIS_MB}MB. Please record a shorter or lower-quality video.`
+      });
+    }
+  } catch (headErr) {
+    // If HEAD fails, proceed anyway — size check is best-effort
+    console.warn("[VideoConfirm] Could not check file size:", headErr.message);
+  }
+
   try {
     const user = await User.findOne({ phone: { $in: [phone, strippedPhone] } });
 
