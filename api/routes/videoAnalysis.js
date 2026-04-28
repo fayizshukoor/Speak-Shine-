@@ -90,11 +90,17 @@ router.post("/confirm", authMiddleware, async (req, res) => {
   const phone  = req.user.phone;
   const isWebm = mimeType.includes("webm") || key.endsWith(".webm");
 
-  try {
-    const user = await User.findOne({ phone });
+  // Normalise phone — strip country code so it matches the WhatsApp User document
+  const strippedPhone = phone.replace(/^(\+91|91)/, "");
 
-    // Mark user as submitted
-    await User.findOneAndUpdate({ phone }, { completed: true });
+  try {
+    const user = await User.findOne({ phone: { $in: [phone, strippedPhone] } });
+
+    // Mark user as submitted for today (works for both 10-digit and 91-prefixed formats)
+    await User.findOneAndUpdate(
+      { phone: { $in: [phone, strippedPhone] } },
+      { completed: true }
+    );
 
     const report = await VideoReport.create({
       userId,
@@ -113,17 +119,14 @@ router.post("/confirm", authMiddleware, async (req, res) => {
       // For WebM: transcode first, THEN queue analysis with the MP4 URL
       transcodeWebmToMp4(report._id, key, publicUrl, userId.toString())
         .then(mp4Url => {
-          // Download and enqueue for processing
-          downloadAndEnqueue(report._id, mp4Url, phone, user?.name || phone);
+          downloadAndEnqueue(report._id, mp4Url, strippedPhone, user?.name || strippedPhone);
         })
         .catch(err => {
           console.error(`[Transcode] Failed for ${report._id}:`, err.message);
-          // Fall back to original WebM URL
-          downloadAndEnqueue(report._id, publicUrl, phone, user?.name || phone);
+          downloadAndEnqueue(report._id, publicUrl, strippedPhone, user?.name || strippedPhone);
         });
     } else {
-      // Download and enqueue for processing
-      downloadAndEnqueue(report._id, publicUrl, phone, user?.name || phone);
+      downloadAndEnqueue(report._id, publicUrl, strippedPhone, user?.name || strippedPhone);
     }
 
     res.json({
@@ -244,6 +247,9 @@ router.post("/upload", authMiddleware, (req, res, next) => {
     const userId = req.user.id;
     const phone  = req.user.phone;
 
+    // Normalise phone — strip country code so it matches the WhatsApp User document
+    const strippedPhone = phone.replace(/^(\+91|91)/, "");
+
     console.log(`[VideoUpload] ${req.file.originalname} (${(req.file.size/1024/1024).toFixed(1)}MB) user=${phone}`);
 
     // Ensure upload dir exists
@@ -281,13 +287,13 @@ router.post("/upload", authMiddleware, (req, res, next) => {
     }
 
     // Create report
-    const user = await User.findOne({ phone });
+    const user = await User.findOne({ phone: { $in: [phone, strippedPhone] } });
 
     // ── Mark submitted ───────────────────────────────────────────────────
     // Set completed=true at submission time
     // Weekly/monthly submissions are incremented at midnight reset (not here)
     await User.findOneAndUpdate(
-      { phone },
+      { phone: { $in: [phone, strippedPhone] } },
       {
         completed: true,
         ...(req.user.name ? { $set: { name: req.user.name } } : {}),
