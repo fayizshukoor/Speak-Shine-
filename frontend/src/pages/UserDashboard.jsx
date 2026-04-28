@@ -497,6 +497,7 @@ export default function UserDashboard() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [liveSessions, setLiveSessions] = useState([]);
+  const [sessionPage, setSessionPage] = useState(1);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -520,7 +521,6 @@ export default function UserDashboard() {
   const latest = scores.slice(-1)[0];
   const chartData = scores.map((s, i) => ({ session: `#${i+1}`, Fluency: s.fluency, Grammar: s.grammar, Confidence: s.confidence, Vocabulary: s.vocabulary }));
   const radarData = latest ? Object.keys(SCORES).map(k => ({ subject: k.charAt(0).toUpperCase()+k.slice(1), score: latest[k] || 0 })) : [];
-  const [sessionPage, setSessionPage] = useState(1);
   const SESSION_PAGE_SIZE = 5;
   const reversedScores = [...scores].reverse();
   const totalPages = Math.ceil(reversedScores.length / SESSION_PAGE_SIZE);
