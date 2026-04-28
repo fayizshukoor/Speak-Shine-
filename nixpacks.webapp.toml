@@ -3,15 +3,14 @@ nixPkgs = ["nodejs_22", "ffmpeg", "vips"]
 
 [phases.install]
 cmds = [
-  "npm install --prefer-offline --no-audit --no-fund --omit=dev",
-  "cd api && npm install --prefer-offline --no-audit --no-fund --omit=dev",
+  "npm install --prefer-offline --no-audit --no-fund",
+  "cd api && npm install --prefer-offline --no-audit --no-fund",
   "cd frontend && npm install --prefer-offline --no-audit --no-fund --legacy-peer-deps"
 ]
 
 [phases.build]
 cmds = [
-  "cd frontend && NODE_ENV=production npm run build",
-  "rm -rf frontend/node_modules frontend/src"
+  "cd frontend && NODE_ENV=production npm run build"
 ]
 
 [start]

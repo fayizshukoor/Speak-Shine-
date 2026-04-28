@@ -270,7 +270,11 @@ app.use("/api", (_, res) => res.status(404).json({ error: "API route not found" 
 // ── Serve React in production ───────────────────────────────────────────────
 if (isProd) {
   const distPath = path.join(__dirname, "../frontend/dist");
+  console.log("🔍 Looking for frontend dist at:", distPath);
+  console.log("🔍 Dist exists:", fs.existsSync(distPath));
   if (fs.existsSync(distPath)) {
+    const files = fs.readdirSync(distPath);
+    console.log("📁 Dist contents:", files);
     console.log("📦 Serving frontend from:", distPath);
     // Serve static assets with correct MIME types and long-term caching
     app.use(express.static(distPath, {
