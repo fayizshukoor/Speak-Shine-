@@ -18,6 +18,7 @@ export async function resetStatus() {
       reportExpiresAt: null,
       isMonthlyReflectionDay: false,
       isMonthlyGoalsDay: false,
+      isWeeklyReflectionDay: false,
     }
   });
 }

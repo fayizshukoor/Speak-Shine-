@@ -157,6 +157,7 @@ router.get("/me", authMiddleware, async (req, res) => {
         posterImage: getPosterImage(status),
         isMonthlyReflection: status?.isMonthlyReflectionDay || false,
         isMonthlyGoals: status?.isMonthlyGoalsDay || false,
+        isWeeklyReflection: status?.isWeeklyReflectionDay || false,
       },
       dailyReport: showReport ? dailyReport : null,
       showReport,
@@ -327,6 +328,7 @@ router.post("/demo-monthly-goals", authMiddleware, requireRole("admin"), async (
         questionSentToday: true,
         isMonthlyGoalsDay: true,
         isMonthlyReflectionDay: false,
+        isWeeklyReflectionDay: false,
         todayTopic: MONTHLY_GOALS_TOPIC,
         todayQuestion: goalsText,
         todayCategory: MONTHLY_GOALS_CATEGORY,
@@ -338,20 +340,43 @@ router.post("/demo-monthly-goals", authMiddleware, requireRole("admin"), async (
   }
 });
 
-// POST /api/dashboard/demo-monthly-reflection-off — turn off monthly reflection/goals mode (admin only)
+// POST /api/dashboard/demo-weekly-reflection — force weekly reflection mode ON (admin only, for testing)
+router.post("/demo-weekly-reflection", authMiddleware, requireRole("admin"), async (req, res) => {
+  try {
+    const { WEEKLY_REFLECTION_QUESTIONS, WEEKLY_REFLECTION_TOPIC, WEEKLY_REFLECTION_CATEGORY } = await import("../scheduler.js");
+    const weeklyText = WEEKLY_REFLECTION_QUESTIONS.map((q, i) => `${i + 1}. ${q}`).join("\n");
+    await Status.updateOne({}, {
+      $set: {
+        questionSentToday: true,
+        isWeeklyReflectionDay: true,
+        isMonthlyReflectionDay: false,
+        isMonthlyGoalsDay: false,
+        todayTopic: WEEKLY_REFLECTION_TOPIC,
+        todayQuestion: weeklyText,
+        todayCategory: WEEKLY_REFLECTION_CATEGORY,
+      }
+    }, { upsert: true });
+    res.json({ success: true, message: "Weekly reflection mode activated — refresh the app to see it" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/dashboard/demo-monthly-reflection-off — turn off all special modes (admin only)
 router.post("/demo-monthly-reflection-off", authMiddleware, requireRole("admin"), async (req, res) => {
   try {
     await Status.updateOne({}, {
       $set: {
         isMonthlyReflectionDay: false,
         isMonthlyGoalsDay: false,
+        isWeeklyReflectionDay: false,
         questionSentToday: false,
         todayTopic: null,
         todayQuestion: null,
         todayCategory: null,
       }
     });
-    res.json({ success: true, message: "Monthly mode turned off" });
+    res.json({ success: true, message: "All special modes turned off" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -660,23 +660,30 @@ export default function UserDashboard() {
           background: "linear-gradient(135deg, #0a1f0a 0%, #0d3d1a 50%, #0a2e12 100%)",
           border: "2px solid rgba(74,222,128,0.45)",
           boxShadow: "0 8px 40px rgba(34,197,94,0.2)",
+        } : data?.today?.isWeeklyReflection ? {
+          background: "linear-gradient(135deg, #0c1a2e 0%, #0f2d4a 50%, #0c1a2e 100%)",
+          border: "2px solid rgba(56,189,248,0.45)",
+          boxShadow: "0 8px 40px rgba(14,165,233,0.2)",
         } : {}}>
           {/* Header */}
           <div className="daily-poster-header">
             <div className="daily-poster-brand">
               {data?.today?.isMonthlyReflection ? "🌟 Speak & Shine"
                : data?.today?.isMonthlyGoals ? "🎯 Speak & Shine"
+               : data?.today?.isWeeklyReflection ? "📅 Speak & Shine"
                : "✦ Speak & Shine"}
             </div>
             <div className="daily-poster-sub">
               {data?.today?.isMonthlyReflection ? "MONTHLY REFLECTION"
                : data?.today?.isMonthlyGoals ? "MONTHLY GOAL SETTING"
+               : data?.today?.isWeeklyReflection ? "WEEKLY REFLECTION"
                : "DAILY SPEAKING CHALLENGE"}
             </div>
             {data.today.category && (
               <div className="daily-poster-badge" style={
                 data?.today?.isMonthlyReflection ? { background:"rgba(139,92,246,0.3)", border:"1px solid rgba(167,139,250,0.5)", color:"#c4b5fd" }
                 : data?.today?.isMonthlyGoals ? { background:"rgba(34,197,94,0.25)", border:"1px solid rgba(74,222,128,0.5)", color:"#4ade80" }
+                : data?.today?.isWeeklyReflection ? { background:"rgba(14,165,233,0.25)", border:"1px solid rgba(56,189,248,0.5)", color:"#38bdf8" }
                 : {}
               }>
                 {data.today.category}
@@ -684,31 +691,15 @@ export default function UserDashboard() {
             )}
           </div>
 
-          {/* Monthly Reflection: numbered questions */}
+          {/* Monthly Reflection questions */}
           {data?.today?.isMonthlyReflection ? (
             <div style={{ marginTop: "1rem" }}>
               <div className="daily-poster-section-label">📋 REFLECTION QUESTIONS</div>
               <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", marginTop: "0.75rem" }}>
-                {[
-                  "How many reviews did you attend this month?",
-                  "How many reviews passed and how many failed? Why did you fail?",
-                  "How many extensions did you take this month?",
-                  "What is your current growth and progress in the program?",
-                  "What did you do this month to improve your communication skill?",
-                  "What is your communication skill level now compared to last month?",
-                ].map((q, i) => (
-                  <div key={i} style={{
-                    display: "flex", gap: "0.75rem", alignItems: "flex-start",
-                    background: "rgba(255,255,255,0.06)", border: "1px solid rgba(167,139,250,0.2)",
-                    borderRadius: 10, padding: "0.65rem 0.85rem",
-                  }}>
-                    <div style={{
-                      minWidth: 24, height: 24, borderRadius: "50%",
-                      background: "rgba(139,92,246,0.3)", border: "1px solid rgba(139,92,246,0.5)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: "0.72rem", fontWeight: 800, color: "#a78bfa", flexShrink: 0,
-                    }}>{i + 1}</div>
-                    <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.9)", lineHeight: 1.5 }}>{q}</div>
+                {["How many reviews did you attend this month?","How many reviews passed and how many failed? Why did you fail?","How many extensions did you take this month?","What is your current growth and progress in the program?","What did you do this month to improve your communication skill?","What is your communication skill level now compared to last month?"].map((q, i) => (
+                  <div key={i} style={{ display:"flex", gap:"0.75rem", alignItems:"flex-start", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(167,139,250,0.2)", borderRadius:10, padding:"0.65rem 0.85rem" }}>
+                    <div style={{ minWidth:24, height:24, borderRadius:"50%", background:"rgba(139,92,246,0.3)", border:"1px solid rgba(139,92,246,0.5)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"0.72rem", fontWeight:800, color:"#a78bfa", flexShrink:0 }}>{i+1}</div>
+                    <div style={{ fontSize:"0.85rem", color:"rgba(255,255,255,0.9)", lineHeight:1.5 }}>{q}</div>
                   </div>
                 ))}
               </div>
@@ -717,31 +708,15 @@ export default function UserDashboard() {
               </div>
             </div>
 
-          /* Monthly Goals: numbered questions */
+          /* Monthly Goals questions */
           ) : data?.today?.isMonthlyGoals ? (
             <div style={{ marginTop: "1rem" }}>
               <div className="daily-poster-section-label">🎯 GOAL SETTING QUESTIONS</div>
               <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", marginTop: "0.75rem" }}>
-                {[
-                  "What is your main goal for this month in the program?",
-                  "What is your dream or target you are working toward right now?",
-                  "What specific steps will you take this month to improve your communication?",
-                  "What was your biggest challenge last month and how will you overcome it this month?",
-                  "How many reviews are you planning to attend this month?",
-                  "What will you do differently this month to grow faster?",
-                ].map((q, i) => (
-                  <div key={i} style={{
-                    display: "flex", gap: "0.75rem", alignItems: "flex-start",
-                    background: "rgba(255,255,255,0.06)", border: "1px solid rgba(74,222,128,0.2)",
-                    borderRadius: 10, padding: "0.65rem 0.85rem",
-                  }}>
-                    <div style={{
-                      minWidth: 24, height: 24, borderRadius: "50%",
-                      background: "rgba(34,197,94,0.25)", border: "1px solid rgba(74,222,128,0.5)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: "0.72rem", fontWeight: 800, color: "#4ade80", flexShrink: 0,
-                    }}>{i + 1}</div>
-                    <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.9)", lineHeight: 1.5 }}>{q}</div>
+                {["What is your main goal for this month in the program?","What is your dream or target you are working toward right now?","What specific steps will you take this month to improve your communication?","What was your biggest challenge last month and how will you overcome it this month?","How many reviews are you planning to attend this month?","What will you do differently this month to grow faster?"].map((q, i) => (
+                  <div key={i} style={{ display:"flex", gap:"0.75rem", alignItems:"flex-start", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(74,222,128,0.2)", borderRadius:10, padding:"0.65rem 0.85rem" }}>
+                    <div style={{ minWidth:24, height:24, borderRadius:"50%", background:"rgba(34,197,94,0.25)", border:"1px solid rgba(74,222,128,0.5)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"0.72rem", fontWeight:800, color:"#4ade80", flexShrink:0 }}>{i+1}</div>
+                    <div style={{ fontSize:"0.85rem", color:"rgba(255,255,255,0.9)", lineHeight:1.5 }}>{q}</div>
                   </div>
                 ))}
               </div>
@@ -750,16 +725,31 @@ export default function UserDashboard() {
               </div>
             </div>
 
+          /* Weekly Reflection questions */
+          ) : data?.today?.isWeeklyReflection ? (
+            <div style={{ marginTop: "1rem" }}>
+              <div className="daily-poster-section-label">📅 WEEKLY REFLECTION QUESTIONS</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", marginTop: "0.75rem" }}>
+                {["How many days did you submit your speaking video this week?","What was the best speaking moment you had this week?","What was the most difficult part of speaking this week?","What new word or phrase did you learn and use this week?","How confident did you feel speaking compared to last week?","What is your focus for next week to improve your communication?"].map((q, i) => (
+                  <div key={i} style={{ display:"flex", gap:"0.75rem", alignItems:"flex-start", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(56,189,248,0.2)", borderRadius:10, padding:"0.65rem 0.85rem" }}>
+                    <div style={{ minWidth:24, height:24, borderRadius:"50%", background:"rgba(14,165,233,0.25)", border:"1px solid rgba(56,189,248,0.5)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"0.72rem", fontWeight:800, color:"#38bdf8", flexShrink:0 }}>{i+1}</div>
+                    <div style={{ fontSize:"0.85rem", color:"rgba(255,255,255,0.9)", lineHeight:1.5 }}>{q}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop:"0.85rem", background:"rgba(14,165,233,0.08)", border:"1px solid rgba(56,189,248,0.25)", borderRadius:10, padding:"0.65rem 0.85rem", fontSize:"0.78rem", color:"rgba(255,255,255,0.65)" }}>
+                💡 Be honest about your week. Reflection is how you grow — speak clearly and specifically!
+              </div>
+            </div>
+
           ) : (
             <>
-              {/* Topic */}
               {data.today.topic && (
                 <div className="daily-poster-topic-wrap">
                   <div className="daily-poster-section-label">TOPIC</div>
                   <div className="daily-poster-topic">"{data.today.topic}"</div>
                 </div>
               )}
-              {/* Question */}
               <div className="daily-poster-question-wrap">
                 <div className="daily-poster-section-label">❓ QUESTION</div>
                 <div className="daily-poster-question">{data.today.question}</div>
@@ -776,6 +766,7 @@ export default function UserDashboard() {
               transition: 'transform 0.2s, box-shadow 0.2s',
               ...(data?.today?.isMonthlyReflection ? { background:"linear-gradient(135deg,#7c3aed,#5b21b6)", boxShadow:"0 4px 20px rgba(139,92,246,0.4)" }
                 : data?.today?.isMonthlyGoals ? { background:"linear-gradient(135deg,#16a34a,#15803d)", boxShadow:"0 4px 20px rgba(34,197,94,0.4)" }
+                : data?.today?.isWeeklyReflection ? { background:"linear-gradient(135deg,#0ea5e9,#0284c7)", boxShadow:"0 4px 20px rgba(14,165,233,0.4)" }
                 : {}),
             }}
             onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; }}
@@ -783,6 +774,7 @@ export default function UserDashboard() {
           >
             {data?.today?.isMonthlyReflection ? "🌟 Record Monthly Reflection Video"
              : data?.today?.isMonthlyGoals ? "🎯 Record Monthly Goals Video"
+             : data?.today?.isWeeklyReflection ? "📅 Record Weekly Reflection Video"
              : "🎥 Upload Your Speaking Video Now!"}
           </button>
         </div>

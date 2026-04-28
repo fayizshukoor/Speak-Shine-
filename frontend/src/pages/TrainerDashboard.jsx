@@ -500,7 +500,7 @@ export default function TrainerDashboard() {
             </p>
             <button
               className="btn-primary"
-              style={{width:"100%",fontSize:"0.85rem",background:"linear-gradient(135deg,#16a34a,#15803d)"}}
+              style={{width:"100%",fontSize:"0.85rem",background:"linear-gradient(135deg,#16a34a,#15803d)",marginBottom:"1rem"}}
               disabled={resetting==="goals-on"}
               onClick={async()=>{
                 setResetting("goals-on");
@@ -512,6 +512,27 @@ export default function TrainerDashboard() {
               }}
             >
               {resetting==="goals-on" ? "Activating…" : "▶ Goals ON (Demo)"}
+            </button>
+
+            {/* Weekly Reflection Demo */}
+            <div className="section-title" style={{fontSize:"0.95rem",marginBottom:"0.5rem",marginTop:"0.5rem"}}>📅 Weekly Reflection Demo (Sunday)</div>
+            <p style={{color:"var(--muted)",fontSize:"0.82rem",marginBottom:"1rem"}}>
+              Preview the Sunday weekly reflection questions for students.
+            </p>
+            <button
+              className="btn-primary"
+              style={{width:"100%",fontSize:"0.85rem",background:"linear-gradient(135deg,#0ea5e9,#0284c7)"}}
+              disabled={resetting==="weekly-on"}
+              onClick={async()=>{
+                setResetting("weekly-on");
+                try{
+                  await api.post("/dashboard/demo-weekly-reflection");
+                  msg("✅ Weekly reflection mode ON — open User Dashboard to see it");
+                } catch(e){ msg(e?.response?.data?.error||"Failed","danger"); }
+                finally{ setResetting(""); }
+              }}
+            >
+              {resetting==="weekly-on" ? "Activating…" : "▶ Weekly Reflection ON (Demo)"}
             </button>
           </div>
         </div>

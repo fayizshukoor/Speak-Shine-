@@ -25,8 +25,7 @@ export const MONTHLY_REFLECTION_QUESTIONS = [
   "What did you do this month to improve your communication skill?",
   "What is your communication skill level now compared to last month?",
 ];
-
-export const MONTHLY_REFLECTION_TOPIC = "Monthly Reflection";
+export const MONTHLY_REFLECTION_TOPIC    = "Monthly Reflection";
 export const MONTHLY_REFLECTION_CATEGORY = "Monthly Reflection";
 
 // Monthly goal-setting questions — shown on the 1st of every month
@@ -38,9 +37,20 @@ export const MONTHLY_GOALS_QUESTIONS = [
   "How many reviews are you planning to attend this month?",
   "What will you do differently this month to grow faster?",
 ];
-
-export const MONTHLY_GOALS_TOPIC = "Monthly Goal Setting";
+export const MONTHLY_GOALS_TOPIC    = "Monthly Goal Setting";
 export const MONTHLY_GOALS_CATEGORY = "Monthly Goals";
+
+// Weekly reflection questions — shown every Sunday
+export const WEEKLY_REFLECTION_QUESTIONS = [
+  "How many days did you submit your speaking video this week?",
+  "What was the best speaking moment you had this week?",
+  "What was the most difficult part of speaking this week?",
+  "What new word or phrase did you learn and use this week?",
+  "How confident did you feel speaking compared to last week?",
+  "What is your focus for next week to improve your communication?",
+];
+export const WEEKLY_REFLECTION_TOPIC    = "Weekly Reflection";
+export const WEEKLY_REFLECTION_CATEGORY = "Weekly Reflection";
 
 /** Returns true if today is the last day of the month (IST) */
 function isLastDayOfMonth() {
@@ -57,6 +67,13 @@ function isFirstDayOfMonth() {
   return istDate.getDate() === 1;
 }
 
+/** Returns true if today is Sunday (IST) */
+function isSunday() {
+  const now = new Date();
+  const istDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  return istDate.getDay() === 0; // 0 = Sunday
+}
+
 async function publishDailyQuestion() {
   try {
     const statusCheck = await Status.findOne();
@@ -64,12 +81,11 @@ async function publishDailyQuestion() {
       return; // already published today
     }
 
-    // ── 1st of month → publish Monthly Goal Setting ──────────────────────
+    // ── 1st of month → Monthly Goal Setting (takes priority over Sunday) ─
     if (isFirstDayOfMonth()) {
       const goalsText = MONTHLY_GOALS_QUESTIONS
         .map((q, i) => `${i + 1}. ${q}`)
         .join("\n");
-
       await Status.updateOne({}, {
         $set: {
           questionSentToday: true,
@@ -79,17 +95,15 @@ async function publishDailyQuestion() {
           todayCategory: MONTHLY_GOALS_CATEGORY,
         }
       }, { upsert: true });
-
       console.log("[Scheduler] 🎯 Monthly Goal Setting published for 1st of month");
       return;
     }
 
-    // ── Last day of month → publish Monthly Reflection instead ──────────
+    // ── Last day of month → Monthly Reflection (takes priority over Sunday)
     if (isLastDayOfMonth()) {
       const reflectionText = MONTHLY_REFLECTION_QUESTIONS
         .map((q, i) => `${i + 1}. ${q}`)
         .join("\n");
-
       await Status.updateOne({}, {
         $set: {
           questionSentToday: true,
@@ -99,8 +113,25 @@ async function publishDailyQuestion() {
           todayCategory: MONTHLY_REFLECTION_CATEGORY,
         }
       }, { upsert: true });
-
       console.log("[Scheduler] 🌟 Monthly Reflection published for last day of month");
+      return;
+    }
+
+    // ── Sunday → Weekly Reflection ────────────────────────────────────────
+    if (isSunday()) {
+      const weeklyText = WEEKLY_REFLECTION_QUESTIONS
+        .map((q, i) => `${i + 1}. ${q}`)
+        .join("\n");
+      await Status.updateOne({}, {
+        $set: {
+          questionSentToday: true,
+          isWeeklyReflectionDay: true,
+          todayTopic: WEEKLY_REFLECTION_TOPIC,
+          todayQuestion: weeklyText,
+          todayCategory: WEEKLY_REFLECTION_CATEGORY,
+        }
+      }, { upsert: true });
+      console.log("[Scheduler] 📅 Weekly Reflection published for Sunday");
       return;
     }
 

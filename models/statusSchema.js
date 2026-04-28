@@ -14,6 +14,7 @@ const statusSchema = new mongoose.Schema({
   // Monthly reflection
   isMonthlyReflectionDay: { type: Boolean, default: false },
   isMonthlyGoalsDay: { type: Boolean, default: false },
+  isWeeklyReflectionDay: { type: Boolean, default: false },
   // Daily report tracking
   dailyReportGenerated: { type: Boolean, default: false },
   reportExpiresAt: { type: Date, default: null },
