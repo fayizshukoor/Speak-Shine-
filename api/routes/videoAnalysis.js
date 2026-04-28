@@ -440,19 +440,27 @@ router.post("/retry/:reportId", authMiddleware, async (req, res) => {
 
     console.log(`[VideoRetry] Retrying analysis for ${req.params.reportId}`);
 
+    // Re-enqueue for processing (using R2 URL directly)
+    const { position, estimatedWait } = await enqueueRetry(
+      req.params.reportId, 
+      report.videoUrl, 
+      report.phone, 
+      report.uploaderName || report.phone
+    );
+
     res.json({
       success: true,
-      message: "Retrying analysis...",
+      message: position === 1 
+        ? "Retrying analysis now..." 
+        : `Retrying analysis. Position #${position} in queue.`,
       reportId: req.params.reportId,
+      queuePosition: position,
+      estimatedWait,
     });
-
-    // Download from R2 and re-enqueue
-    enqueueRetry(req.params.reportId, report.videoUrl, report.phone, report.uploaderName)
-      .catch(err => console.error("[VideoRetry] enqueueRetry failed:", err.message));
     
   } catch (err) {
     console.error("[VideoRetry] Error:", err);
-    res.status(500).json({ error: "Failed to retry analysis" });
+    res.status(500).json({ error: err.message || "Failed to retry analysis" });
   }
 });
 

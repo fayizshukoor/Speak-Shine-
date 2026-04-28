@@ -172,20 +172,23 @@ function finishJob(reportId, startTime, outcome) {
 
 // ── Retry (re-enqueue from R2 URL) ──────────────────────────────────────────
 export async function enqueueRetry(reportId, videoUrl, phone, displayName) {
-  const tempPath = `./tmp/retry-${reportId}-${Date.now()}.mp4`;
-
   try {
-    const response = await fetch(videoUrl);
-    if (!response.ok) throw new Error("Failed to download video from R2");
-    const buffer = await response.arrayBuffer();
-    fs.writeFileSync(tempPath, Buffer.from(buffer));
-    return enqueue({ reportId, videoPath: tempPath, phone, displayName });
+    // For retry, we can directly use the R2 URL instead of downloading
+    // This saves memory and is faster
+    console.log(`[Queue] Retrying ${reportId} from R2 URL: ${videoUrl}`);
+    return enqueue({ 
+      reportId, 
+      videoPath: videoUrl,  // Use R2 URL directly
+      phone, 
+      displayName,
+      fromUrl: true  // Important: tells the processor it's a URL
+    });
   } catch (err) {
+    console.error(`[Queue] Retry failed for ${reportId}:`, err.message);
     await VideoReport.findByIdAndUpdate(reportId, {
       status: "failed",
       errorMessage: "Retry failed: " + err.message,
     });
-    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
     throw err;
   }
 }

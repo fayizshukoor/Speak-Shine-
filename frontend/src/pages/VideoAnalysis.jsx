@@ -29,6 +29,18 @@ export default function VideoAnalysis() {
     }).catch(() => {});
   }, []);
 
+  // Auto-refresh reports table when there are processing reports
+  useEffect(() => {
+    const hasProcessing = myReports.some(r => r.status === "processing");
+    if (!hasProcessing) return;
+
+    const interval = setInterval(() => {
+      loadMyReports();
+    }, 3000); // Refresh every 3 seconds
+
+    return () => clearInterval(interval);
+  }, [myReports]);
+
   // SSE for real-time progress
   useEffect(() => {
     if (!reportId || !report || report.status !== "processing") return;
@@ -255,8 +267,44 @@ export default function VideoAnalysis() {
                       </td>
                       <td style={{ color: "var(--muted)", fontSize: "0.9rem" }}>{formatTimeRemaining(r.expiresAt)}</td>
                       <td>
-                        <button className="btn-secondary" onClick={() => viewReport(r._id)}
-                          disabled={r.status !== "completed"} style={{ marginRight: "0.5rem" }}>View</button>
+                        {r.status === "completed" && (
+                          <button className="btn-secondary" onClick={() => viewReport(r._id)}
+                            style={{ marginRight: "0.5rem" }}>View</button>
+                        )}
+                        {r.status === "failed" && (
+                          <button 
+                            className="btn-primary" 
+                            onClick={async () => {
+                              try {
+                                // Optimistically update UI
+                                setMyReports(prev => prev.map(report => 
+                                  report._id === r._id 
+                                    ? { ...report, status: "processing" }
+                                    : report
+                                ));
+                                
+                                await api.post(`/video/retry/${r._id}`);
+                                
+                                // Load fresh data and view the report
+                                await loadMyReports();
+                                viewReport(r._id);
+                              } catch (err) {
+                                // Revert on error
+                                loadMyReports();
+                                setModal({ 
+                                  type: "alert", 
+                                  title: "Error", 
+                                  message: err.response?.data?.error || "Retry failed", 
+                                  confirmText: "OK", 
+                                  onConfirm: () => setModal(null) 
+                                });
+                              }
+                            }}
+                            style={{ marginRight: "0.5rem" }}
+                          >
+                            🔄 Retry
+                          </button>
+                        )}
                         <button className="btn-danger" onClick={() => deleteReport(r._id)}>Delete</button>
                       </td>
                     </tr>
