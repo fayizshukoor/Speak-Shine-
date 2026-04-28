@@ -139,39 +139,45 @@ async function dailyReset() {
   try {
     console.log("[Scheduler] 🔄 Running daily reset...");
 
-    // ── Streak calculation (before resetting completed flag) ─────────────
-    // Increment streak for users who submitted today
-    await User.updateMany({ completed: true }, { $inc: { streak: 1 } });
-    console.log("[Scheduler] ✅ Incremented streak for completed users");
-
-    // Reset streak to 0 for users who missed today
-    await User.updateMany({ completed: false }, { $set: { streak: 0 } });
-    console.log("[Scheduler] ✅ Reset streak for missed users");
-
-    // ── 7-day streak reward: deduct ₹5 from fine ─────────────────────────
+    const FINE_AMOUNT          = Number(process.env.FINE_AMOUNT) || 2;
     const STREAK_REWARD_DAYS   = 7;
     const STREAK_REWARD_AMOUNT = 5;
-    const rewardUsers = await User.find({
-      completed: true,
-      streak: { $gt: 0, $mod: [STREAK_REWARD_DAYS, 0] },
-    }).lean();
+
+    // ── 1. Apply fine to users who missed today (completed: false) ────────
+    const missedResult = await User.updateMany(
+      { completed: false },
+      { $inc: { fine: FINE_AMOUNT, weeklyFine: FINE_AMOUNT } }
+    );
+    console.log(`[Scheduler] ✅ Fine ₹${FINE_AMOUNT} applied to ${missedResult.modifiedCount} missed users`);
+
+    // ── 2. Streak: increment for submitted, reset for missed ──────────────
+    await User.updateMany({ completed: true  }, { $inc: { streak: 1 } });
+    await User.updateMany({ completed: false }, { $set: { streak: 0 } });
+    console.log("[Scheduler] ✅ Streaks updated");
+
+    // ── 3. 7-day streak reward: deduct ₹5 from fine (min 0) ──────────────
+    // Fetch updated streak values after the increment above
+    const rewardUsers = await User.find({ completed: true }).lean();
     for (const u of rewardUsers) {
-      const deduct = Math.min(u.fine || 0, STREAK_REWARD_AMOUNT);
-      if (deduct > 0) {
-        await User.updateOne({ _id: u._id }, { $inc: { fine: -deduct } });
-        console.log(`[Scheduler] 🎁 Streak reward: ${u.name || u.phone} -₹${deduct} fine (${u.streak + 1} day streak)`);
+      const currentStreak = u.streak || 0; // already incremented in DB
+      if (currentStreak > 0 && currentStreak % STREAK_REWARD_DAYS === 0) {
+        const deduct = Math.min(u.fine || 0, STREAK_REWARD_AMOUNT);
+        if (deduct > 0) {
+          await User.updateOne({ _id: u._id }, { $inc: { fine: -deduct } });
+          console.log(`[Scheduler] 🎁 Streak reward: ${u.name || u.phone} -₹${deduct} fine (${currentStreak} day streak)`);
+        }
       }
     }
 
-    // Increment weekly/monthly submissions for users who completed today
+    // ── 4. Increment weekly/monthly submission counters ───────────────────
     await User.updateMany({ completed: true }, { $inc: { weeklySubmissions: 1, monthlySubmissions: 1 } });
     console.log("[Scheduler] ✅ Incremented weekly/monthly submissions");
 
-    // Reset all users' daily completed flag
+    // ── 5. Reset daily completed flag ─────────────────────────────────────
     await User.updateMany({}, { completed: false });
     console.log("[Scheduler] ✅ Reset completed flags");
 
-    // On Sunday midnight (IST) reset weekly submissions + weekly fines
+    // ── 6. Sunday: reset weekly submissions + weekly fines ────────────────
     const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: TIMEZONE }));
     const dayOfWeek = nowIST.getDay(); // 0 = Sunday
     if (dayOfWeek === 0) {
@@ -179,14 +185,14 @@ async function dailyReset() {
       console.log("[Scheduler] ✅ Weekly submissions + fines reset (Sunday)");
     }
 
-    // On 1st of month reset monthly submissions
+    // ── 7. 1st of month: reset monthly submissions ────────────────────────
     const dayOfMonth = nowIST.getDate();
     if (dayOfMonth === 1) {
       await User.updateMany({}, { $set: { monthlySubmissions: 0 } });
       console.log("[Scheduler] ✅ Monthly submissions reset (1st of month)");
     }
 
-    // Reset status flags
+    // ── 8. Reset status flags ─────────────────────────────────────────────
     await resetStatus();
     console.log("[Scheduler] ✅ Status flags reset");
 
@@ -284,6 +290,21 @@ export async function generateDailyReports() {
   }
 }
 
+// ── Midnight job: reports → fines/streaks → reset ───────────────────────────
+// Runs at exactly 12:00 AM IST. Order matters:
+//   1. Generate daily reports (reads completed flag before it's reset)
+//   2. Apply fines to missed users
+//   3. Update streaks
+//   4. Apply 7-day streak reward
+//   5. Increment weekly/monthly counters
+//   6. Reset completed flag
+async function midnightJob() {
+  // Step 1: generate reports first (needs current completed state)
+  await generateDailyReports();
+  // Step 2-6: fines, streaks, resets
+  await dailyReset();
+}
+
 // ── Clean expired R2 videos ──────────────────────────────────────────────────
 async function cleanExpiredVideos() {
   try {
@@ -312,11 +333,8 @@ async function cleanExpiredVideos() {
 export function startDailyReset() {
   console.log("[Scheduler] Starting daily reset scheduler...");
   
-  // Generate reports at 00:00 (12:00 AM) IST
-  cron.schedule("0 0 * * *", generateDailyReports, { timezone: TIMEZONE });
-  
-  // Run reset at 00:05 (12:05 AM) IST
-  cron.schedule("5 0 * * *", dailyReset, { timezone: TIMEZONE });
+  // Single midnight job: generate reports → apply fines/streaks → reset flags
+  cron.schedule("0 0 * * *", midnightJob, { timezone: TIMEZONE });
 
   // Clean up expired R2 videos every hour
   cron.schedule("0 * * * *", cleanExpiredVideos, { timezone: TIMEZONE });
@@ -324,5 +342,5 @@ export function startDailyReset() {
   // Run once on startup to catch any orphaned videos from previous sessions
   setTimeout(cleanExpiredVideos, 5000);
   
-  console.log("[Scheduler] ✅ Daily reset scheduler running (00:00 reports, 00:05 reset)");
+  console.log("[Scheduler] ✅ Daily reset scheduler running (00:00 midnight job)");
 }
