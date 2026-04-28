@@ -1,15 +1,26 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
+import { lazy, Suspense } from "react";
 import ChatLauncher from "./components/ChatLauncher.jsx";
 import InstallPrompt from "./components/InstallPrompt.jsx";
-import Login from "./pages/Login.jsx";
-import Register from "./pages/Register.jsx";
-import UserDashboard from "./pages/UserDashboard.jsx";
-import AdminDashboard from "./pages/AdminDashboard.jsx";
-import TrainerDashboard from "./pages/TrainerDashboard.jsx";
-import VideoAnalysis from "./pages/VideoAnalysis.jsx";
-import CommunityFeed from "./pages/CommunityFeed.jsx";
-import LiveSession from "./pages/LiveSession.jsx";
+
+// Lazy-load all pages — each becomes its own JS chunk, only loaded when needed
+const Login           = lazy(() => import("./pages/Login.jsx"));
+const Register        = lazy(() => import("./pages/Register.jsx"));
+const UserDashboard   = lazy(() => import("./pages/UserDashboard.jsx"));
+const AdminDashboard  = lazy(() => import("./pages/AdminDashboard.jsx"));
+const TrainerDashboard= lazy(() => import("./pages/TrainerDashboard.jsx"));
+const VideoAnalysis   = lazy(() => import("./pages/VideoAnalysis.jsx"));
+const CommunityFeed   = lazy(() => import("./pages/CommunityFeed.jsx"));
+const LiveSession     = lazy(() => import("./pages/LiveSession.jsx"));
+
+function PageLoader() {
+  return (
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", background:"var(--bg, #0d0d1a)" }}>
+      <div className="spinner" />
+    </div>
+  );
+}
 
 // Redirect logged-in users away from auth pages
 function GuestRoute({ children, loginFor }) {
@@ -43,63 +54,65 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Routes>
-          {/* Root */}
-          <Route path="/" element={<HomeRedirect />} />
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            {/* Root */}
+            <Route path="/" element={<HomeRedirect />} />
 
-          {/* User auth */}
-          <Route path="/login" element={
-            <GuestRoute loginFor="user"><Login showRegister /></GuestRoute>
-          } />
-          <Route path="/register" element={
-            <GuestRoute loginFor="user"><Register /></GuestRoute>
-          } />
+            {/* User auth */}
+            <Route path="/login" element={
+              <GuestRoute loginFor="user"><Login showRegister /></GuestRoute>
+            } />
+            <Route path="/register" element={
+              <GuestRoute loginFor="user"><Register /></GuestRoute>
+            } />
 
-          {/* Admin auth */}
-          <Route path="/admin/login" element={
-            <GuestRoute loginFor="admin"><Login loginFor="admin" /></GuestRoute>
-          } />
+            {/* Admin auth */}
+            <Route path="/admin/login" element={
+              <GuestRoute loginFor="admin"><Login loginFor="admin" /></GuestRoute>
+            } />
 
-          {/* Trainer auth */}
-          <Route path="/trainer/login" element={
-            <GuestRoute loginFor="trainer"><Login loginFor="trainer" /></GuestRoute>
-          } />
+            {/* Trainer auth */}
+            <Route path="/trainer/login" element={
+              <GuestRoute loginFor="trainer"><Login loginFor="trainer" /></GuestRoute>
+            } />
 
-          {/* Protected pages */}
-          <Route path="/dashboard" element={
-            <ProtectedRoute roles={["user","admin","trainer"]} loginPath="/login">
-              <UserDashboard />
-            </ProtectedRoute>
-          } />
-          <Route path="/video-analysis" element={
-            <ProtectedRoute roles={["user","admin","trainer"]} loginPath="/login">
-              <VideoAnalysis />
-            </ProtectedRoute>
-          } />
-          <Route path="/community" element={
-            <ProtectedRoute roles={["user","admin","trainer"]} loginPath="/login">
-              <CommunityFeed />
-            </ProtectedRoute>
-          } />
-          <Route path="/live/:id" element={
-            <ProtectedRoute roles={["user","admin","trainer"]} loginPath="/login">
-              <LiveSession />
-            </ProtectedRoute>
-          } />
-          <Route path="/admin" element={
-            <ProtectedRoute roles={["admin"]} loginPath="/admin/login">
-              <AdminDashboard />
-            </ProtectedRoute>
-          } />
-          <Route path="/trainer" element={
-            <ProtectedRoute roles={["trainer","admin"]} loginPath="/trainer/login">
-              <TrainerDashboard />
-            </ProtectedRoute>
-          } />
+            {/* Protected pages */}
+            <Route path="/dashboard" element={
+              <ProtectedRoute roles={["user","admin","trainer"]} loginPath="/login">
+                <UserDashboard />
+              </ProtectedRoute>
+            } />
+            <Route path="/video-analysis" element={
+              <ProtectedRoute roles={["user","admin","trainer"]} loginPath="/login">
+                <VideoAnalysis />
+              </ProtectedRoute>
+            } />
+            <Route path="/community" element={
+              <ProtectedRoute roles={["user","admin","trainer"]} loginPath="/login">
+                <CommunityFeed />
+              </ProtectedRoute>
+            } />
+            <Route path="/live/:id" element={
+              <ProtectedRoute roles={["user","admin","trainer"]} loginPath="/login">
+                <LiveSession />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin" element={
+              <ProtectedRoute roles={["admin"]} loginPath="/admin/login">
+                <AdminDashboard />
+              </ProtectedRoute>
+            } />
+            <Route path="/trainer" element={
+              <ProtectedRoute roles={["trainer","admin"]} loginPath="/trainer/login">
+                <TrainerDashboard />
+              </ProtectedRoute>
+            } />
 
-          {/* Catch-all */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            {/* Catch-all */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
         <ChatLauncher />
         <InstallPrompt />
       </BrowserRouter>

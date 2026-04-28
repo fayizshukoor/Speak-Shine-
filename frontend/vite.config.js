@@ -37,12 +37,23 @@ export default defineConfig({
     chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
-        manualChunks: {
-          // React core — changes rarely, cached by browser long-term
-          "vendor-react": ["react", "react-dom", "react-router-dom"],
-          // Socket.io — large, separate chunk
-          "vendor-socket": ["socket.io-client"],
-          // Chart/UI libs if any
+        manualChunks(id) {
+          // React core — tiny, cached forever
+          if (id.includes("node_modules/react/") || id.includes("node_modules/react-dom/") || id.includes("node_modules/react-router-dom/")) {
+            return "vendor-react";
+          }
+          // Recharts — large chart lib, only needed on dashboard pages
+          if (id.includes("node_modules/recharts") || id.includes("node_modules/d3-") || id.includes("node_modules/victory-")) {
+            return "vendor-charts";
+          }
+          // Socket.io — large, only needed for chat/live
+          if (id.includes("node_modules/socket.io-client") || id.includes("node_modules/engine.io-client")) {
+            return "vendor-socket";
+          }
+          // Axios
+          if (id.includes("node_modules/axios")) {
+            return "vendor-axios";
+          }
         },
       },
     },

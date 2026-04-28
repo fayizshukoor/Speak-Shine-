@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import Modal from "../components/Modal.jsx";
@@ -17,6 +17,13 @@ export default function Login({ loginFor = "user", showRegister = false }) {
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState(null);
   const meta = META[loginFor] || META.user;
+
+  // Preload the likely destination chunk while user fills in the form
+  useEffect(() => {
+    if (loginFor === "admin")        import("./AdminDashboard.jsx");
+    else if (loginFor === "trainer") import("./TrainerDashboard.jsx");
+    else                             import("./UserDashboard.jsx");
+  }, [loginFor]);
 
   const submit = async (e) => {
     e.preventDefault();
