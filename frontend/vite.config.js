@@ -28,11 +28,6 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
-    // Enable SharedArrayBuffer for FFmpeg.wasm
-    headers: {
-      "Cross-Origin-Opener-Policy": "same-origin",
-      "Cross-Origin-Embedder-Policy": "require-corp",
-    },
   },
   build: {
     outDir: "dist",
@@ -46,10 +41,6 @@ export default defineConfig({
           // React core — tiny, cached forever
           if (id.includes("node_modules/react/") || id.includes("node_modules/react-dom/") || id.includes("node_modules/react-router-dom/")) {
             return "vendor-react";
-          }
-          // FFmpeg — large, only needed for video upload compression
-          if (id.includes("node_modules/@ffmpeg")) {
-            return "vendor-ffmpeg";
           }
           // Recharts — large chart lib, only needed on dashboard pages
           if (id.includes("node_modules/recharts") || id.includes("node_modules/d3-") || id.includes("node_modules/victory-")) {
@@ -69,6 +60,6 @@ export default defineConfig({
   },
   assetsInclude: ["**/*.wasm"],
   optimizeDeps: {
-    exclude: ["@ffmpeg/ffmpeg", "@ffmpeg/util"],
+    exclude: ["@jitsi/rnnoise-wasm"],
   },
 });
