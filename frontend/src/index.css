@@ -1144,3 +1144,8 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   .daily-poster-brand { font-size: 1.5rem; }
   .daily-poster-question { font-size: 0.95rem; }
 }
+
+/* PWA install button */
+@media (max-width: 480px) {
+  .install-label { display: none; }
+}
