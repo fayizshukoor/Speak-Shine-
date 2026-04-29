@@ -158,7 +158,7 @@ function QuestionCountdown({ posterSendTime, name, streak }) {
   );
 }
 
-function SubmitNudge({ name, streak, navigate }) {
+function SubmitNudge({ name, streak, navigate, specialDay }) {
   const [remaining, setRemaining] = useState(null);
   const [quote] = useState(() => SUBMIT_MOTIVATIONAL[Math.floor(Math.random() * SUBMIT_MOTIVATIONAL.length)]);
   const timerRef = useRef(null);
@@ -239,7 +239,13 @@ function SubmitNudge({ name, streak, navigate }) {
 
       {/* Main message */}
       <div style={{ fontSize: "1.3rem", fontWeight: 800, color: "#fff", marginBottom: "0.5rem", lineHeight: 1.3 }}>
-        {urgency === "high" 
+        {specialDay === "weekly"
+          ? "📅 Weekly Reflection — Record Before Midnight!"
+          : specialDay === "goals"
+          ? "🎯 Monthly Goals — Speak Your Plan Today!"
+          : specialDay === "reflection"
+          ? "🌟 Monthly Reflection — Submit Before Midnight!"
+          : urgency === "high"
           ? "⚡ Submit NOW or Lose Your Streak!"
           : urgency === "medium"
           ? "🎯 Don't Wait! Submit Your Video Today!"
@@ -333,7 +339,7 @@ function SubmitNudge({ name, streak, navigate }) {
           e.currentTarget.style.boxShadow = "0 6px 20px rgba(0,0,0,0.3)";
         }}
       >
-        🎥 {urgency === "high" ? "SUBMIT NOW!" : urgency === "medium" ? "Upload Video Now!" : "Record Your Answer"}
+        🎥 {specialDay === "weekly" ? "RECORD WEEKLY REFLECTION" : specialDay === "goals" ? "RECORD MONTHLY GOALS" : specialDay === "reflection" ? "RECORD MONTHLY REFLECTION" : urgency === "high" ? "SUBMIT NOW!" : urgency === "medium" ? "Upload Video Now!" : "Record Your Answer"}
       </button>
 
       {/* Motivational quote */}
@@ -804,7 +810,16 @@ export default function UserDashboard() {
               navigate={navigate}
             />
           : (data?.today?.isMonthlyReflection || data?.today?.isMonthlyGoals || data?.today?.isWeeklyReflection)
-            ? null  // No urgency nudge on special reflection/goals days — the card above is enough
+            ? <SubmitNudge
+                name={profile?.name}
+                streak={profile?.streak || 0}
+                navigate={navigate}
+                specialDay={
+                  data?.today?.isWeeklyReflection ? "weekly"
+                  : data?.today?.isMonthlyGoals ? "goals"
+                  : "reflection"
+                }
+              />
             : <SubmitNudge
                 name={profile?.name}
                 streak={profile?.streak || 0}
