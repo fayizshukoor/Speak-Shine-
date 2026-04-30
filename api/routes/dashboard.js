@@ -195,7 +195,7 @@ router.get("/scores/:phone", authMiddleware, async (req, res) => {
       return res.status(403).json({ error: "Access denied" });
     }
     const phone = req.params.phone;
-    const user = await User.findOne({ userId: { $regex: `^${phone}` } }).lean();
+    const user = await User.findOne({ phone: phone }).lean();
     if (!user) return res.status(404).json({ error: "User not found" });
     res.json({
       name: user.name,

@@ -93,7 +93,7 @@ router.get("/me", authMiddleware, async (req, res) => {
     const auth = await Auth.findById(req.user.id).lean();
     if (!auth) return res.status(404).json({ error: "Not found" });
 
-    const user = await User.findOne({ userId: { $regex: auth.phone } }).lean();
+    const user = await User.findOne({ phone: auth.phone }).lean();
     res.json({ auth, user: user || null });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -103,7 +103,7 @@ router.get("/me", authMiddleware, async (req, res) => {
 // GET /api/users/:phone — single user detail (admin/trainer)
 router.get("/:phone", authMiddleware, requireRole("admin", "trainer"), async (req, res) => {
   try {
-    const user = await User.findOne({ userId: { $regex: req.params.phone } }).lean();
+    const user = await User.findOne({ phone: req.params.phone }).lean();
     if (!user) return res.status(404).json({ error: "User not found" });
     res.json(user);
   } catch (err) {
@@ -141,7 +141,7 @@ router.patch("/:phone/toggle", authMiddleware, requireRole("admin"), async (req,
 // PATCH /api/users/:phone/toggle-submitted — admin/trainer: toggle today's submission status
 router.patch("/:phone/toggle-submitted", authMiddleware, requireRole("admin", "trainer"), async (req, res) => {
   try {
-    const user = await User.findOne({ userId: { $regex: req.params.phone } });
+    const user = await User.findOne({ phone: req.params.phone });
     if (!user) return res.status(404).json({ error: "User not found" });
     user.completed = !user.completed;
     await user.save();
@@ -166,7 +166,7 @@ router.patch("/:phone/fine", authMiddleware, requireRole("admin"), async (req, r
   try {
     const { amount } = req.body; // positive = add, negative = deduct
     const user = await User.findOneAndUpdate(
-      { userId: { $regex: req.params.phone } },
+      { phone: req.params.phone },
       { $inc: { fine: amount } },
       { new: true }
     );
