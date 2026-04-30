@@ -1,17 +1,27 @@
 /**
  * generate-icons.mjs
- * Generates all PWA icon sizes using canvas.
- * Draws the Speak & Shine logo: purple 3D head (side profile) + glowing cyan sparkles.
+ * If public/icons/logo.png exists → resize it to all PWA icon sizes using sharp.
+ * Otherwise → draws the logo programmatically with canvas.
  *
  * Run: node generate-icons.mjs   (from inside frontend/)
  */
 
-import { createCanvas } from "canvas";
-import { mkdirSync, writeFileSync } from "fs";
+import { mkdirSync, existsSync } from "fs";
+import { createCanvas, loadImage } from "canvas";
+import { writeFileSync } from "fs";
 
 mkdirSync("public/icons", { recursive: true });
 
 const sizes = [72, 96, 128, 144, 152, 192, 384, 512];
+const logoPath = "public/icons/logo.png";
+
+async function resizeFromFile(size) {
+  const img = await loadImage(logoPath);
+  const canvas = createCanvas(size, size);
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0, size, size);
+  return canvas;
+}
 
 function drawIcon(size) {
   const canvas = createCanvas(size, size);
@@ -204,10 +214,13 @@ function drawIcon(size) {
 }
 
 for (const size of sizes) {
-  const canvas = drawIcon(size);
+  const canvas = existsSync(logoPath)
+    ? await resizeFromFile(size)
+    : drawIcon(size);
   const buffer = canvas.toBuffer("image/png");
   writeFileSync(`public/icons/icon-${size}.png`, buffer);
   console.log(`✅ icon-${size}.png  (${(buffer.length / 1024).toFixed(1)} KB)`);
 }
 
-console.log("\n🎉 All icons generated — purple head + cyan sparkles logo!");
+const source = existsSync(logoPath) ? "logo.png photo" : "canvas-drawn logo";
+console.log(`\n🎉 All icons generated from ${source}!`);
