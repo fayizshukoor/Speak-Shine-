@@ -377,6 +377,15 @@ app.use((req, res, next) => {
 // ── API Routes ──────────────────────────────────────────────────────────────
 app.get("/api/health", (_, res) => res.json({ status: "ok", app: "Speak & Shine 🗣️" }));
 
+// Simple test endpoint to verify server is responding
+app.get("/api/test", (req, res) => {
+  res.json({ 
+    message: "Server is working!", 
+    timestamp: new Date().toISOString(),
+    env: process.env.NODE_ENV 
+  });
+});
+
 // Debug endpoint to list all registered routes (only in development)
 if (!isProd) {
   app.get("/api/debug/routes", (req, res) => {
