@@ -240,9 +240,13 @@ router.post("/login", loginLimiter, async (req, res) => {
     if (password.length > 128)
       return res.status(400).json({ error: "Invalid credentials" });
 
-    const auth = await Auth.findOne({ phone });
+    // Try multiple phone formats: as-is, stripped, with 91 prefix
+    const stripped = phone.replace(/^(\+91|91)/, "").replace(/\s+/g, "");
+    const auth = await Auth.findOne({ 
+      phone: { $in: [phone, stripped, `91${stripped}`] } 
+    });
     if (!auth) {
-      console.log(`[Login] No auth found for phone: ${phone}`);
+      console.log(`[Login] No auth found for phone: ${phone} (tried: ${phone}, ${stripped}, 91${stripped})`);
       return res.status(401).json({ error: "Invalid credentials" });
     }
     if (!auth.isActive) {
@@ -299,17 +303,17 @@ router.post("/login", loginLimiter, async (req, res) => {
     auth.failedLoginAttempts = 0;
     auth.lockUntil = null;
 
-    await autoLinkPhone(phone);
+    await autoLinkPhone(auth.phone);
 
     // Issue short-lived access token (15 minutes) and long-lived refresh token (7 days)
     const accessToken = jwt.sign(
-      { id: auth._id, phone, role: auth.role, name: auth.name, type: 'access' },
+      { id: auth._id, phone: auth.phone, role: auth.role, name: auth.name, type: 'access' },
       getJwtSecret(),
       { expiresIn: "15m" }
     );
     
     const refreshToken = jwt.sign(
-      { id: auth._id, phone, type: 'refresh' },
+      { id: auth._id, phone: auth.phone, type: 'refresh' },
       getJwtSecret(),
       { expiresIn: "7d" }
     );
@@ -335,7 +339,7 @@ router.post("/login", loginLimiter, async (req, res) => {
       expiresIn: 900, // 15 minutes in seconds
       role: auth.role, 
       name: auth.name, 
-      phone 
+      phone: auth.phone 
     });
   } catch (err) {
     console.error("[Login] Error:", err.message);
