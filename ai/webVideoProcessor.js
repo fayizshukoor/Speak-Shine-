@@ -209,26 +209,24 @@ export function getVideoDuration(videoPath, isUrl = false) {
       '/usr/local/bin/ffprobe', // Homebrew/custom installs
     ];
 
-    // Find which ffprobe exists
+    // Find which ffprobe exists - always try to locate it
     let ffprobeCmd = 'ffprobe';
     
-    // For Nix store, we need to use shell to find ffprobe
-    if (process.env.NIX_STORE || process.env.NIXPACKS_METADATA) {
-      // Running in Nixpacks environment - use shell to find ffprobe
-      try {
-        const result = execSync('which ffprobe || find /nix/store -name ffprobe -type f 2>/dev/null | head -1', {
-          encoding: 'utf8',
-          timeout: 5000
-        }).trim();
-        if (result) {
-          ffprobeCmd = result;
-          console.log('[ffprobe] Found at:', ffprobeCmd);
-        } else {
-          console.error('[ffprobe] Could not locate ffprobe binary in Nix store');
-        }
-      } catch (findErr) {
-        console.error('[ffprobe] Error searching for ffprobe:', findErr.message);
+    // Try to find ffprobe using which or find in nix store
+    try {
+      const result = execSync('which ffprobe 2>/dev/null || find /nix/store -name ffprobe -type f 2>/dev/null | head -1', {
+        encoding: 'utf8',
+        timeout: 5000
+      }).trim();
+      
+      if (result) {
+        ffprobeCmd = result;
+        console.log('[ffprobe] Found at:', ffprobeCmd);
+      } else {
+        console.log('[ffprobe] Not found in PATH or /nix/store, trying default "ffprobe"');
       }
+    } catch (findErr) {
+      console.log('[ffprobe] Search failed, using default "ffprobe":', findErr.message);
     }
 
     // Build args array for ffprobe
@@ -241,9 +239,12 @@ export function getVideoDuration(videoPath, isUrl = false) {
       videoPath
     ];
 
+    console.log('[ffprobe] Executing:', ffprobeCmd);
+
     execFile(ffprobeCmd || 'ffprobe', args, { timeout: 30000 }, (err, stdout, stderr) => {
       if (err || !stdout?.trim()) {
         console.error("[ffprobe] failed:", stderr || err?.message);
+        console.error("[ffprobe] Command was:", ffprobeCmd);
         return reject(new Error("Could not read video duration. Please ensure the file is a valid video."));
       }
       try {
