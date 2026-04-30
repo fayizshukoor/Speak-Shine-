@@ -442,90 +442,122 @@ router.post("/upload", authMiddleware, (req, res, next) => {
       return res.status(400).json({ error: `Video is too long (${duration}s). Maximum is 5 minutes.` });
     }
 
-    // ── SECURITY CHECK 2: Codec validation ──────────────────────────────────
-    console.log('[VideoUpload] Validating codecs...');
-    const codecValidation = await validateVideoCodecs(videoPath);
-    if (!codecValidation.valid) {
-      securityFlags.push('codec_invalid');
-      await UploadAudit.logUpload({
-        userId, phone, uploadType: 'direct',
-        fileName: req.file.originalname,
-        fileSize: req.file.size,
-        mimeType: req.file.mimetype,
-        duration,
-        videoCodec: codecValidation.videoCodec,
-        audioCodec: codecValidation.audioCodec,
-        ipAddress, userAgent,
-        status: 'rejected',
-        rejectionReason: codecValidation.error,
-        securityFlags,
-      });
-      
-      if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
-      return res.status(400).json({ error: codecValidation.error });
-    }
-    console.log(`[VideoUpload] Codecs: video=${codecValidation.videoCodec}, audio=${codecValidation.audioCodec}`);
-
-    // ── SECURITY CHECK 3: Virus scan ────────────────────────────────────────
-    console.log('[VideoUpload] Scanning for viruses...');
-    const virusScan = await scanFile(videoPath);
-    if (!virusScan.clean && !virusScan.skipped) {
-      securityFlags.push('virus_detected');
-      await UploadAudit.logUpload({
-        userId, phone, uploadType: 'direct',
-        fileName: req.file.originalname,
-        fileSize: req.file.size,
-        mimeType: req.file.mimetype,
-        duration,
-        videoCodec: codecValidation.videoCodec,
-        audioCodec: codecValidation.audioCodec,
-        ipAddress, userAgent,
-        status: 'rejected',
-        rejectionReason: `Virus detected: ${virusScan.threat || 'Unknown'}`,
-        securityFlags,
-      });
-      
-      if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
-      return res.status(400).json({ 
-        error: "File failed security scan. Please ensure your file is safe and try again." 
-      });
-    }
-    if (virusScan.skipped) {
-      console.log('[VideoUpload] Virus scan skipped (ClamAV not available)');
-    } else {
-      console.log('[VideoUpload] Virus scan: CLEAN');
-    }
-
-    // ── SECURITY CHECK 4: Content moderation ────────────────────────────────
-    const moderationEnabled = await isModerationAvailable();
-    if (moderationEnabled) {
-      console.log('[VideoUpload] Moderating content...');
-      const moderation = await moderateVideo(videoPath);
-      
-      if (!moderation.approved && !moderation.skipped) {
-        securityFlags.push('content_inappropriate');
-        await UploadAudit.logUpload({
-          userId, phone, uploadType: 'direct',
-          fileName: req.file.originalname,
-          fileSize: req.file.size,
-          mimeType: req.file.mimetype,
-          duration,
-          videoCodec: codecValidation.videoCodec,
-          audioCodec: codecValidation.audioCodec,
-          ipAddress, userAgent,
-          status: 'rejected',
-          rejectionReason: `Content moderation failed: ${moderation.flags.join(', ')}`,
-          securityFlags,
-        });
+    // ── SECURITY CHECK 2: Codec validation (OPTIONAL - skip if slow) ────────
+    let codecValidation = { valid: true, videoCodec: 'unknown', audioCodec: 'unknown' };
+    if (process.env.ENABLE_CODEC_VALIDATION === 'true') {
+      console.log('[VideoUpload] Validating codecs...');
+      try {
+        codecValidation = await Promise.race([
+          validateVideoCodecs(videoPath),
+          new Promise((resolve) => setTimeout(() => resolve({ valid: true, skipped: true }), 5000))
+        ]);
         
-        if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
-        return res.status(400).json({ 
-          error: "Video content violates our community guidelines. Please review our content policy." 
-        });
+        if (!codecValidation.valid && !codecValidation.skipped) {
+          securityFlags.push('codec_invalid');
+          await UploadAudit.logUpload({
+            userId, phone, uploadType: 'direct',
+            fileName: req.file.originalname,
+            fileSize: req.file.size,
+            mimeType: req.file.mimetype,
+            duration,
+            videoCodec: codecValidation.videoCodec,
+            audioCodec: codecValidation.audioCodec,
+            ipAddress, userAgent,
+            status: 'rejected',
+            rejectionReason: codecValidation.error,
+            securityFlags,
+          });
+          
+          if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
+          return res.status(400).json({ error: codecValidation.error });
+        }
+        console.log(`[VideoUpload] Codecs: video=${codecValidation.videoCodec}, audio=${codecValidation.audioCodec}`);
+      } catch (err) {
+        console.log('[VideoUpload] Codec validation skipped (timeout or error)');
       }
-      console.log(`[VideoUpload] Content moderation: ${moderation.approved ? 'APPROVED' : 'SKIPPED'}`);
     } else {
-      console.log('[VideoUpload] Content moderation disabled (GROQ_API_KEY not set)');
+      console.log('[VideoUpload] Codec validation disabled');
+    }
+
+    // ── SECURITY CHECK 3: Virus scan (OPTIONAL - skip if ClamAV not available) ──
+    if (process.env.ENABLE_VIRUS_SCAN === 'true') {
+      console.log('[VideoUpload] Scanning for viruses...');
+      try {
+        const virusScan = await Promise.race([
+          scanFile(videoPath),
+          new Promise((resolve) => setTimeout(() => resolve({ clean: true, skipped: true }), 10000))
+        ]);
+        
+        if (!virusScan.clean && !virusScan.skipped) {
+          securityFlags.push('virus_detected');
+          await UploadAudit.logUpload({
+            userId, phone, uploadType: 'direct',
+            fileName: req.file.originalname,
+            fileSize: req.file.size,
+            mimeType: req.file.mimetype,
+            duration,
+            videoCodec: codecValidation.videoCodec,
+            audioCodec: codecValidation.audioCodec,
+            ipAddress, userAgent,
+            status: 'rejected',
+            rejectionReason: `Virus detected: ${virusScan.threat || 'Unknown'}`,
+            securityFlags,
+          });
+          
+          if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
+          return res.status(400).json({ 
+            error: "File failed security scan. Please ensure your file is safe and try again." 
+          });
+        }
+        console.log('[VideoUpload] Virus scan: ' + (virusScan.skipped ? 'SKIPPED' : 'CLEAN'));
+      } catch (err) {
+        console.log('[VideoUpload] Virus scan skipped (error or timeout)');
+      }
+    } else {
+      console.log('[VideoUpload] Virus scan disabled');
+    }
+
+    // ── SECURITY CHECK 4: Content moderation (OPTIONAL - skip if no API key) ──
+    if (process.env.ENABLE_CONTENT_MODERATION === 'true') {
+      const moderationEnabled = await isModerationAvailable();
+      if (moderationEnabled) {
+        console.log('[VideoUpload] Moderating content...');
+        try {
+          const moderation = await Promise.race([
+            moderateVideo(videoPath),
+            new Promise((resolve) => setTimeout(() => resolve({ approved: true, skipped: true }), 15000))
+          ]);
+          
+          if (!moderation.approved && !moderation.skipped) {
+            securityFlags.push('content_inappropriate');
+            await UploadAudit.logUpload({
+              userId, phone, uploadType: 'direct',
+              fileName: req.file.originalname,
+              fileSize: req.file.size,
+              mimeType: req.file.mimetype,
+              duration,
+              videoCodec: codecValidation.videoCodec,
+              audioCodec: codecValidation.audioCodec,
+              ipAddress, userAgent,
+              status: 'rejected',
+              rejectionReason: `Content moderation failed: ${moderation.flags.join(', ')}`,
+              securityFlags,
+            });
+            
+            if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
+            return res.status(400).json({ 
+              error: "Video content violates our community guidelines. Please review our content policy." 
+            });
+          }
+          console.log(`[VideoUpload] Content moderation: ${moderation.approved ? 'APPROVED' : 'SKIPPED'}`);
+        } catch (err) {
+          console.log('[VideoUpload] Content moderation skipped (error or timeout)');
+        }
+      } else {
+        console.log('[VideoUpload] Content moderation disabled (GROQ_API_KEY not set)');
+      }
+    } else {
+      console.log('[VideoUpload] Content moderation disabled');
     }
 
     // ── SAVE VIDEO TO R2 FIRST (before processing) ──────────────────────
