@@ -10,7 +10,11 @@ cmds = [
 
 [phases.build]
 cmds = [
-  "cd frontend && NODE_ENV=production npm run build"
+  "echo '=== Building frontend ==='",
+  "cd frontend && NODE_ENV=production npm run build",
+  "echo '=== Checking if dist was created ==='",
+  "ls -la frontend/dist || echo 'ERROR: frontend/dist not found!'",
+  "echo '=== Build phase complete ==='"
 ]
 
 [start]
