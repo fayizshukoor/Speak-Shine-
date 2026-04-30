@@ -1,51 +1,78 @@
-const CACHE_NAME = "speak-shine-v4";
+const CACHE_NAME = "speak-shine-v5";
 const STATIC_ASSETS = [
   "/",
   "/index.html",
   "/rnnoise-processor.js",
 ];
 
-// Install — cache static shell
+// Install — cache only the shell
 self.addEventListener("install", (e) => {
   e.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
   );
+  // Take over immediately — don't wait for old SW to die
   self.skipWaiting();
 });
 
-// Activate — clean old caches
+// Activate — delete ALL old caches
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
+      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => {
+        console.log("[SW] Deleting old cache:", k);
+        return caches.delete(k);
+      }))
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
-// Fetch — network first for API, cache first for assets
+// Fetch strategy:
+// - API calls: always network, never cache
+// - JS/CSS chunks (/assets/): network-first, fall back to cache
+//   (prevents stale chunks from breaking the app after deploys)
+// - Everything else: cache-first with network fallback
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
 
-  // Always go network for API calls
+  // Always network for API
   if (url.pathname.startsWith("/api")) {
-    e.respondWith(fetch(e.request).catch(() => new Response(JSON.stringify({ error: "Offline" }), { headers: { "Content-Type": "application/json" } })));
+    e.respondWith(
+      fetch(e.request).catch(() =>
+        new Response(JSON.stringify({ error: "Offline" }), {
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+    );
     return;
   }
 
-  // Cache-first for static assets
+  // Network-first for JS/CSS assets — critical to avoid stale chunk issues
+  if (url.pathname.startsWith("/assets/")) {
+    e.respondWith(
+      fetch(e.request)
+        .then((response) => {
+          if (response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(e.request))
+    );
+    return;
+  }
+
+  // Cache-first for everything else (icons, fonts, etc.)
   e.respondWith(
     caches.match(e.request).then((cached) => {
       if (cached) return cached;
       return fetch(e.request).then((response) => {
-        // Cache successful GET responses
         if (e.request.method === "GET" && response.status === 200) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
         }
         return response;
       }).catch(() => {
-        // Offline fallback — return cached index.html for navigation
         if (e.request.mode === "navigate") {
           return caches.match("/index.html");
         }

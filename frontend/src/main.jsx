@@ -24,7 +24,26 @@ if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker
       .register("/sw.js")
-      .then((reg) => console.log("SW registered:", reg.scope))
+      .then((reg) => {
+        console.log("SW registered:", reg.scope);
+        // When a new SW is waiting, activate it immediately
+        reg.addEventListener("updatefound", () => {
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+          newWorker.addEventListener("statechange", () => {
+            if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+              // New SW installed — reload to get fresh assets
+              console.log("[SW] New version available — reloading");
+              window.location.reload();
+            }
+          });
+        });
+      })
       .catch((err) => console.warn("SW registration failed:", err));
+
+    // If the SW controller changes (new SW took over), reload
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      window.location.reload();
+    });
   });
 }
