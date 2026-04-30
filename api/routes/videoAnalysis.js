@@ -7,10 +7,14 @@ import { promisify } from "util";
 import { authMiddleware } from "../middleware/auth.js";
 import VideoReport from "../../models/videoReportSchema.js";
 import User from "../../models/userSchema.js";
+import UploadAudit from "../../models/uploadAuditSchema.js";
 import { getVideoDuration } from "../../ai/webVideoProcessor.js";
 import { uploadToR2, deleteFromR2, getR2Key, getPresignedUploadUrl, getPresignedDownloadUrl } from "../../r2.js";
 import { enqueue, enqueueRetry, registerSseClient, unregisterSseClient, estimateWait } from "../videoQueue.js";
 import { fileTypeFromFile } from "file-type";
+import { validateVideoCodecs } from "../../ai/videoValidator.js";
+import { scanFile } from "../../ai/virusScanner.js";
+import { moderateVideo, isModerationAvailable } from "../../ai/contentModerator.js";
 
 const router = express.Router();
 const execFileAsync = promisify(execFile);
@@ -30,6 +34,15 @@ const ALLOWED_VIDEO_TYPES = [
 function sanitizeFilename(filename) {
   // Remove path separators and keep only safe characters
   return path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+// ── Helper: Get client IP address ───────────────────────────────────────────
+function getClientIp(req) {
+  return req.headers['x-forwarded-for']?.split(',')[0].trim() ||
+         req.headers['x-real-ip'] ||
+         req.connection?.remoteAddress ||
+         req.socket?.remoteAddress ||
+         'unknown';
 }
 
 // ── Helper: Download video from R2 and enqueue ──────────────────────────────
@@ -294,12 +307,30 @@ router.post("/upload", authMiddleware, (req, res, next) => {
   let videoPath = null;
   let videoKey = null;
   let videoUrl = null;
+  const securityFlags = [];
+  const ipAddress = getClientIp(req);
+  const userAgent = req.headers['user-agent'] || 'unknown';
 
   try {
     if (!req.file) return res.status(400).json({ error: "No video file uploaded" });
 
     // Validate MIME type
     if (!ALLOWED_VIDEO_TYPES.includes(req.file.mimetype)) {
+      securityFlags.push('mime_mismatch');
+      await UploadAudit.logUpload({
+        userId: req.user.id,
+        phone: req.user.phone,
+        uploadType: 'direct',
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+        ipAddress,
+        userAgent,
+        status: 'rejected',
+        rejectionReason: 'Invalid MIME type',
+        securityFlags,
+      });
+      
       if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       return res.status(400).json({ error: "Invalid file type. Only video files are allowed." });
     }
@@ -316,10 +347,22 @@ router.post("/upload", authMiddleware, (req, res, next) => {
     // Ensure upload dir exists
     fs.mkdirSync(path.dirname(videoPath), { recursive: true });
 
-    // Validate file magic bytes (prevents MIME type spoofing)
+    // ── SECURITY CHECK 1: Magic byte validation ─────────────────────────────
     try {
       const fileType = await fileTypeFromFile(videoPath);
       if (!fileType || !fileType.mime.startsWith('video/')) {
+        securityFlags.push('magic_byte_fail');
+        await UploadAudit.logUpload({
+          userId, phone, uploadType: 'direct',
+          fileName: req.file.originalname,
+          fileSize: req.file.size,
+          mimeType: req.file.mimetype,
+          ipAddress, userAgent,
+          status: 'rejected',
+          rejectionReason: 'Magic byte validation failed',
+          securityFlags,
+        });
+        
         if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
         return res.status(400).json({ 
           error: "Invalid video file. File content does not match video format." 
@@ -327,6 +370,18 @@ router.post("/upload", authMiddleware, (req, res, next) => {
       }
     } catch (magicErr) {
       console.error("[VideoUpload] Magic byte validation failed:", magicErr);
+      securityFlags.push('magic_byte_fail');
+      await UploadAudit.logUpload({
+        userId, phone, uploadType: 'direct',
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+        ipAddress, userAgent,
+        status: 'failed',
+        errorMessage: magicErr.message,
+        securityFlags,
+      });
+      
       if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
       return res.status(400).json({ error: "Could not validate video file." });
     }
@@ -337,17 +392,140 @@ router.post("/upload", authMiddleware, (req, res, next) => {
       duration = await getVideoDuration(videoPath);
       console.log(`[VideoUpload] Duration: ${duration}s`);
     } catch (err) {
+      await UploadAudit.logUpload({
+        userId, phone, uploadType: 'direct',
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+        ipAddress, userAgent,
+        status: 'failed',
+        errorMessage: err.message,
+        securityFlags,
+      });
+      
       if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
       return res.status(400).json({ error: err.message });
     }
 
     if (duration < 60) {
+      securityFlags.push('duration_invalid');
+      await UploadAudit.logUpload({
+        userId, phone, uploadType: 'direct',
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+        duration,
+        ipAddress, userAgent,
+        status: 'rejected',
+        rejectionReason: `Video too short: ${duration}s`,
+        securityFlags,
+      });
+      
       if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
       return res.status(400).json({ error: `Video is too short (${duration}s). Minimum is 1 minute.` });
     }
     if (duration > 300) {
+      securityFlags.push('duration_invalid');
+      await UploadAudit.logUpload({
+        userId, phone, uploadType: 'direct',
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+        duration,
+        ipAddress, userAgent,
+        status: 'rejected',
+        rejectionReason: `Video too long: ${duration}s`,
+        securityFlags,
+      });
+      
       if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
       return res.status(400).json({ error: `Video is too long (${duration}s). Maximum is 5 minutes.` });
+    }
+
+    // ── SECURITY CHECK 2: Codec validation ──────────────────────────────────
+    console.log('[VideoUpload] Validating codecs...');
+    const codecValidation = await validateVideoCodecs(videoPath);
+    if (!codecValidation.valid) {
+      securityFlags.push('codec_invalid');
+      await UploadAudit.logUpload({
+        userId, phone, uploadType: 'direct',
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+        duration,
+        videoCodec: codecValidation.videoCodec,
+        audioCodec: codecValidation.audioCodec,
+        ipAddress, userAgent,
+        status: 'rejected',
+        rejectionReason: codecValidation.error,
+        securityFlags,
+      });
+      
+      if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
+      return res.status(400).json({ error: codecValidation.error });
+    }
+    console.log(`[VideoUpload] Codecs: video=${codecValidation.videoCodec}, audio=${codecValidation.audioCodec}`);
+
+    // ── SECURITY CHECK 3: Virus scan ────────────────────────────────────────
+    console.log('[VideoUpload] Scanning for viruses...');
+    const virusScan = await scanFile(videoPath);
+    if (!virusScan.clean && !virusScan.skipped) {
+      securityFlags.push('virus_detected');
+      await UploadAudit.logUpload({
+        userId, phone, uploadType: 'direct',
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+        duration,
+        videoCodec: codecValidation.videoCodec,
+        audioCodec: codecValidation.audioCodec,
+        ipAddress, userAgent,
+        status: 'rejected',
+        rejectionReason: `Virus detected: ${virusScan.threat || 'Unknown'}`,
+        securityFlags,
+      });
+      
+      if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
+      return res.status(400).json({ 
+        error: "File failed security scan. Please ensure your file is safe and try again." 
+      });
+    }
+    if (virusScan.skipped) {
+      console.log('[VideoUpload] Virus scan skipped (ClamAV not available)');
+    } else {
+      console.log('[VideoUpload] Virus scan: CLEAN');
+    }
+
+    // ── SECURITY CHECK 4: Content moderation ────────────────────────────────
+    const moderationEnabled = await isModerationAvailable();
+    if (moderationEnabled) {
+      console.log('[VideoUpload] Moderating content...');
+      const moderation = await moderateVideo(videoPath);
+      
+      if (!moderation.approved && !moderation.skipped) {
+        securityFlags.push('content_inappropriate');
+        await UploadAudit.logUpload({
+          userId, phone, uploadType: 'direct',
+          fileName: req.file.originalname,
+          fileSize: req.file.size,
+          mimeType: req.file.mimetype,
+          duration,
+          videoCodec: codecValidation.videoCodec,
+          audioCodec: codecValidation.audioCodec,
+          ipAddress, userAgent,
+          status: 'rejected',
+          rejectionReason: `Content moderation failed: ${moderation.flags.join(', ')}`,
+          securityFlags,
+        });
+        
+        if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
+        return res.status(400).json({ 
+          error: "Video content violates our community guidelines. Please review our content policy." 
+        });
+      }
+      console.log(`[VideoUpload] Content moderation: ${moderation.approved ? 'APPROVED' : 'SKIPPED'}`);
+    } else {
+      console.log('[VideoUpload] Content moderation disabled (GROQ_API_KEY not set)');
     }
 
     // ── SAVE VIDEO TO R2 FIRST (before processing) ──────────────────────
@@ -389,6 +567,25 @@ router.post("/upload", authMiddleware, (req, res, next) => {
     });
 
     console.log(`[VideoUpload] Report created: ${report._id}`);
+
+    // ── Log successful upload to audit trail ────────────────────────────────
+    await UploadAudit.logUpload({
+      userId,
+      phone,
+      uploadType: 'direct',
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      mimeType: req.file.mimetype,
+      duration,
+      videoCodec: codecValidation.videoCodec,
+      audioCodec: codecValidation.audioCodec,
+      ipAddress,
+      userAgent,
+      status: 'success',
+      reportId: report._id,
+      r2Key: videoKey,
+      securityFlags,
+    });
 
     // Add to queue — returns position and estimated wait
     const { position, estimatedWait } = enqueue({
@@ -525,6 +722,69 @@ router.delete("/report/:reportId", authMiddleware, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "Failed to delete report" });
+  }
+});
+
+// ── Admin: Get upload audit logs ────────────────────────────────────────────
+router.get("/admin/audit-logs", authMiddleware, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const { limit = 50, status, userId } = req.query;
+    
+    const query = {};
+    if (status) query.status = status;
+    if (userId) query.userId = userId;
+
+    const logs = await UploadAudit.find(query)
+      .sort({ timestamp: -1 })
+      .limit(parseInt(limit))
+      .populate('userId', 'name phone role')
+      .lean();
+
+    res.json({ logs });
+  } catch (err) {
+    console.error('[AuditLogs] Error:', err);
+    res.status(500).json({ error: "Failed to fetch audit logs" });
+  }
+});
+
+// ── Admin: Get suspicious activity ──────────────────────────────────────────
+router.get("/admin/suspicious-activity", authMiddleware, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const { hours = 24 } = req.query;
+    
+    const suspicious = await UploadAudit.getSuspiciousActivity(parseInt(hours));
+    const stats = await UploadAudit.getStats(parseInt(hours));
+
+    res.json({ suspicious, stats });
+  } catch (err) {
+    console.error('[SuspiciousActivity] Error:', err);
+    res.status(500).json({ error: "Failed to fetch suspicious activity" });
+  }
+});
+
+// ── Admin: Get user upload history ──────────────────────────────────────────
+router.get("/admin/user-uploads/:userId", authMiddleware, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const uploads = await UploadAudit.getUserUploads(req.params.userId, 20);
+    res.json({ uploads });
+  } catch (err) {
+    console.error('[UserUploads] Error:', err);
+    res.status(500).json({ error: "Failed to fetch user uploads" });
   }
 });
 
