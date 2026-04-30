@@ -9,6 +9,14 @@ const authSchema = new mongoose.Schema({
   email: { type: String, default: null },                // admin email for OTP verification
   isActive: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now },
+  
+  // Security: Account lockout after failed login attempts
+  failedLoginAttempts: { type: Number, default: 0 },
+  lockUntil: { type: Date, default: null },
+  
+  // Security: OTP expiration and attempt limiting
+  otpExpiry: { type: Date, default: null },
+  otpAttempts: { type: Number, default: 0 },
 });
 
 export default mongoose.model("Auth", authSchema);

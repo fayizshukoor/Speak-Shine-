@@ -123,6 +123,14 @@ router.post("/login", loginLimiter, async (req, res) => {
     if (!auth) return res.status(401).json({ error: "Invalid credentials" });
     if (!auth.isActive) return res.status(403).json({ error: "Account disabled" });
 
+    // Check if account is locked
+    if (auth.lockUntil && auth.lockUntil > Date.now()) {
+      const minutesLeft = Math.ceil((auth.lockUntil - Date.now()) / 60000);
+      return res.status(423).json({ 
+        error: `Account locked due to too many failed attempts. Try again in ${minutesLeft} minutes.` 
+      });
+    }
+
     // Support both legacy bcrypt hashes and new argon2 hashes.
     // Silently upgrade bcrypt → argon2 on successful login.
     let valid = false;
@@ -138,7 +146,29 @@ router.post("/login", loginLimiter, async (req, res) => {
     } else {
       valid = await argon2.verify(auth.password, password);
     }
-    if (!valid) return res.status(401).json({ error: "Invalid credentials" });
+    
+    if (!valid) {
+      // Increment failed attempts
+      auth.failedLoginAttempts = (auth.failedLoginAttempts || 0) + 1;
+      
+      // Lock account after 5 failed attempts for 30 minutes
+      if (auth.failedLoginAttempts >= 5) {
+        auth.lockUntil = new Date(Date.now() + 30 * 60 * 1000);
+        await auth.save();
+        console.warn(`[Security] Account locked for ${phone} after ${auth.failedLoginAttempts} failed attempts`);
+        return res.status(423).json({ 
+          error: "Too many failed login attempts. Account locked for 30 minutes." 
+        });
+      }
+      
+      await auth.save();
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    // Reset failed attempts on successful login
+    auth.failedLoginAttempts = 0;
+    auth.lockUntil = null;
+    await auth.save();
 
     await autoLinkPhone(phone);
 
