@@ -10,10 +10,13 @@ import { getRedisClient, isRedisAvailable } from "../../redis.js";
 
 const router = express.Router();
 
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  console.error("❌ FATAL: JWT_SECRET environment variable is not set.");
-  process.exit(1);
+// Lazy getter for JWT_SECRET - allows dotenv to load first
+function getJwtSecret() {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error("JWT_SECRET environment variable is not set");
+  }
+  return secret;
 }
 
 const TWO_FACTOR_KEY = process.env.TWO_FACTOR_API_KEY || null;
@@ -127,7 +130,7 @@ router.post("/refresh", async (req, res) => {
     // Verify refresh token
     let decoded;
     try {
-      decoded = jwt.verify(refreshToken, JWT_SECRET);
+      decoded = jwt.verify(refreshToken, getJwtSecret());
     } catch (err) {
       return res.status(401).json({ error: "Invalid or expired refresh token" });
     }
@@ -166,13 +169,13 @@ router.post("/refresh", async (req, res) => {
     // Issue new access token and refresh token
     const newAccessToken = jwt.sign(
       { id: auth._id, phone: auth.phone, role: auth.role, name: auth.name, type: 'access' },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: "15m" }
     );
 
     const newRefreshToken = jwt.sign(
       { id: auth._id, phone: auth.phone, type: 'refresh' },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: "7d" }
     );
 
@@ -295,13 +298,13 @@ router.post("/login", loginLimiter, async (req, res) => {
     // Issue short-lived access token (15 minutes) and long-lived refresh token (7 days)
     const accessToken = jwt.sign(
       { id: auth._id, phone, role: auth.role, name: auth.name, type: 'access' },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: "15m" }
     );
     
     const refreshToken = jwt.sign(
       { id: auth._id, phone, type: 'refresh' },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: "7d" }
     );
     
@@ -412,7 +415,7 @@ router.post("/forgot/verify-otp", otpLimiter, async (req, res) => {
     await deleteOTP(stripped, "forgot");
 
     // Issue a short-lived reset token
-    const resetToken = jwt.sign({ phone: stripped, purpose: "reset" }, JWT_SECRET, { expiresIn: "10m" });
+    const resetToken = jwt.sign({ phone: stripped, purpose: "reset" }, getJwtSecret(), { expiresIn: "10m" });
     res.json({ success: true, resetToken });
   } catch (err) {
     console.error("[ForgotVerifyOTP] Error:", err.message);
@@ -434,7 +437,7 @@ router.post("/forgot/reset", async (req, res) => {
 
     let decoded;
     try {
-      decoded = jwt.verify(resetToken, JWT_SECRET);
+      decoded = jwt.verify(resetToken, getJwtSecret());
     } catch {
       return res.status(400).json({ error: "Reset link expired. Please start over." });
     }

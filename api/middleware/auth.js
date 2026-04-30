@@ -1,9 +1,12 @@
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  console.error("❌ FATAL: JWT_SECRET environment variable is not set.");
-  process.exit(1);
+// Lazy getter for JWT_SECRET - allows dotenv to load first
+function getJwtSecret() {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error("JWT_SECRET environment variable is not set");
+  }
+  return secret;
 }
 
 export function authMiddleware(req, res, next) {
@@ -16,7 +19,7 @@ export function authMiddleware(req, res, next) {
     return res.status(401).json({ error: "No token provided" });
   }
   try {
-    const decoded = jwt.verify(raw, JWT_SECRET);
+    const decoded = jwt.verify(raw, getJwtSecret());
     
     // Ensure it's an access token (not refresh token)
     if (decoded.type && decoded.type !== 'access') {

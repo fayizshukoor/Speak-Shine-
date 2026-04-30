@@ -8,7 +8,16 @@ import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { getRedisClient, isRedisAvailable } from "../../redis.js";
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET;
+
+// Lazy getter for JWT_SECRET - allows dotenv to load first
+function getJwtSecret() {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error("JWT_SECRET environment variable is not set");
+  }
+  return secret;
+}
+
 const TWO_FACTOR_KEY = process.env.TWO_FACTOR_API_KEY || null;
 const OTP_TTL = 300;
 
@@ -261,7 +270,7 @@ router.post("/admin-verify-otp", authMiddleware, requireRole("admin"), async (re
     // Issue a 10-minute action token tied to this admin
     const actionToken = jwt.sign(
       { adminId: req.user.id, purpose: "admin-create" },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: "10m" }
     );
     res.json({ success: true, actionToken });
@@ -280,7 +289,7 @@ router.post("/admin-create", authMiddleware, requireRole("admin"), async (req, r
     // Verify admin OTP token
     if (!actionToken) return res.status(400).json({ error: "Admin OTP verification required. Please verify your identity first." });
     try {
-      const decoded = jwt.verify(actionToken, JWT_SECRET);
+      const decoded = jwt.verify(actionToken, getJwtSecret());
       if (decoded.purpose !== "admin-create" || decoded.adminId !== String(req.user.id)) {
         return res.status(400).json({ error: "Invalid or expired action token. Please re-verify." });
       }
