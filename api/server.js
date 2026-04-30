@@ -34,9 +34,19 @@ const __filename_temp = fileURLToPath(import.meta.url);
 const __dirname_temp = path.dirname(__filename_temp);
 const envPath = path.join(__dirname_temp, '../.env');
 
+console.log('[ENV] Current directory:', process.cwd());
+console.log('[ENV] Script directory:', __dirname_temp);
+console.log('[ENV] Looking for .env at:', envPath);
+console.log('[ENV] .env exists:', fs.existsSync(envPath));
+
 if (fs.existsSync(envPath)) {
-  dotenv.config({ path: envPath });
-  console.log('[ENV] Loaded .env file');
+  const result = dotenv.config({ path: envPath });
+  if (result.error) {
+    console.error('[ENV] Error loading .env:', result.error);
+  } else {
+    console.log('[ENV] Loaded .env file successfully');
+    console.log('[ENV] JWT_SECRET loaded:', !!process.env.JWT_SECRET);
+  }
 } else {
   console.log('[ENV] No .env file found - using environment variables from system');
 }
@@ -275,16 +285,16 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // TODO: Remove unsafe-inline/eval gradually
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "https:", "blob:"],
       connectSrc: [
         "'self'", 
         process.env.R2_PUBLIC_URL || "https:", 
-        "https://*.r2.cloudflarestorage.com", // Allow R2 presigned upload URLs
+        "https://*.95507d8602ddb955795f0d78ed3d2df5.r2.cloudflarestorage.com", // Allow R2 presigned upload URLs (bucket.account-id.r2.cloudflarestorage.com)
         "wss:", 
         "ws:"
       ],
-      fontSrc: ["'self'", "data:"],
+      fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'", "blob:", process.env.R2_PUBLIC_URL || "https:"],
       frameSrc: ["'none'"],
