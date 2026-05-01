@@ -204,3 +204,22 @@ export async function deleteReport(req, res) {
     res.status(500).json({ error: "Failed to delete report" });
   }
 }
+
+/**
+ * POST /api/video/retry/:reportId
+ * Retry failed video analysis
+ */
+export async function retryAnalysis(req, res) {
+  try {
+    const { reportId } = req.params;
+    
+    const result = await videoService.retryVideoAnalysis(reportId, req.user.id);
+    res.json(result);
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
+    console.error("[RetryAnalysis] Error:", error.message);
+    res.status(500).json({ error: "Failed to retry analysis" });
+  }
+}

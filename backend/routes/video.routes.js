@@ -49,6 +49,7 @@ router.get("/progress/:reportId", authMiddleware, videoController.getProgress);
 router.get("/report/:reportId", authMiddleware, videoController.getReport);
 router.get("/my-reports", authMiddleware, videoController.getMyReports);
 router.delete("/report/:reportId", authMiddleware, videoController.deleteReport);
+router.post("/retry/:reportId", authMiddleware, videoController.retryAnalysis);
 
 // ── Community Feed ───────────────────────────────────────────────────────────
 router.get("/community-feed", authMiddleware, videoController.getCommunityFeed);

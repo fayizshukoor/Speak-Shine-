@@ -555,3 +555,47 @@ export async function deleteVideoReport(reportId, userId) {
   
   return { success: true, message: "Video deleted successfully" };
 }
+
+/**
+ * Retry failed video analysis
+ */
+export async function retryVideoAnalysis(reportId, userId) {
+  const report = await VideoReport.findById(reportId);
+  
+  if (!report) {
+    const error = new Error("Report not found");
+    error.statusCode = 404;
+    throw error;
+  }
+  
+  if (report.userId.toString() !== userId) {
+    const error = new Error("Access denied");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (report.status !== "failed") {
+    const error = new Error("Can only retry failed analyses");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // Reset report status and clear error
+  report.status = "processing";
+  report.error = null;
+  report.analysis = {};
+  await report.save();
+
+  // Re-enqueue for processing
+  const user = await User.findById(userId);
+  if (report.videoUrl) {
+    await downloadAndEnqueue(reportId, report.videoUrl, user.phone, user.name);
+  }
+  
+  return { 
+    success: true, 
+    message: "Analysis restarted",
+    reportId: reportId,
+    status: "processing"
+  };
+}
