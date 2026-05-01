@@ -55,4 +55,9 @@ router.post("/retry/:reportId", authMiddleware, videoController.retryAnalysis);
 router.get("/community-feed", authMiddleware, videoController.getCommunityFeed);
 router.patch("/report/:reportId/visibility", authMiddleware, videoController.toggleVisibility);
 
+// ── Community Engagement ─────────────────────────────────────────────────────
+router.post("/react/:reportId",                    authMiddleware, videoController.reactToVideo);
+router.post("/comment/:reportId",                  authMiddleware, videoController.addComment);
+router.delete("/comment/:reportId/:commentId",     authMiddleware, videoController.deleteComment);
+
 export default router;

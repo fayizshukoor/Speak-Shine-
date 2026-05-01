@@ -516,7 +516,7 @@ export async function getVideoReport(reportId, authId) {
 /**
  * Get community feed (public videos from last 24h)
  */
-export async function getCommunityFeed() {
+export async function getCommunityFeed(myPhone) {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
   
   const feed = await VideoReport.find({
@@ -528,10 +528,34 @@ export async function getCommunityFeed() {
   })
     .sort({ submittedAt: -1 })
     .limit(20)
-    .select("uploaderName submittedAt videoDuration videoUrl analysis expiresAt")
+    .select("uploaderName submittedAt videoDuration videoUrl analysis expiresAt likes dislikes comments")
     .lean();
 
-  return { feed };
+  // Annotate each item with the caller's reaction
+  const annotated = feed.map(item => ({
+    ...item,
+    likeCount:    item.likes?.length    || 0,
+    dislikeCount: item.dislikes?.length || 0,
+    userReaction: item.likes?.includes(myPhone)
+      ? "like"
+      : item.dislikes?.includes(myPhone)
+      ? "dislike"
+      : null,
+    // Strip phone numbers from comments for privacy
+    comments: (item.comments || []).map(c => ({
+      _id:       c._id,
+      name:      c.name,
+      role:      c.role,
+      text:      c.text,
+      createdAt: c.createdAt,
+      isOwn:     c.phone === myPhone,
+    })),
+    // Don't expose raw like/dislike phone arrays to clients
+    likes:    undefined,
+    dislikes: undefined,
+  }));
+
+  return { feed: annotated };
 }
 
 /**

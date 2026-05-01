@@ -145,6 +145,110 @@ export async function getProgress(req, res) {
 }
 
 /**
+ * POST /api/video/react/:reportId
+ * Toggle like or dislike on a community video
+ * body: { reaction: "like" | "dislike" }
+ */
+export async function reactToVideo(req, res) {
+  try {
+    const { reportId } = req.params;
+    const { reaction } = req.body;
+    const phone = req.user.phone;
+
+    if (!["like", "dislike"].includes(reaction)) {
+      return res.status(400).json({ error: "reaction must be 'like' or 'dislike'" });
+    }
+
+    const VideoReport = (await import("../../models/videoReportSchema.js")).default;
+    const report = await VideoReport.findById(reportId);
+    if (!report || !report.isPublic) {
+      return res.status(404).json({ error: "Video not found" });
+    }
+
+    const opposite = reaction === "like" ? "dislikes" : "likes";
+    const field    = reaction === "like" ? "likes"    : "dislikes";
+
+    const alreadyReacted = report[field].includes(phone);
+
+    // Remove from opposite side always
+    report[opposite] = report[opposite].filter(p => p !== phone);
+
+    if (alreadyReacted) {
+      // Toggle off
+      report[field] = report[field].filter(p => p !== phone);
+    } else {
+      report[field].push(phone);
+    }
+
+    await report.save();
+    res.json({ likes: report.likes.length, dislikes: report.dislikes.length, userReaction: alreadyReacted ? null : reaction });
+  } catch (error) {
+    console.error("[React] Error:", error.message);
+    res.status(500).json({ error: "Failed to react" });
+  }
+}
+
+/**
+ * POST /api/video/comment/:reportId
+ * Add a comment to a community video
+ * body: { text }
+ */
+export async function addComment(req, res) {
+  try {
+    const { reportId } = req.params;
+    const { text } = req.body;
+    const { phone, name, role } = req.user;
+
+    if (!text?.trim()) return res.status(400).json({ error: "Comment text required" });
+    if (text.trim().length > 500) return res.status(400).json({ error: "Comment too long (max 500 chars)" });
+
+    const VideoReport = (await import("../../models/videoReportSchema.js")).default;
+    const report = await VideoReport.findById(reportId);
+    if (!report || !report.isPublic) {
+      return res.status(404).json({ error: "Video not found" });
+    }
+
+    const comment = { phone, name, role, text: text.trim(), createdAt: new Date() };
+    report.comments.push(comment);
+    await report.save();
+
+    const saved = report.comments[report.comments.length - 1];
+    res.json({ comment: saved });
+  } catch (error) {
+    console.error("[Comment] Add error:", error.message);
+    res.status(500).json({ error: "Failed to add comment" });
+  }
+}
+
+/**
+ * DELETE /api/video/comment/:reportId/:commentId
+ * Delete a comment (own comment, or admin/trainer)
+ */
+export async function deleteComment(req, res) {
+  try {
+    const { reportId, commentId } = req.params;
+    const { phone, role } = req.user;
+
+    const VideoReport = (await import("../../models/videoReportSchema.js")).default;
+    const report = await VideoReport.findById(reportId);
+    if (!report) return res.status(404).json({ error: "Video not found" });
+
+    const comment = report.comments.id(commentId);
+    if (!comment) return res.status(404).json({ error: "Comment not found" });
+
+    const canDelete = comment.phone === phone || role === "admin" || role === "trainer";
+    if (!canDelete) return res.status(403).json({ error: "Not allowed" });
+
+    comment.deleteOne();
+    await report.save();
+    res.json({ success: true });
+  } catch (error) {
+    console.error("[Comment] Delete error:", error.message);
+    res.status(500).json({ error: "Failed to delete comment" });
+  }
+}
+
+/**
  * GET /api/video/report/:reportId
  * Get video report
  */
@@ -169,7 +273,7 @@ export async function getReport(req, res) {
  */
 export async function getCommunityFeed(req, res) {
   try {
-    const result = await videoService.getCommunityFeed();
+    const result = await videoService.getCommunityFeed(req.user.phone);
     res.json(result);
   } catch (error) {
     console.error("[CommunityFeed] Error:", error.message);
