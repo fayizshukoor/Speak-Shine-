@@ -253,6 +253,7 @@ async function dailyReset() {
     const FINE_AMOUNT          = Number(process.env.FINE_AMOUNT) || 2;
     const STREAK_REWARD_DAYS   = 7;
     const STREAK_REWARD_AMOUNT = 5;
+    const AUTO_DISABLE_SKIPS   = 3; // disable after this many consecutive missed days
 
     // ── 1. Apply fine to users who missed today (completed: false) ────────
     const missedResult = await User.updateMany(
@@ -267,10 +268,9 @@ async function dailyReset() {
     console.log("[Scheduler] ✅ Streaks updated");
 
     // ── 3. 7-day streak reward: deduct ₹5 from fine (min 0) ──────────────
-    // Fetch updated streak values after the increment above
     const rewardUsers = await User.find({ completed: true }).lean();
     for (const u of rewardUsers) {
-      const currentStreak = u.streak || 0; // already incremented in DB
+      const currentStreak = u.streak || 0;
       if (currentStreak > 0 && currentStreak % STREAK_REWARD_DAYS === 0) {
         const deduct = Math.min(u.fine || 0, STREAK_REWARD_AMOUNT);
         if (deduct > 0) {
@@ -284,11 +284,46 @@ async function dailyReset() {
     await User.updateMany({ completed: true }, { $inc: { weeklySubmissions: 1, monthlySubmissions: 1 } });
     console.log("[Scheduler] ✅ Incremented weekly/monthly submissions");
 
-    // ── 5. Reset daily completed flag ─────────────────────────────────────
+    // ── 5. Consecutive skip tracking + auto-disable ───────────────────────
+    // Reset skip counter for users who submitted today
+    await User.updateMany({ completed: true }, { $set: { consecutiveSkips: 0 } });
+
+    // Increment skip counter for users who missed today
+    await User.updateMany({ completed: false }, { $inc: { consecutiveSkips: 1 } });
+
+    // Find users who have now hit the threshold
+    const toDisable = await User.find({
+      consecutiveSkips: { $gte: AUTO_DISABLE_SKIPS },
+    }).select("phone name consecutiveSkips").lean();
+
+    if (toDisable.length > 0) {
+      const Auth = (await import("../models/authSchema.js")).default;
+      const { forceLogoutUser } = await import("../backend/sockets/chatSocket.js");
+
+      for (const u of toDisable) {
+        const phone = u.phone;
+        if (!phone) continue;
+
+        // Disable the auth account and revoke all tokens
+        const updated = await Auth.findOneAndUpdate(
+          { phone, isActive: true }, // only disable if currently active
+          { $set: { isActive: false, refreshTokens: [] } },
+          { new: true }
+        );
+
+        if (updated) {
+          console.log(`[Scheduler] 🚫 Auto-disabled ${u.name || phone} after ${u.consecutiveSkips} consecutive skips`);
+          // Push real-time force-logout if they are online
+          forceLogoutUser(phone);
+        }
+      }
+    }
+
+    // ── 6. Reset daily completed flag ─────────────────────────────────────
     await User.updateMany({}, { completed: false });
     console.log("[Scheduler] ✅ Reset completed flags");
 
-    // ── 6. Sunday: reset weekly submissions + weekly fines ────────────────
+    // ── 7. Sunday: reset weekly submissions + weekly fines ────────────────
     const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: TIMEZONE }));
     const dayOfWeek = nowIST.getDay(); // 0 = Sunday
     if (dayOfWeek === 0) {
@@ -296,14 +331,14 @@ async function dailyReset() {
       console.log("[Scheduler] ✅ Weekly submissions + fines reset (Sunday)");
     }
 
-    // ── 7. 1st of month: reset monthly submissions ────────────────────────
+    // ── 8. 1st of month: reset monthly submissions ────────────────────────
     const dayOfMonth = nowIST.getDate();
     if (dayOfMonth === 1) {
       await User.updateMany({}, { $set: { monthlySubmissions: 0 } });
       console.log("[Scheduler] ✅ Monthly submissions reset (1st of month)");
     }
 
-    // ── 8. Reset status flags ─────────────────────────────────────────────
+    // ── 9. Reset status flags ─────────────────────────────────────────────
     await Status.updateOne({}, {
       $set: {
         questionSentToday: false,

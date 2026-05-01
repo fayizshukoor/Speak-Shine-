@@ -176,6 +176,7 @@ export async function updateUserRole(phone, role) {
  * Toggle user active status
  * When disabling: revoke all refresh tokens so the user is forced out immediately,
  * and push a real-time force:logout event via Socket.io if they are online.
+ * When re-enabling: reset consecutiveSkips so they don't get auto-disabled again immediately.
  */
 export async function toggleUserStatus(phone) {
   const auth = await Auth.findOne({ phone });
@@ -195,6 +196,13 @@ export async function toggleUserStatus(phone) {
     // Push real-time logout to the user's active socket (if connected)
     const { forceLogoutUser } = await import("../../sockets/chatSocket.js");
     forceLogoutUser(phone);
+  } else {
+    // Re-enabling: reset the consecutive skip counter so they start fresh
+    await User.updateOne(
+      { phone: { $in: [phone, phone.replace(/^(\+91|91)/, "")] } },
+      { $set: { consecutiveSkips: 0 } }
+    );
+    console.log(`[UserService] Re-enabled user ${phone} — consecutiveSkips reset`);
   }
 
   await auth.save();
