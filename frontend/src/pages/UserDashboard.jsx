@@ -899,6 +899,7 @@ export default function UserDashboard() {
         <StatCard icon="👥" label="Group Members"      value={data?.stats?.total || 0}               color="#7c6fff" />
         <StatCard icon="✅" label="Submitted Today"    value={data?.stats?.completed || 0}           color="#4ade80" />
         <StatCard icon="⏳" label="Pending Today"      value={data?.stats?.pending || 0}             color="#f87171" />
+        <StatCard icon="💰" label="All Members Fines"  value={`₹${data?.stats?.totalFines || 0}`}   color="#a78bfa" />
       </div>
 
       {scores.length > 0 ? (
