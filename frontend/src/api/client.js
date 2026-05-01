@@ -115,6 +115,14 @@ api.interceptors.response.use(
       localStorage.removeItem("user");
       window.location.href = "/login";
     }
+
+    // Account disabled by admin — force logout immediately
+    if (err.response?.status === 403 && err.response?.data?.code === "ACCOUNT_DISABLED") {
+      localStorage.removeItem("token");
+      localStorage.removeItem("refreshToken");
+      localStorage.removeItem("user");
+      window.location.href = "/login?reason=disabled";
+    }
     
     return Promise.reject(err);
   }

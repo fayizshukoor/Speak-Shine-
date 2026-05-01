@@ -123,6 +123,14 @@ export default function Login({ loginFor = "user" }) {
   const [serverError, setServerError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Show "account disabled" message if redirected from a disabled session
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("reason") === "disabled") {
+      setServerError("Your account has been disabled. Contact your admin.");
+    }
+  }, []);
+
   // Preload destination chunk while user types
   useEffect(() => {
     if (loginFor === "admin")        import("./AdminDashboard.jsx");

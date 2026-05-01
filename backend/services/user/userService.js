@@ -174,6 +174,7 @@ export async function updateUserRole(phone, role) {
 
 /**
  * Toggle user active status
+ * When disabling: revoke all refresh tokens so the user is forced out immediately.
  */
 export async function toggleUserStatus(phone) {
   const auth = await Auth.findOne({ phone });
@@ -184,6 +185,13 @@ export async function toggleUserStatus(phone) {
   }
   
   auth.isActive = !auth.isActive;
+
+  // Revoke all refresh tokens when disabling so the next refresh attempt fails
+  if (!auth.isActive) {
+    auth.refreshTokens = [];
+    console.log(`[UserService] Revoked all tokens for disabled user: ${phone}`);
+  }
+
   await auth.save();
   
   return { success: true, isActive: auth.isActive };
