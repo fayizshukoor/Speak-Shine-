@@ -1,12 +1,14 @@
-import { useState, useEffect, useRef } from "react";
-import { io } from "socket.io-client";
+import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
+import { getSharedSocket } from "../hooks/useSocket";
 import Chat from "./Chat";
 import GroupChat from "./GroupChat";
 
 const API_URL = import.meta.env.VITE_API_URL
   ? import.meta.env.VITE_API_URL.replace("/api", "")
-  : (typeof window !== "undefined" ? window.location.origin : "");
+  : typeof window !== "undefined"
+  ? window.location.origin
+  : "";
 
 export default function ChatLauncher() {
   const { token, user } = useAuth();
@@ -15,25 +17,30 @@ export default function ChatLauncher() {
   const [showGroup, setShowGroup] = useState(false);
   const [showList, setShowList] = useState(false);
   const [unread, setUnread] = useState(0);
-  const socketRef = useRef(null);
 
   // Load DM peer list
   useEffect(() => {
     if (!token || !user) return;
     const endpoint = user.role === "user" ? "/api/chat/trainers" : "/api/chat/users";
-    fetch(`${API_URL}${endpoint}`, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${API_URL}${endpoint}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((r) => r.json())
       .then((data) => setPeers(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, [token, user]);
 
-  // Listen for DM notifications
+  // Listen for DM notifications using the shared socket (no extra connection)
   useEffect(() => {
     if (!token) return;
-    const socket = io(API_URL, { auth: { token }, transports: ["websocket"] });
-    socketRef.current = socket;
-    socket.on("chat:notify", () => setUnread((n) => n + 1));
-    return () => socket.disconnect();
+    const socket = getSharedSocket(token);
+
+    const onNotify = () => setUnread((n) => n + 1);
+    socket.on("chat:notify", onNotify);
+
+    return () => {
+      socket.off("chat:notify", onNotify);
+    };
   }, [token]);
 
   if (!user) return null;
@@ -67,18 +74,15 @@ export default function ChatLauncher() {
       )}
 
       {/* DM chat window */}
-      {activePeer && (
-        <Chat peer={activePeer} onClose={closeAll} />
-      )}
+      {activePeer && <Chat peer={activePeer} onClose={closeAll} />}
 
-      {/* Dropdown menu */}
+      {/* Dropdown peer list */}
       {showList && !isOpen && (
         <div className="chat-peer-list">
-          {/* Group chat entry */}
           <button className="chat-peer-item group-entry" onClick={openGroup}>
             <div className="chat-avatar group-avatar sm">🗣️</div>
             <div>
-              <div className="chat-peer-name">Speak & Shine Group</div>
+              <div className="chat-peer-name">Speak &amp; Shine Group</div>
               <div className="chat-peer-role">Everyone · 24h messages</div>
             </div>
           </button>
@@ -105,7 +109,10 @@ export default function ChatLauncher() {
       {/* FAB */}
       <button
         className="chat-fab"
-        onClick={() => { setShowList((v) => !v); setUnread(0); }}
+        onClick={() => {
+          setShowList((v) => !v);
+          setUnread(0);
+        }}
         title="Chat"
       >
         💬

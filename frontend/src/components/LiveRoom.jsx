@@ -10,7 +10,9 @@ import api from "../api/client.js";
 import { useToast } from "./Toast.jsx";
 
 // ── Session Info Panel ───────────────────────────────────────────────────────
-function SessionInfoPanel({ session, participantCount }) {
+function SessionInfoPanel({ session }) {
+  const participants = useParticipants();
+  const participantCount = participants.length;
   const [isMinimized, setIsMinimized] = useState(false);
 
   return (
@@ -288,7 +290,7 @@ export default function LiveRoom({ sessionId, userRole, onLeave, onSessionEnded 
         style={{ height: "100%" }}
       >
         <VideoConference />
-        <SessionInfoPanel session={session} participantCount={session?.participants?.length || 0} />
+        <SessionInfoPanel session={session} />
         {userRole === "admin" && <AdminControls sessionId={sessionId} />}
       </LiveKitRoom>
     </div>
