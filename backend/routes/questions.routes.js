@@ -14,6 +14,10 @@ router.get("/random", authMiddleware, questionsController.getRandomQuestion);
 
 // Admin/Trainer routes
 router.get("/", authMiddleware, requireRole("admin", "trainer"), questionsController.listQuestions);
+router.get("/manual", authMiddleware, requireRole("admin", "trainer"), questionsController.listManualQuestions);
+router.get("/templates", authMiddleware, requireRole("admin", "trainer"), questionsController.getQuestionTemplates);
+router.post("/manual", authMiddleware, requireRole("admin", "trainer"), questionsController.setupManualQuestion);
+router.delete("/manual/:id", authMiddleware, requireRole("admin", "trainer"), questionsController.deleteManualQuestion);
 
 // Admin-only routes
 router.post("/", authMiddleware, requireRole("admin"), questionsController.addQuestion);

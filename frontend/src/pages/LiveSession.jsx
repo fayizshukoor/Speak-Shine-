@@ -11,25 +11,41 @@ export default function LiveSession() {
   const navigate = useNavigate();
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState(null);
-  const [inRoom, setInRoom]   = useState(false);
+  const [error, setError] = useState(null);
+  const [inRoom, setInRoom] = useState(false);
+  const [hasJoined, setHasJoined] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
         const res = await api.get(`/live-sessions/${id}`);
         setSession(res.data);
-        if (res.data.status !== "live") setError("Session is not live");
+        if (res.data.status !== "live") {
+          setError("Session is not live");
+        } else {
+          // Check if user has already joined this session
+          const userPhone = user?.phone;
+          if (userPhone && res.data.participants?.includes(userPhone)) {
+            setHasJoined(true);
+          }
+        }
       } catch (e) {
         setError(e.response?.data?.error || "Failed to load session");
       } finally {
         setLoading(false);
       }
     })();
-  }, [id]);
+  }, [id, user?.phone]);
 
-  const handleJoin = () => setInRoom(true);
-  const handleLeave = () => { setInRoom(false); navigate("/dashboard"); };
+  const handleJoin = () => {
+    setInRoom(true);
+    setHasJoined(true);
+  };
+  
+  const handleLeave = () => { 
+    setInRoom(false); 
+    navigate("/dashboard"); 
+  };
 
   if (loading) return (
     <Layout title="Live Session">
@@ -53,9 +69,54 @@ export default function LiveSession() {
           <div style={{ fontSize: "2.5rem", marginBottom: "1rem" }}>🎥</div>
           <h2 style={{ marginBottom: "0.5rem" }}>{session.title}</h2>
           {session.description && <p style={{ color: "var(--muted)", marginBottom: "1.5rem" }}>{session.description}</p>}
-          <button className="btn-primary" onClick={handleJoin} style={{ width: "100%", fontSize: "1.05rem", padding: "1rem" }}>
-            🚀 Join Now
-          </button>
+          
+          {/* Show participant count */}
+          {session.participants?.length > 0 && (
+            <div style={{ 
+              display: "flex", 
+              alignItems: "center", 
+              justifyContent: "center", 
+              gap: "0.5rem", 
+              marginBottom: "1rem",
+              color: "var(--muted)",
+              fontSize: "0.9rem"
+            }}>
+              <span>👥</span>
+              <span>{session.participants.length} participant{session.participants.length !== 1 ? 's' : ''} joined</span>
+            </div>
+          )}
+
+          {/* Show different UI based on join status */}
+          {hasJoined ? (
+            <div>
+              <div style={{ 
+                background: "rgba(74,222,128,0.1)", 
+                border: "1px solid rgba(74,222,128,0.3)",
+                borderRadius: "12px",
+                padding: "1rem",
+                marginBottom: "1rem",
+                color: "#4ade80"
+              }}>
+                <div style={{ fontSize: "1.2rem", marginBottom: "0.5rem" }}>✅ You're already in this session</div>
+                <div style={{ fontSize: "0.9rem", opacity: 0.8 }}>Click below to rejoin the room</div>
+              </div>
+              <button 
+                className="btn-primary" 
+                onClick={handleJoin} 
+                style={{ width: "100%", fontSize: "1.05rem", padding: "1rem" }}
+              >
+                🔄 Rejoin Session
+              </button>
+            </div>
+          ) : (
+            <button 
+              className="btn-primary" 
+              onClick={handleJoin} 
+              style={{ width: "100%", fontSize: "1.05rem", padding: "1rem" }}
+            >
+              🚀 Join Now
+            </button>
+          )}
         </div>
       </Layout>
     );
