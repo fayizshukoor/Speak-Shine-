@@ -353,7 +353,12 @@ export default function VideoAnalysis() {
           <button
             className={`tab-btn${mode === "upload" ? " active" : ""}`}
             onClick={() => setMode("upload")}
-          >📁 Upload Video</button>
+            style={{ 
+              background: mode === "upload" ? "var(--primary)" : "rgba(14,165,233,0.15)",
+              border: mode === "upload" ? "1px solid var(--primary)" : "1px solid rgba(56,189,248,0.3)",
+              color: mode === "upload" ? "#fff" : "#38bdf8"
+            }}
+          >📁 Upload Video (Recommended)</button>
           <button
             className={`tab-btn${mode === "record" ? " active" : ""}`}
             onClick={() => setMode("record")}
@@ -997,6 +1002,24 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
   return (
     <div className="card">
       <div className="section-title">🎥 Record Video for Analysis</div>
+      
+      {/* Browser recording issues notice */}
+      <div style={{
+        background: "rgba(248,113,113,0.1)", 
+        border: "1px solid rgba(248,113,113,0.3)",
+        borderRadius: 12, 
+        padding: "1rem", 
+        marginBottom: "1.5rem",
+        fontSize: "0.85rem", 
+        color: "rgba(255,255,255,0.8)", 
+        lineHeight: 1.6,
+      }}>
+        ⚠️ <strong style={{ color: "#f87171" }}>Recording Issues Detected:</strong> Some browsers have compatibility issues with in-browser recording. 
+        <br />
+        <strong style={{ color: "#38bdf8" }}>Recommended:</strong> Use your phone's camera app to record, then use the "📁 Upload Video" option above for best results.
+        <br />
+        <span style={{ fontSize: "0.8rem", opacity: 0.8 }}>You can still try browser recording below, but upload is more reliable.</span>
+      </div>
 
       {/* ── SETUP ── */}
       {step === "setup" && (
@@ -1280,6 +1303,21 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
             color: "var(--muted)"
           }}>
             📊 Recording: {fmtTime(elapsed)} • {recordedBlob ? `${Math.round(recordedBlob.size / 1024)}KB` : 'Processing...'} • {mimeTypeRef.current || 'Unknown format'}
+            
+            {/* Corruption warning if blob is too small */}
+            {recordedBlob && recordedBlob.size < elapsed * 5000 && (
+              <div style={{ 
+                marginTop: "0.5rem", 
+                padding: "0.5rem", 
+                background: "rgba(248,113,113,0.1)", 
+                border: "1px solid rgba(248,113,113,0.3)",
+                borderRadius: "6px",
+                color: "#f87171",
+                fontSize: "0.8rem"
+              }}>
+                ⚠️ Recording may be corrupted (file too small). Consider using Upload option instead.
+              </div>
+            )}
           </div>
           
           <video ref={previewVideoRef} controls playsInline
@@ -1290,6 +1328,21 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
               🚀 Submit for Analysis
             </button>
           </div>
+          
+          {/* Alternative upload suggestion */}
+          <div style={{
+            marginTop: "1rem",
+            padding: "0.75rem 1rem",
+            background: "rgba(14,165,233,0.08)",
+            border: "1px solid rgba(56,189,248,0.25)",
+            borderRadius: "8px",
+            fontSize: "0.8rem",
+            color: "rgba(255,255,255,0.7)",
+            lineHeight: 1.5,
+          }}>
+            💡 <strong style={{ color: "#38bdf8" }}>Having issues?</strong> You can also record with your phone's camera app and use the "Upload Video" option above for more reliable results.
+          </div>
+          
           {error && <div className="error-box" style={{ marginTop: "1rem" }}><p>{error}</p></div>}
         </div>
       )}
