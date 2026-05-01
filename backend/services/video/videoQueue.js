@@ -225,7 +225,6 @@ export async function enqueueRetry(reportId, videoUrl, phone, displayName) {
       displayName,
       knownDuration: storedDuration, // Pass the known duration for retry
     });
-    });
   } catch (err) {
     console.error(`[Queue] Retry failed for ${reportId}:`, err.message);
     
