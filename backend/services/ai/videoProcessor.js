@@ -251,37 +251,49 @@ export function getVideoDuration(videoPath, isUrl = false) {
       }
       try {
         const info = JSON.parse(stdout);
-        // [ffprobe] Raw metadata removed — too verbose for production
+        console.log("[ffprobe] Raw metadata for debugging:", JSON.stringify(info, null, 2));
 
-        // Try format duration first
+        // Try format duration first (most reliable)
         let dur = parseFloat(info?.format?.duration);
+        console.log("[ffprobe] Format duration:", dur);
 
-        // Fallback: calculate from nb_read_packets * avg frame duration
+        // Fallback 1: Try video stream duration
         if (!dur || dur <= 0) {
           const videoStream = info?.streams?.find(s => s.codec_type === "video");
           dur = parseFloat(videoStream?.duration) || 0;
+          console.log("[ffprobe] Video stream duration:", dur);
+        }
 
-          // Last resort: use nb_read_packets and r_frame_rate
-          if ((!dur || dur <= 0) && videoStream?.nb_read_packets && videoStream?.r_frame_rate) {
-            const [num, den] = videoStream.r_frame_rate.split("/").map(Number);
-            const fps = den ? num / den : 0;
-            console.log("[ffprobe] Calculating from packets:", videoStream.nb_read_packets, "fps:", fps);
-            if (fps > 0) dur = parseInt(videoStream.nb_read_packets) / fps;
+        // Fallback 2: Calculate from file size and bitrate (for corrupted metadata)
+        if (!dur || dur <= 0) {
+          const fileSize = parseFloat(info?.format?.size) || 0;
+          const bitRate = parseFloat(info?.format?.bit_rate) || 0;
+          
+          if (fileSize > 0 && bitRate > 0) {
+            // Duration = file_size_in_bits / bit_rate
+            dur = (fileSize * 8) / bitRate;
+            console.log("[ffprobe] Calculated from size/bitrate:", dur, "seconds (size:", fileSize, "bitrate:", bitRate, ")");
           }
         }
 
-        console.log("[ffprobe] Final duration:", dur);
-        
-        // Emergency fallback: estimate from file size (only for local files)
+        // Fallback 3: Estimate from file size (very rough estimate for speech videos)
         if (!dur || dur <= 0) {
           if (!isUrl) {
             const fileSize = fs.statSync(videoPath).size;
-            const estimatedDur = Math.round(fileSize / (1024 * 1024) * 10);
-            if (estimatedDur > 0) { dur = estimatedDur; }
+            // Rough estimate: 1MB per minute for speech videos (very conservative)
+            const estimatedDur = Math.max(60, (fileSize / (1024 * 1024)) * 60);
+            console.log("[ffprobe] File size estimate:", estimatedDur, "seconds (file size:", fileSize, "bytes)");
+            dur = estimatedDur;
           }
-          if (!dur || dur <= 0) {
-            return reject(new Error("Could not determine video duration."));
-          }
+        }
+
+        // IGNORE packet-based calculation as it's unreliable for MediaRecorder files
+        // The fps calculation from r_frame_rate is often wrong for browser-recorded videos
+
+        console.log("[ffprobe] Final duration:", dur);
+        
+        if (!dur || dur <= 0) {
+          return reject(new Error("Could not determine video duration."));
         }
         
         resolve(Math.round(dur));

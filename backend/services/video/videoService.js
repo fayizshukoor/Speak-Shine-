@@ -588,8 +588,14 @@ export async function retryVideoAnalysis(reportId, userId) {
 
   // Re-enqueue for processing
   const user = await User.findById(userId);
+  if (!user) {
+    const error = new Error("User not found");
+    error.statusCode = 404;
+    throw error;
+  }
+  
   if (report.videoUrl) {
-    await downloadAndEnqueue(reportId, report.videoUrl, user.phone, user.name);
+    await downloadAndEnqueue(reportId, report.videoUrl, user.phone || user.userId || userId, user.name || "User");
   }
   
   return { 
