@@ -694,6 +694,13 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
 
   const startCountdown = async () => {
     setError(null);
+    
+    // Check MediaRecorder support
+    if (!window.MediaRecorder) {
+      setError("Your browser doesn't support video recording. Please use the upload option or try a different browser.");
+      return;
+    }
+    
     try {
       // ── Option 1: browser-level noise suppression via getUserMedia constraints ──
       const isMobile = window.innerWidth < 600;
@@ -737,45 +744,61 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
       }, 1000);
     } catch (err) {
       setNcStatus("idle");
-      setError("Could not access camera/mic: " + err.message);
+      setError("Could not access camera/mic: " + err.message + ". Please check permissions and try again.");
     }
   };
 
   const startRecording = (stream) => {
     chunksRef.current = [];
 
-    // Pick best codec — prefer VP9 (better quality/size), fallback to VP8, then mp4
-    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
-      ? "video/webm;codecs=vp9,opus"
-      : MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")
-      ? "video/webm;codecs=vp8,opus"
-      : MediaRecorder.isTypeSupported("video/webm")
-      ? "video/webm"
-      : "video/mp4";
+    // More conservative codec selection for better compatibility
+    let mimeType;
+    let recorderOptions = {};
+    
+    // Try codecs in order of compatibility (most compatible first)
+    if (MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")) {
+      mimeType = "video/webm;codecs=vp8,opus";
+      recorderOptions = {
+        mimeType,
+        videoBitsPerSecond: 800_000,  // Lower bitrate for stability
+        audioBitsPerSecond: 64_000,   // Lower audio bitrate
+      };
+    } else if (MediaRecorder.isTypeSupported("video/webm")) {
+      mimeType = "video/webm";
+      recorderOptions = {
+        mimeType,
+        videoBitsPerSecond: 600_000,  // Even lower for basic webm
+        audioBitsPerSecond: 64_000,
+      };
+    } else if (MediaRecorder.isTypeSupported("video/mp4")) {
+      mimeType = "video/mp4";
+      recorderOptions = { mimeType };  // Let browser decide bitrates for MP4
+    } else {
+      // Fallback: no specific codec, let browser choose
+      mimeType = "";
+      recorderOptions = {};
+    }
 
-    mimeTypeRef.current = mimeType; // Store for later use
+    console.log(`[Recording] Using MIME type: ${mimeType || 'browser default'}`);
+    mimeTypeRef.current = mimeType || "video/webm"; // Store for later use
 
-    // Higher bitrate for better quality: 2.5Mbps video + 128kbps audio
-    const recorder = new MediaRecorder(stream, {
-      mimeType,
-      // Optimized bitrates for speech analysis (60% smaller files, good quality)
-      videoBitsPerSecond: 1_000_000,  // 1 Mbps (down from 2.5 Mbps)
-      audioBitsPerSecond: 96_000,     // 96 kbps (down from 128 kbps)
-    });
+    const recorder = new MediaRecorder(stream, recorderOptions);
     recorderRef.current = recorder;
     
     // Enhanced error handling and chunk validation
+    let chunkCount = 0;
     recorder.ondataavailable = (e) => { 
+      chunkCount++;
       if (e.data && e.data.size > 0) {
-        console.log(`[Recording] Chunk received: ${e.data.size} bytes`);
+        console.log(`[Recording] Chunk ${chunkCount}: ${e.data.size} bytes`);
         chunksRef.current.push(e.data);
       } else {
-        console.warn(`[Recording] Empty or invalid chunk received`);
+        console.warn(`[Recording] Empty chunk ${chunkCount} received`);
       }
     };
     
     recorder.onstop = () => {
-      console.log(`[Recording] Stop event - ${chunksRef.current.length} chunks collected`);
+      console.log(`[Recording] Stop event - ${chunksRef.current.length} chunks collected, total chunks seen: ${chunkCount}`);
       
       // Validate chunks before creating blob
       const validChunks = chunksRef.current.filter(chunk => chunk && chunk.size > 0);
@@ -785,21 +808,25 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
       
       if (validChunks.length === 0 || totalSize === 0) {
         console.error(`[Recording] No valid chunks found!`);
-        setError("Recording failed - no data captured. Please try again.");
+        setError("Recording failed - no data captured. Please try again with a different browser or use the upload option.");
         setStep("setup");
         cleanup();
         return;
       }
       
-      console.log(`[Recording] Creating blob with MIME type: ${mimeType}`);
-      const blob = new Blob(validChunks, { type: mimeType });
-      console.log(`[Recording] Blob created - type: ${blob.type}, size: ${blob.size}`);
-      
-      // Additional validation: check if blob size is reasonable for the recording duration
-      const expectedMinSize = elapsed * 10000; // ~10KB per second minimum
-      if (blob.size < expectedMinSize) {
-        console.warn(`[Recording] Blob size (${blob.size}) seems too small for ${elapsed}s recording`);
+      // Check if we have reasonable amount of data for the recording time
+      const expectedMinSize = elapsed * 5000; // ~5KB per second minimum (very conservative)
+      if (totalSize < expectedMinSize) {
+        console.error(`[Recording] Insufficient data: ${totalSize} bytes for ${elapsed}s (expected min: ${expectedMinSize})`);
+        setError(`Recording seems corrupted (${Math.round(totalSize/1024)}KB for ${elapsed}s). Please try again or use upload option.`);
+        setStep("setup");
+        cleanup();
+        return;
       }
+      
+      console.log(`[Recording] Creating blob with MIME type: ${mimeTypeRef.current}`);
+      const blob = new Blob(validChunks, { type: mimeTypeRef.current });
+      console.log(`[Recording] Blob created - type: ${blob.type}, size: ${blob.size}`);
       
       pendingBlobRef.current = blob; // store for useEffect to pick up after render
       setRecordedBlob(blob);
@@ -810,13 +837,18 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
     // Add error event handler
     recorder.onerror = (e) => {
       console.error(`[Recording] MediaRecorder error:`, e);
-      setError(`Recording error: ${e.error?.message || 'Unknown error'}. Please try again.`);
+      setError(`Recording error: ${e.error?.message || 'Unknown error'}. Please try again or use upload option.`);
       setStep("setup");
       cleanup();
     };
     
-    // More frequent chunk collection for better stability (500ms instead of 1000ms)
-    recorder.start(500); // collect chunks every 500ms for better reliability
+    // Add state change logging
+    recorder.onstatechange = (e) => {
+      console.log(`[Recording] State changed to: ${recorder.state}`);
+    };
+    
+    // Start with longer intervals for better stability (1000ms)
+    recorder.start(1000); // Back to 1000ms for stability
     setStep("recording");
     setElapsed(0);
     setIsPaused(false);
@@ -983,6 +1015,15 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
               ⚠️ <strong style={{ color: "#f59e0b" }}>Long Recording Notice:</strong> For recordings over 5 minutes, ensure stable internet and avoid switching apps. If you experience issues, try recording in shorter segments or use the upload option instead.
             </div>
           )}
+          
+          {/* Browser compatibility notice */}
+          <div style={{
+            background: "rgba(14,165,233,0.08)", border: "1px solid rgba(56,189,248,0.25)",
+            borderRadius: 10, padding: "0.75rem 1rem", marginBottom: "1.25rem",
+            fontSize: "0.8rem", color: "rgba(255,255,255,0.7)", lineHeight: 1.5,
+          }}>
+            💡 <strong style={{ color: "#38bdf8" }}>Having recording issues?</strong> Try Chrome/Edge browsers for best compatibility. If recording fails, use the "Upload Video" option above.
+          </div>
 
           {/* Monthly reflection reminder inside record card */}
           {isMonthlyReflection && (
