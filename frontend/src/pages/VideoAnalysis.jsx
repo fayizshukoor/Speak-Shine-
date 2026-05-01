@@ -763,17 +763,60 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
       audioBitsPerSecond: 96_000,     // 96 kbps (down from 128 kbps)
     });
     recorderRef.current = recorder;
-    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+    
+    // Enhanced error handling and chunk validation
+    recorder.ondataavailable = (e) => { 
+      if (e.data && e.data.size > 0) {
+        console.log(`[Recording] Chunk received: ${e.data.size} bytes`);
+        chunksRef.current.push(e.data);
+      } else {
+        console.warn(`[Recording] Empty or invalid chunk received`);
+      }
+    };
+    
     recorder.onstop = () => {
+      console.log(`[Recording] Stop event - ${chunksRef.current.length} chunks collected`);
+      
+      // Validate chunks before creating blob
+      const validChunks = chunksRef.current.filter(chunk => chunk && chunk.size > 0);
+      const totalSize = validChunks.reduce((sum, chunk) => sum + chunk.size, 0);
+      
+      console.log(`[Recording] Valid chunks: ${validChunks.length}, Total size: ${totalSize} bytes`);
+      
+      if (validChunks.length === 0 || totalSize === 0) {
+        console.error(`[Recording] No valid chunks found!`);
+        setError("Recording failed - no data captured. Please try again.");
+        setStep("setup");
+        cleanup();
+        return;
+      }
+      
       console.log(`[Recording] Creating blob with MIME type: ${mimeType}`);
-      const blob = new Blob(chunksRef.current, { type: mimeType });
+      const blob = new Blob(validChunks, { type: mimeType });
       console.log(`[Recording] Blob created - type: ${blob.type}, size: ${blob.size}`);
+      
+      // Additional validation: check if blob size is reasonable for the recording duration
+      const expectedMinSize = elapsed * 10000; // ~10KB per second minimum
+      if (blob.size < expectedMinSize) {
+        console.warn(`[Recording] Blob size (${blob.size}) seems too small for ${elapsed}s recording`);
+      }
+      
       pendingBlobRef.current = blob; // store for useEffect to pick up after render
       setRecordedBlob(blob);
       setStep("preview");
       cleanup();
     };
-    recorder.start(1000); // collect chunks every 1s
+    
+    // Add error event handler
+    recorder.onerror = (e) => {
+      console.error(`[Recording] MediaRecorder error:`, e);
+      setError(`Recording error: ${e.error?.message || 'Unknown error'}. Please try again.`);
+      setStep("setup");
+      cleanup();
+    };
+    
+    // More frequent chunk collection for better stability (500ms instead of 1000ms)
+    recorder.start(500); // collect chunks every 500ms for better reliability
     setStep("recording");
     setElapsed(0);
     setIsPaused(false);
@@ -788,7 +831,15 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
   const stopRecording = () => {
     clearInterval(timerRef.current);
     if (recorderRef.current && recorderRef.current.state !== "inactive") {
-      recorderRef.current.stop();
+      console.log(`[Recording] Stopping recorder in state: ${recorderRef.current.state}`);
+      try {
+        recorderRef.current.stop();
+      } catch (err) {
+        console.error(`[Recording] Error stopping recorder:`, err);
+        setError("Error stopping recording. Please try again.");
+        setStep("setup");
+        cleanup();
+      }
     }
   };
 
@@ -820,6 +871,24 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
   const submitRecording = async () => {
     if (!recordedBlob) return;
     if (elapsed < 60) { setError("Recording must be at least 1 minute. Please record again."); return; }
+    
+    // Additional blob validation before upload
+    console.log(`[Upload] Validating blob - size: ${recordedBlob.size}, type: ${recordedBlob.type}, elapsed: ${elapsed}s`);
+    
+    // Check if blob size is reasonable for the duration
+    const expectedMinSize = elapsed * 8000; // ~8KB per second minimum (very conservative)
+    const expectedMaxSize = elapsed * 200000; // ~200KB per second maximum (generous)
+    
+    if (recordedBlob.size < expectedMinSize) {
+      console.error(`[Upload] Blob too small: ${recordedBlob.size} bytes for ${elapsed}s (expected min: ${expectedMinSize})`);
+      setError(`Recording seems corrupted (too small: ${Math.round(recordedBlob.size/1024)}KB for ${elapsed}s). Please record again.`);
+      return;
+    }
+    
+    if (recordedBlob.size > expectedMaxSize) {
+      console.warn(`[Upload] Blob very large: ${recordedBlob.size} bytes for ${elapsed}s (expected max: ${expectedMaxSize})`);
+    }
+    
     setStep("uploading");
     setUploadProgress(0);
     setError(null);
@@ -835,6 +904,8 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
       
       const ext = mimeType.includes("mp4") ? "mp4" : "webm";
       const file = new File([recordedBlob], `recording.${ext}`, { type: mimeType });
+      
+      console.log(`[Upload] Created file - name: ${file.name}, size: ${file.size}, type: ${file.type}`);
 
       // Step 1: Get presigned URL
       const { data: presign } = await api.get("/video/presign", {
@@ -846,9 +917,26 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", presign.uploadUrl);
         xhr.setRequestHeader("Content-Type", file.type);
-        xhr.upload.onprogress = (e) => { if (e.total) setUploadProgress(Math.round((e.loaded / e.total) * 100)); };
-        xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed: ${xhr.status}`));
-        xhr.onerror = () => reject(new Error("Network error during upload"));
+        xhr.upload.onprogress = (e) => { 
+          if (e.total) {
+            const progress = Math.round((e.loaded / e.total) * 100);
+            setUploadProgress(progress);
+            console.log(`[Upload] Progress: ${progress}% (${e.loaded}/${e.total})`);
+          }
+        };
+        xhr.onload = () => {
+          console.log(`[Upload] XHR completed with status: ${xhr.status}`);
+          xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed: ${xhr.status}`));
+        };
+        xhr.onerror = () => {
+          console.error(`[Upload] XHR error`);
+          reject(new Error("Network error during upload"));
+        };
+        xhr.ontimeout = () => {
+          console.error(`[Upload] XHR timeout`);
+          reject(new Error("Upload timeout"));
+        };
+        xhr.timeout = 300000; // 5 minute timeout for large files
         xhr.send(file);
       });
 
@@ -860,13 +948,14 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
         isPublic:  true,
       });
 
+      console.log(`[Upload] Analysis started with reportId: ${data.reportId}`);
       onAnalysisStarted(data.reportId);
       setStep("setup");
       setRecordedBlob(null);
       setElapsed(0);
     } catch (err) {
       console.error("[Upload] Error:", err);
-      setError(err.response?.data?.error || "Upload failed");
+      setError(err.response?.data?.error || err.message || "Upload failed");
       setStep("preview");
     }
   };
@@ -883,6 +972,17 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
           <p style={{ color: "var(--muted)", marginBottom: "1.25rem", fontSize: "0.9rem" }}>
             Minimum 1 min · Max {isMonthlyReflection || isMonthlyGoals ? "10" : isWeeklyReflection ? "7" : "5"} min · Speak clearly to the camera
           </p>
+          
+          {/* Recording stability notice for long recordings */}
+          {(isMonthlyReflection || isMonthlyGoals || isWeeklyReflection) && (
+            <div style={{
+              background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)",
+              borderRadius: 12, padding: "0.85rem 1rem", marginBottom: "1.25rem",
+              fontSize: "0.82rem", color: "rgba(255,255,255,0.8)", lineHeight: 1.6,
+            }}>
+              ⚠️ <strong style={{ color: "#f59e0b" }}>Long Recording Notice:</strong> For recordings over 5 minutes, ensure stable internet and avoid switching apps. If you experience issues, try recording in shorter segments or use the upload option instead.
+            </div>
+          )}
 
           {/* Monthly reflection reminder inside record card */}
           {isMonthlyReflection && (
@@ -1127,6 +1227,20 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
             Review your recording before submitting for analysis.
             {elapsed < 60 && <span style={{ color: "var(--danger)" }}> ⚠️ Too short ({fmtTime(elapsed)}) — minimum 1 minute.</span>}
           </p>
+          
+          {/* Recording info display */}
+          <div style={{ 
+            background: "var(--card2)", 
+            border: "1px solid var(--border2)", 
+            borderRadius: "8px", 
+            padding: "0.75rem 1rem", 
+            marginBottom: "1rem",
+            fontSize: "0.85rem",
+            color: "var(--muted)"
+          }}>
+            📊 Recording: {fmtTime(elapsed)} • {recordedBlob ? `${Math.round(recordedBlob.size / 1024)}KB` : 'Processing...'} • {mimeTypeRef.current || 'Unknown format'}
+          </div>
+          
           <video ref={previewVideoRef} controls playsInline
             style={{ width: "100%", borderRadius: "12px", background: "#000", aspectRatio: "16/9", marginBottom: "1rem" }} />
           <div style={{ display: "flex", gap: "0.75rem" }}>
