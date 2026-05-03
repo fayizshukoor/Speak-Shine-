@@ -153,14 +153,15 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // TODO: Remove unsafe-inline/eval gradually
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://static.cloudflareinsights.com"], // TODO: Remove unsafe-inline/eval gradually
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "https:", "blob:"],
       connectSrc: [
-        "'self'", 
-        process.env.R2_PUBLIC_URL || "https:", 
-        "https://*.95507d8602ddb955795f0d78ed3d2df5.r2.cloudflarestorage.com", // Allow R2 presigned upload URLs (bucket.account-id.r2.cloudflarestorage.com)
-        "wss:", 
+        "'self'",
+        process.env.R2_PUBLIC_URL || "https:",
+        "https://*.95507d8602ddb955795f0d78ed3d2df5.r2.cloudflarestorage.com",
+        "https://cloudflareinsights.com", // Cloudflare Web Analytics beacon
+        "wss:",
         "ws:"
       ],
       fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
@@ -220,18 +221,6 @@ const apiLimiter = rateLimit({
 });
 app.use("/api", apiLimiter);
 
-// Video upload rate limit: 5 uploads per hour per user (prevents storage abuse)
-// Auth middleware runs before this on /api/video routes, so req.user is always set.
-// Keying by user ID avoids IPv6 validation issues entirely.
-const videoUploadLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 5,
-  message: { error: "Upload limit reached. You can upload up to 5 videos per hour." },
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => String(req.user?.id || "anon"),
-});
-
 // ── Response time middleware ─────────────────────────────────────────────────
 app.use((req, res, next) => {
   const start = Date.now();
@@ -284,7 +273,7 @@ app.use("/api/users",        userRoutes);
 app.use("/api/dashboard",    dashboardRoutes);
 console.log("[Routes] Dashboard routes mounted at /api/dashboard");
 app.use("/api/questions",    questionRoutes);
-app.use("/api/video",        videoUploadLimiter, videoAnalysisRoutes); // Apply video rate limiter
+app.use("/api/video",        videoAnalysisRoutes); // Rate limiting applied per-route inside video.routes.js
 app.use("/api/attendance",   attendanceRoutes);
 app.use("/api/chat",         chatRoutes);
 app.use("/api/live-sessions", liveSessionRoutes);
