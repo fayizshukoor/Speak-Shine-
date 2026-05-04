@@ -18,7 +18,6 @@ import {
   SPEECH_TIMEOUT_MS,
   VISUAL_TIMEOUT_MS,
 } from "./pipeline.js";
-
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
@@ -36,6 +35,18 @@ export async function processWebVideo(videoPath, displayName = "User", onProgres
   const id = Date.now();
   let audioPath = null;
   const isUrl = videoPath.startsWith("http");
+
+  // Fetch today's question so topic relevance can be scored
+  let questionTopic = null;
+  let questionText = null;
+  try {
+    const Status = (await import("../../../models/statusSchema.js")).default;
+    const status = await Status.findOne().lean();
+    questionTopic = status?.todayTopic || null;
+    questionText  = status?.todayQuestion || null;
+  } catch (err) {
+    console.warn("[VideoProcessor] Could not fetch today's question:", err.message);
+  }
 
   try {
     if (!isUrl && !fs.existsSync(videoPath)) throw new Error("Video file not found");
@@ -103,7 +114,8 @@ export async function processWebVideo(videoPath, displayName = "User", onProgres
             t.text,
             t.duration > 0 ? t.duration : duration,
             t.words,
-            null, null,
+            questionTopic,
+            questionText,
             t.pronunciationIssues || [],
             t.rhythm || null
           ),
