@@ -272,7 +272,6 @@ export function getVideoDuration(videoPath, isUrl = false) {
       }
       try {
         const info = JSON.parse(stdout);
-        console.log("[ffprobe] Raw metadata for debugging:", JSON.stringify(info, null, 2));
 
         // Try format duration first (most reliable)
         let dur = parseFloat(info?.format?.duration);

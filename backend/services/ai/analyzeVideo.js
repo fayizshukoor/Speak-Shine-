@@ -1,6 +1,9 @@
-﻿import { exec } from "child_process";
+﻿import { execFile } from "child_process";
+import { promisify } from "util";
 import fetch from "node-fetch";
 import { getVisionKey, markKeyExhausted, parseRetryAfter, keyStatus } from "./groqKeyManager.js";
+
+const execFileAsync = promisify(execFile);
 
 const FRAME_COUNT = 16;
 const GROQ_BATCH_LIMIT = 4;
@@ -13,16 +16,17 @@ function formatSec(s) {
 }
 
 function getVideoDuration(videoPath) {
-  return new Promise((resolve) => {
-    exec(
-      `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${videoPath}"`,
-      (err, stdout) => {
-        if (err) { console.log("ffprobe error:", err.message); return resolve(60); }
-        const dur = parseFloat((stdout || "").trim());
-        resolve(isNaN(dur) || dur <= 0 ? 60 : dur);
-      }
-    );
-  });
+  return execFileAsync("ffprobe", [
+    "-v", "error",
+    "-show_entries", "format=duration",
+    "-of", "default=noprint_wrappers=1:nokey=1",
+    videoPath,
+  ], { timeout: 10000 })
+    .then(({ stdout }) => {
+      const dur = parseFloat((stdout || "").trim());
+      return isNaN(dur) || dur <= 0 ? 60 : dur;
+    })
+    .catch(err => { console.log("ffprobe error:", err.message); return 60; });
 }
 
 /**
@@ -30,16 +34,20 @@ function getVideoDuration(videoPath) {
  * Returns { base64, timestamp, frameIndex } or null on failure.
  */
 async function extractFrame(videoPath, timestamp, frameIndex) {
-  return new Promise((resolve) => {
-    exec(
-      `ffmpeg -ss ${timestamp} -i "${videoPath}" -frames:v 1 -q:v 3 -vf "scale=640:-1" -f image2 pipe:1`,
-      { encoding: "buffer", maxBuffer: 5 * 1024 * 1024 },
-      (err, stdout) => {
-        if (err || !stdout || stdout.length < 1000) return resolve(null);
-        resolve({ base64: stdout.toString("base64"), timestamp, frameIndex });
-      }
-    );
-  });
+  return execFileAsync("ffmpeg", [
+    "-ss", String(timestamp),
+    "-i", videoPath,
+    "-frames:v", "1",
+    "-q:v", "3",
+    "-vf", "scale=640:-1",
+    "-f", "image2",
+    "pipe:1",
+  ], { encoding: "buffer", maxBuffer: 5 * 1024 * 1024, timeout: 15000 })
+    .then(({ stdout }) => {
+      if (!stdout || stdout.length < 1000) return null;
+      return { base64: stdout.toString("base64"), timestamp, frameIndex };
+    })
+    .catch(() => null);
 }
 
 /**
@@ -363,13 +371,14 @@ export async function analyzeVideo(videoPath) {
       (batchIdx + 1) * GROQ_BATCH_LIMIT
     );
 
-    // Extract this batch's frames into memory
-    const frames = [];
-    for (let i = 0; i < batchTimestamps.length; i++) {
-      const globalIdx = batchIdx * GROQ_BATCH_LIMIT + i;
-      const frame = await extractFrame(videoPath, batchTimestamps[i], globalIdx);
-      if (frame) frames.push(frame);
-    }
+    // Extract all frames in this batch in parallel (was sequential before)
+    const frameResults = await Promise.all(
+      batchTimestamps.map((ts, i) => {
+        const globalIdx = batchIdx * GROQ_BATCH_LIMIT + i;
+        return extractFrame(videoPath, ts, globalIdx);
+      })
+    );
+    const frames = frameResults.filter(Boolean);
 
     if (frames.length === 0) return null;
 
