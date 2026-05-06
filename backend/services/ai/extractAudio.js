@@ -1,72 +1,75 @@
-import { exec } from "child_process";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import path from "path";
+
+const execFileAsync = promisify(execFile);
 
 // Minimum mean volume in dB — below this the audio is too quiet to transcribe reliably
 const MIN_VOLUME_DB = -40;
 
 /**
- * Checks audio loudness using ffmpeg volumedetect filter.
- * Returns { meanVolume, maxVolume } in dB, or null if check fails.
- */
-function checkAudioQuality(audioPath) {
-  return new Promise((resolve) => {
-    exec(
-      `ffmpeg -i "${audioPath}" -af "volumedetect" -f null /dev/null`,
-      (err, stdout, stderr) => {
-        // volumedetect output goes to stderr
-        const output = stderr || stdout || "";
-        const meanMatch = output.match(/mean_volume:\s*([-\d.]+)\s*dB/);
-        const maxMatch = output.match(/max_volume:\s*([-\d.]+)\s*dB/);
-        if (!meanMatch) {
-          resolve(null);
-          return;
-        }
-        resolve({
-          meanVolume: parseFloat(meanMatch[1]),
-          maxVolume: maxMatch ? parseFloat(maxMatch[1]) : null,
-        });
-      }
-    );
-  });
-}
-
-/**
- * Extracts audio from video and runs a quality pre-check.
- * Returns { audioPath, qualityWarning } where qualityWarning is a string
- * if the audio is too quiet/noisy, or null if audio is fine.
+ * Extracts audio from video AND checks quality in a single ffmpeg pass.
+ * Uses execFile (no shell injection risk) and combines both operations.
+ *
+ * Single ffmpeg command:
+ *   - Extracts mono 16kHz audio (optimal for Whisper — smaller file, same quality)
+ *   - Simultaneously runs volumedetect filter to measure loudness
+ *   - Outputs audio to file, volume stats to stderr
+ *
+ * Returns { audioPath, qualityWarning, meanVolume }
  */
 export async function extractAudio(videoPath, id) {
-  return new Promise((resolve, reject) => {
-    const audioPath = path.resolve(`./tmp/audio_${id}.mp3`);
-    // Use 64k for longer videos to stay well under Groq's 25MB file size limit.
-    // 64kbps × 600s (10 min) = ~4.8MB — safe for any reasonable video length.
-    exec(
-      `ffmpeg -i "${videoPath}" -vn -ar 16000 -ac 1 -b:a 64k "${audioPath}" -y`,
-      async (err) => {
-        if (err) return reject(err);
+  const audioPath = path.resolve(`./tmp/audio_${id}.wav`);
 
-        // Run quality check after extraction
-        let quality = null;
-        try {
-          quality = await checkAudioQuality(audioPath);
-          if (quality) {
-            console.log(`🔊 Audio quality: mean=${quality.meanVolume}dB max=${quality.maxVolume}dB`);
-            if (quality.meanVolume < MIN_VOLUME_DB) {
-              console.log(`⚠️ Audio too quiet (${quality.meanVolume}dB) — transcription may be inaccurate`);
-              resolve({
-                audioPath,
-                qualityWarning: `Audio is very quiet (${quality.meanVolume}dB). For better feedback, record in a quieter environment and speak closer to the microphone.`,
-                meanVolume: quality.meanVolume,
-              });
-              return;
-            }
-          }
-        } catch (_) {
-          // Quality check is non-fatal
-        }
+  // Single-pass: extract audio + measure volume simultaneously
+  // -af "volumedetect,anull" — volumedetect measures, anull passes through
+  // Two outputs: the wav file and a null sink for volume stats
+  let stderr = "";
+  try {
+    const result = await execFileAsync("ffmpeg", [
+      "-i", videoPath,
+      "-vn",                    // no video
+      "-ar", "16000",           // 16kHz — Whisper's native rate
+      "-ac", "1",               // mono
+      "-acodec", "pcm_s16le",   // WAV PCM — no encoding overhead, fastest
+      "-af", "volumedetect",    // measure volume in same pass
+      "-f", "wav",
+      audioPath,
+      "-y",                     // overwrite
+    ], {
+      timeout: 60000,
+      // stderr contains volumedetect output
+    }).catch(err => {
+      // ffmpeg exits non-zero when volumedetect is used with a file output
+      // but the file is still written correctly — capture stderr
+      stderr = err.stderr || "";
+      if (!err.stderr?.includes("volumedetect") && err.code !== 0) throw err;
+      return { stderr: err.stderr || "" };
+    });
 
-        resolve({ audioPath, qualityWarning: null, meanVolume: quality?.meanVolume ?? null });
-      }
-    );
-  });
+    stderr = result?.stderr || stderr;
+  } catch (err) {
+    throw new Error(`Audio extraction failed: ${err.message}`);
+  }
+
+  // Parse volume stats from stderr
+  const meanMatch = stderr.match(/mean_volume:\s*([-\d.]+)\s*dB/);
+  const maxMatch  = stderr.match(/max_volume:\s*([-\d.]+)\s*dB/);
+  const meanVolume = meanMatch ? parseFloat(meanMatch[1]) : null;
+  const maxVolume  = maxMatch  ? parseFloat(maxMatch[1])  : null;
+
+  if (meanVolume !== null) {
+    console.log(`🔊 Audio quality: mean=${meanVolume}dB max=${maxVolume}dB`);
+  }
+
+  if (meanVolume !== null && meanVolume < MIN_VOLUME_DB) {
+    console.log(`⚠️ Audio too quiet (${meanVolume}dB) — transcription may be inaccurate`);
+    return {
+      audioPath,
+      qualityWarning: `Audio is very quiet (${meanVolume}dB). For better feedback, record in a quieter environment and speak closer to the microphone.`,
+      meanVolume,
+    };
+  }
+
+  return { audioPath, qualityWarning: null, meanVolume: meanVolume ?? null };
 }

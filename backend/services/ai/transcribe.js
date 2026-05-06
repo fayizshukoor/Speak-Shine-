@@ -115,8 +115,8 @@ export async function transcribe(audioPath, opts = {}) {
 
     const form = new FormData();
     form.append("file", fs.createReadStream(audioPath), {
-      filename: "audio.mp3",
-      contentType: "audio/mpeg",
+      filename: "audio.wav",
+      contentType: "audio/wav",
     });
     form.append("model", "whisper-large-v3");
     form.append("response_format", "verbose_json");
