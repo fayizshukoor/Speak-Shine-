@@ -13,7 +13,7 @@ const tt = { background:"#16162a", border:"1px solid #252545", borderRadius:10, 
 const avg = (arr,k) => { const v=arr.filter(s=>s[k]!=null).map(s=>s[k]); return v.length?+(v.reduce((a,b)=>a+b,0)/v.length).toFixed(1):null; };
 const delta = (arr,k) => { if(arr.length<2)return null; const f=arr[0][k],l=arr[arr.length-1][k]; return(f==null||l==null)?null:+(l-f).toFixed(1); };
 const scoreColor = v => v>=7?"var(--success)":v>=5?"var(--warning)":"var(--danger)";
-const TABS = [{id:"overview",l:"📊 Overview"},{id:"students",l:"👥 Students"},{id:"compare",l:"⚖️ Compare"},{id:"improvement",l:"📈 Improvement"},{id:"submissions",l:"📝 Submissions"},{id:"live",l:"🎥 Live Sessions"},{id:"controls",l:"🔄 Controls"}];
+const TABS = [{id:"overview",l:"📊 Overview"},{id:"students",l:"👥 Students"},{id:"compare",l:"⚖️ Compare"},{id:"improvement",l:"📈 Improvement"},{id:"submissions",l:"📝 Submissions"},{id:"manual-questions",l:"📝 Manual Questions"},{id:"live",l:"🎥 Live Sessions"},{id:"controls",l:"🔄 Controls"}];
 
 export default function TrainerDashboard() {
   const [dash, setDash] = useState(null);
@@ -65,19 +65,26 @@ export default function TrainerDashboard() {
       .finally(()=>setLoading(false));
   },[]);
 
-  const loadAllScores = async () => {
-    if(Object.keys(allScores).length>0)return;
+  const loadAllScores = async (userList) => {
+    const list = userList || users;
+    if (!list.length) return;
+    if(Object.keys(allScores).length > 0) return;
     setScoresLoading(true);
     const res={};
-    await Promise.all(users.map(async u=>{try{const{data}=await api.get(`/dashboard/scores/${u.phone}`);res[u.phone]=data.feedbackScores||[];}catch{res[u.phone]=[];}}));
+    await Promise.all(list.map(async u=>{try{const{data}=await api.get(`/dashboard/scores/${u.phone}`);res[u.phone]=data.feedbackScores||[];}catch{res[u.phone]=[];}}));
     setAllScores(res);setScoresLoading(false);
   };
 
-  const handleTab = (t) => { setTab(t); if(t==="compare"||t==="improvement")loadAllScores(); };
+  const handleTab = (t) => { setTab(t); if(t==="compare"||t==="improvement")loadAllScores(users); };
 
   const selectUser = async (user) => {
     setSelected(user); setTab("detail");
-    if(!allScores[user.phone]){const{data}=await api.get(`/dashboard/scores/${user.phone}`);setAllScores(p=>({...p,[user.phone]:data.feedbackScores||[]}));}
+    if(!allScores[user.phone]){
+      try {
+        const{data}=await api.get(`/dashboard/scores/${user.phone}`);
+        setAllScores(p=>({...p,[user.phone]:data.feedbackScores||[]}));
+      } catch { setAllScores(p=>({...p,[user.phone]:[]})); }
+    }
   };
 
   const handleSubmissionUpdate = (type, newValue) => {
@@ -219,7 +226,12 @@ export default function TrainerDashboard() {
       {/* COMPARE */}
       {tab==="compare"&&(
         scoresLoading?<div className="spinner-wrap"><div className="spinner"/></div>
-        :compareData.length===0?<div className="card empty-state"><div className="empty-icon">📊</div><p>No feedback scores available yet.</p></div>
+        :compareData.length===0?
+          <div className="card empty-state">
+            <div className="empty-icon">📊</div>
+            <p>No feedback scores available yet.</p>
+            <button className="btn-ghost" style={{marginTop:"1rem"}} onClick={()=>{setAllScores({});loadAllScores(users);}}>🔄 Reload Scores</button>
+          </div>
         :<div style={{display:"flex",flexDirection:"column",gap:"1rem"}}>
           {Object.entries(SCORES).map(([metric,color])=>(
             <div className="card" key={metric}>
@@ -243,7 +255,12 @@ export default function TrainerDashboard() {
       {/* IMPROVEMENT */}
       {tab==="improvement"&&(
         scoresLoading?<div className="spinner-wrap"><div className="spinner"/></div>
-        :improvementData.length===0?<div className="card empty-state"><div className="empty-icon">📈</div><p>No feedback scores available yet.</p></div>
+        :improvementData.length===0?
+          <div className="card empty-state">
+            <div className="empty-icon">📈</div>
+            <p>No feedback scores available yet.</p>
+            <button className="btn-ghost" style={{marginTop:"1rem"}} onClick={()=>{setAllScores({});loadAllScores(users);}}>🔄 Reload Scores</button>
+          </div>
         :<>
           <div className="card" style={{marginBottom:"1rem"}}>
             <div className="section-title">Score Improvement (First → Latest)</div>
@@ -413,6 +430,9 @@ export default function TrainerDashboard() {
 
       {/* LIVE SESSIONS */}
       {tab==="live" && <TrainerLivePanel />}
+
+      {/* MANUAL QUESTIONS */}
+      {tab==="manual-questions" && <ManualQuestionsPanel />}
 
       {/* CONTROLS */}
       {tab==="controls"&&(
@@ -812,6 +832,366 @@ function TrainerSessionCard({ s, onStart, onEnd, onCancel, busy, navigate }) {
           </>}
         </div>
       </div>
+    </div>
+  );
+}
+// ── Manual Questions Panel (same as admin but for trainers) ──────────────────
+function ManualQuestionsPanel() {
+  const [manualQuestions, setManualQuestions] = useState([]);
+  const [templates, setTemplates] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({
+    setupType: "weekly_reflection",
+    scheduledFor: "",
+    category: "",
+    topic: "",
+    question: ""
+  });
+  const [saving, setSaving] = useState(false);
+  const [busy, setBusy] = useState({});
+  const [toast, setToast] = useState(null);
+  const [selectedTemplate, setSelectedTemplate] = useState("");
+
+  const notify = (msg, type = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const load = async () => {
+    try {
+      const [questionsRes, templatesRes] = await Promise.all([
+        api.get("/questions/manual?upcoming=true"),
+        api.get("/questions/templates")
+      ]);
+      setManualQuestions(questionsRes.data);
+      setTemplates(templatesRes.data);
+    } catch (err) {
+      notify(err.response?.data?.error || "Failed to load data", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const setupQuestion = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.post("/questions/manual", form);
+      setForm({
+        setupType: "weekly_reflection",
+        scheduledFor: "",
+        category: "",
+        topic: "",
+        question: ""
+      });
+      setSelectedTemplate("");
+      setShowForm(false);
+      notify("Manual question scheduled successfully!");
+      load();
+    } catch (err) {
+      notify(err.response?.data?.error || "Failed to setup question", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteQuestion = async (id) => {
+    setBusy(b => ({ ...b, [id]: true }));
+    try {
+      await api.delete(`/questions/manual/${id}`);
+      notify("Question deleted successfully!");
+      load();
+    } catch (err) {
+      notify(err.response?.data?.error || "Failed to delete question", "error");
+    } finally {
+      setBusy(b => ({ ...b, [id]: false }));
+    }
+  };
+
+  const useTemplate = (templateQuestion) => {
+    setForm(f => ({
+      ...f,
+      question: templateQuestion,
+      category: f.setupType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
+      topic: f.setupType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())
+    }));
+  };
+
+  const getNextSunday = () => {
+    const today = new Date();
+    const nextSunday = new Date(today);
+    nextSunday.setDate(today.getDate() + (7 - today.getDay()));
+    return nextSunday.toISOString().split('T')[0];
+  };
+
+  const getNextMonthFirst = () => {
+    const today = new Date();
+    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+    return nextMonth.toISOString().split('T')[0];
+  };
+
+  const getNextMonthLast = () => {
+    const today = new Date();
+    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0);
+    return nextMonth.toISOString().split('T')[0];
+  };
+
+  const getDefaultDate = (setupType) => {
+    switch (setupType) {
+      case "weekly_reflection": return getNextSunday();
+      case "monthly_goals": return getNextMonthFirst();
+      case "monthly_reflection": return getNextMonthLast();
+      default: return "";
+    }
+  };
+
+  const setupTypeLabels = {
+    weekly_reflection: "Weekly Reflection (Sunday)",
+    monthly_goals: "Monthly Goals (1st of month)",
+    monthly_reflection: "Monthly Reflection (Last day of month)"
+  };
+
+  const groupedQuestions = {
+    weekly_reflection: manualQuestions.filter(q => q.setupType === "weekly_reflection"),
+    monthly_goals: manualQuestions.filter(q => q.setupType === "monthly_goals"),
+    monthly_reflection: manualQuestions.filter(q => q.setupType === "monthly_reflection")
+  };
+
+  return (
+    <div style={{ maxWidth: 800 }}>
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position: "fixed", top: "5rem", right: "1rem", zIndex: 9999,
+          background: toast.type === "error" ? "#7f1d1d" : "#065f46",
+          border: `1px solid ${toast.type === "error" ? "rgba(248,113,113,0.4)" : "rgba(74,222,128,0.4)"}`,
+          color: "#fff", padding: "0.75rem 1.25rem", borderRadius: 12,
+          fontSize: "0.9rem", fontWeight: 600,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+          animation: "slideUpIn 0.3s ease",
+        }}>
+          {toast.type === "error" ? "❌" : "✅"} {toast.msg}
+        </div>
+      )}
+
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: "1.3rem", fontWeight: 800 }}>📝 Manual Questions</h2>
+          <p style={{ margin: "0.25rem 0 0", color: "var(--muted)", fontSize: "0.85rem" }}>
+            Setup custom questions for weekly and monthly reflections
+          </p>
+        </div>
+        <button
+          onClick={() => setShowForm(f => !f)}
+          style={{
+            background: showForm ? "rgba(248,113,113,0.15)" : "linear-gradient(135deg,#7c6fff,#4f46e5)",
+            border: showForm ? "1px solid rgba(248,113,113,0.3)" : "none",
+            color: showForm ? "#f87171" : "#fff",
+            borderRadius: 12, padding: "0.65rem 1.25rem",
+            fontWeight: 700, fontSize: "0.9rem", cursor: "pointer",
+            transition: "all 0.2s",
+          }}
+        >
+          {showForm ? "✕ Cancel" : "+ Setup Question"}
+        </button>
+      </div>
+
+      {/* Setup form */}
+      {showForm && (
+        <div style={{
+          background: "linear-gradient(135deg, rgba(124,111,255,0.08), rgba(79,70,229,0.05))",
+          border: "1px solid rgba(124,111,255,0.25)",
+          borderRadius: 16, padding: "1.5rem", marginBottom: "1.5rem",
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: "1rem", fontSize: "1rem" }}>📝 Setup Manual Question</div>
+          <form onSubmit={setupQuestion}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
+              <div>
+                <label className="form-label">Question Type *</label>
+                <select 
+                  className="form-input" 
+                  required
+                  value={form.setupType} 
+                  onChange={e => {
+                    const newType = e.target.value;
+                    setForm(f => ({ 
+                      ...f, 
+                      setupType: newType,
+                      scheduledFor: getDefaultDate(newType),
+                      category: newType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                      topic: newType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())
+                    }));
+                    setSelectedTemplate("");
+                  }}
+                >
+                  {Object.entries(setupTypeLabels).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="form-label">Scheduled Date *</label>
+                <input 
+                  className="form-input" 
+                  type="date" 
+                  required
+                  value={form.scheduledFor} 
+                  onChange={e => setForm(f => ({ ...f, scheduledFor: e.target.value }))} 
+                />
+              </div>
+            </div>
+
+            {/* Template selector */}
+            {templates[form.setupType] && (
+              <div style={{ marginBottom: "0.75rem" }}>
+                <label className="form-label">Use Template (optional)</label>
+                <select 
+                  className="form-input"
+                  value={selectedTemplate}
+                  onChange={e => {
+                    setSelectedTemplate(e.target.value);
+                    if (e.target.value) {
+                      useTemplate(e.target.value);
+                    }
+                  }}
+                >
+                  <option value="">Select a template...</option>
+                  {templates[form.setupType].map((template, i) => (
+                    <option key={i} value={template}>{template.slice(0, 60)}...</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
+              <div>
+                <label className="form-label">Category *</label>
+                <input 
+                  className="form-input" 
+                  placeholder="e.g. Weekly Reflection" 
+                  required
+                  value={form.category} 
+                  onChange={e => setForm(f => ({ ...f, category: e.target.value }))} 
+                />
+              </div>
+              <div>
+                <label className="form-label">Topic *</label>
+                <input 
+                  className="form-input" 
+                  placeholder="e.g. Weekly Progress Review" 
+                  required
+                  value={form.topic} 
+                  onChange={e => setForm(f => ({ ...f, topic: e.target.value }))} 
+                />
+              </div>
+            </div>
+            <div style={{ marginBottom: "1rem" }}>
+              <label className="form-label">Question *</label>
+              <textarea 
+                className="form-input" 
+                rows={3}
+                placeholder="Enter your custom question..."
+                required
+                value={form.question} 
+                onChange={e => setForm(f => ({ ...f, question: e.target.value }))} 
+              />
+            </div>
+            <button type="submit" className="btn-primary" disabled={saving} style={{ minWidth: 160 }}>
+              {saving ? "Setting up…" : "📝 Setup Question"}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {loading && <div className="spinner-wrap"><div className="spinner" /></div>}
+
+      {/* Scheduled Questions */}
+      {!loading && (
+        <>
+          {Object.entries(groupedQuestions).map(([type, questions]) => (
+            questions.length > 0 && (
+              <div key={type} style={{ marginBottom: "1.5rem" }}>
+                <div style={{ 
+                  fontSize: "0.75rem", 
+                  fontWeight: 700, 
+                  color: "#7c6fff", 
+                  textTransform: "uppercase", 
+                  letterSpacing: "0.08em", 
+                  marginBottom: "0.75rem" 
+                }}>
+                  📝 {setupTypeLabels[type]}
+                </div>
+                {questions.map(q => (
+                  <div key={q._id} style={{
+                    background: "var(--bg-secondary)",
+                    border: "1px solid rgba(124,111,255,0.25)",
+                    borderRadius: 14, 
+                    padding: "1rem 1.25rem",
+                    marginBottom: "0.75rem",
+                    transition: "all 0.2s",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.3rem" }}>
+                          <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "var(--text)" }}>{q.topic}</span>
+                          <span style={{
+                            fontSize: "0.65rem", fontWeight: 700, padding: "0.15rem 0.5rem",
+                            borderRadius: 20, textTransform: "uppercase",
+                            background: "rgba(124,111,255,0.15)",
+                            color: "#7c6fff",
+                          }}>
+                            Manual
+                          </span>
+                        </div>
+
+                        <div style={{ fontSize: "0.85rem", color: "var(--text)", marginBottom: "0.4rem", lineHeight: 1.4 }}>
+                          {q.question}
+                        </div>
+
+                        <div style={{ display: "flex", gap: "1rem", fontSize: "0.78rem", color: "var(--muted)", flexWrap: "wrap" }}>
+                          <span>📅 {new Date(q.scheduledFor).toLocaleDateString("en-IN", { dateStyle: "medium" })}</span>
+                          <span>👤 {q.createdBy}</span>
+                          <span>📂 {q.category}</span>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0, alignItems: "center" }}>
+                        <button
+                          onClick={() => deleteQuestion(q._id)}
+                          disabled={busy[q._id]}
+                          style={{
+                            background: "rgba(248,113,113,0.12)",
+                            border: "1px solid rgba(248,113,113,0.3)",
+                            color: "#f87171", borderRadius: 10,
+                            padding: "0.5rem 0.85rem", fontWeight: 700, fontSize: "0.82rem",
+                            cursor: "pointer", whiteSpace: "nowrap",
+                            opacity: busy[q._id] ? 0.5 : 1
+                          }}
+                        >
+                          {busy[q._id] ? "Deleting…" : "✕ Delete"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          ))}
+
+          {manualQuestions.length === 0 && (
+            <div style={{ textAlign: "center", padding: "3rem 1rem", color: "var(--muted)" }}>
+              <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>📝</div>
+              <div style={{ fontWeight: 600, marginBottom: "0.5rem" }}>No manual questions scheduled</div>
+              <div style={{ fontSize: "0.85rem" }}>Click "+ Setup Question" to create custom weekly or monthly questions</div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

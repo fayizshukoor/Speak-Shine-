@@ -1,39 +1,59 @@
-import { useState, useEffect, useRef } from "react";
-import { io } from "socket.io-client";
+import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
+import { getSharedSocket } from "../hooks/useSocket";
 import Chat from "./Chat";
 import GroupChat from "./GroupChat";
 
 const API_URL = import.meta.env.VITE_API_URL
   ? import.meta.env.VITE_API_URL.replace("/api", "")
-  : (typeof window !== "undefined" ? window.location.origin : "");
+  : typeof window !== "undefined"
+  ? window.location.origin
+  : "";
+
+const ROLE_BADGE  = { admin: "👑", trainer: "🎓", user: "👤" };
+const ROLE_LABEL  = { admin: "Admin", trainer: "Trainer", user: "Student" };
+const ROLE_COLOR  = { admin: "#f59e0b", trainer: "#6c63ff", user: "#94a3b8" };
+
+// Group peers by role for a cleaner list
+function groupByRole(peers) {
+  const order = ["admin", "trainer", "user"];
+  const groups = {};
+  for (const p of peers) {
+    if (!groups[p.role]) groups[p.role] = [];
+    groups[p.role].push(p);
+  }
+  return order.filter((r) => groups[r]?.length).map((r) => ({ role: r, peers: groups[r] }));
+}
 
 export default function ChatLauncher() {
   const { token, user } = useAuth();
   const [peers, setPeers] = useState([]);
-  const [activePeer, setActivePeer] = useState(null); // null | { phone, name, role }
+  const [activePeer, setActivePeer] = useState(null);
   const [showGroup, setShowGroup] = useState(false);
   const [showList, setShowList] = useState(false);
   const [unread, setUnread] = useState(0);
-  const socketRef = useRef(null);
+  const [loadingPeers, setLoadingPeers] = useState(false);
 
-  // Load DM peer list
+  // Load peer list from the role-aware /peers endpoint
   useEffect(() => {
     if (!token || !user) return;
-    const endpoint = user.role === "user" ? "/api/chat/trainers" : "/api/chat/users";
-    fetch(`${API_URL}${endpoint}`, { headers: { Authorization: `Bearer ${token}` } })
+    setLoadingPeers(true);
+    fetch(`${API_URL}/api/chat/peers`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((r) => r.json())
       .then((data) => setPeers(Array.isArray(data) ? data : []))
-      .catch(() => {});
+      .catch(() => setPeers([]))
+      .finally(() => setLoadingPeers(false));
   }, [token, user]);
 
-  // Listen for DM notifications
+  // DM notifications via shared socket (no extra connection)
   useEffect(() => {
     if (!token) return;
-    const socket = io(API_URL, { auth: { token }, transports: ["websocket"] });
-    socketRef.current = socket;
-    socket.on("chat:notify", () => setUnread((n) => n + 1));
-    return () => socket.disconnect();
+    const socket = getSharedSocket(token);
+    const onNotify = () => setUnread((n) => n + 1);
+    socket.on("chat:notify", onNotify);
+    return () => socket.off("chat:notify", onNotify);
   }, [token]);
 
   if (!user) return null;
@@ -58,54 +78,72 @@ export default function ChatLauncher() {
   };
 
   const isOpen = activePeer || showGroup;
+  const grouped = groupByRole(peers);
 
   return (
     <>
-      {/* Group chat window */}
       {showGroup && (
         <GroupChat onClose={closeAll} onUnread={() => setUnread((n) => n + 1)} />
       )}
 
-      {/* DM chat window */}
-      {activePeer && (
-        <Chat peer={activePeer} onClose={closeAll} />
-      )}
+      {activePeer && <Chat peer={activePeer} onClose={closeAll} />}
 
-      {/* Dropdown menu */}
+      {/* Peer list dropdown */}
       {showList && !isOpen && (
         <div className="chat-peer-list">
           {/* Group chat entry */}
           <button className="chat-peer-item group-entry" onClick={openGroup}>
             <div className="chat-avatar group-avatar sm">🗣️</div>
             <div>
-              <div className="chat-peer-name">Speak & Shine Group</div>
+              <div className="chat-peer-name">Speak &amp; Shine Group</div>
               <div className="chat-peer-role">Everyone · 24h messages</div>
             </div>
           </button>
 
-          <div className="chat-peer-divider">
-            {user.role === "user" ? "Direct — Trainers" : "Direct — Users"}
-          </div>
-
-          {peers.length === 0 && (
+          {/* DM section */}
+          {loadingPeers ? (
+            <div className="chat-peer-empty">Loading…</div>
+          ) : peers.length === 0 ? (
             <div className="chat-peer-empty">No contacts available</div>
-          )}
-          {peers.map((p) => (
-            <button key={p.phone} className="chat-peer-item" onClick={() => openDM(p)}>
-              <div className="chat-avatar sm">{p.name?.[0]?.toUpperCase() || "?"}</div>
-              <div>
-                <div className="chat-peer-name">{p.name}</div>
-                <div className="chat-peer-role">{p.role}</div>
+          ) : (
+            grouped.map(({ role, peers: rolePeers }) => (
+              <div key={role}>
+                <div className="chat-peer-divider" style={{ color: ROLE_COLOR[role] }}>
+                  {ROLE_BADGE[role]} {ROLE_LABEL[role]}s
+                </div>
+                {rolePeers.map((p) => (
+                  <button
+                    key={p.phone}
+                    className="chat-peer-item"
+                    onClick={() => openDM(p)}
+                  >
+                    <div
+                      className="chat-avatar sm"
+                      style={{ background: `${ROLE_COLOR[p.role]}22`, color: ROLE_COLOR[p.role] }}
+                    >
+                      {p.name?.[0]?.toUpperCase() || "?"}
+                    </div>
+                    <div>
+                      <div className="chat-peer-name">{p.name}</div>
+                      <div className="chat-peer-role" style={{ color: ROLE_COLOR[p.role] }}>
+                        {ROLE_BADGE[p.role]} {ROLE_LABEL[p.role]}
+                      </div>
+                    </div>
+                  </button>
+                ))}
               </div>
-            </button>
-          ))}
+            ))
+          )}
         </div>
       )}
 
       {/* FAB */}
       <button
         className="chat-fab"
-        onClick={() => { setShowList((v) => !v); setUnread(0); }}
+        onClick={() => {
+          setShowList((v) => !v);
+          setUnread(0);
+        }}
         title="Chat"
       >
         💬

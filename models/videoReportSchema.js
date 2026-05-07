@@ -91,6 +91,18 @@ const videoReportSchema = new mongoose.Schema({
   isPublic:   { type: Boolean, default: false }, // user opted in to community feed
   uploaderName: { type: String, default: null }, // display name for community feed
 
+  // ── Community engagement ──────────────────────────────────────────────────
+  likes:    [{ type: String }], // array of phone numbers who liked
+  dislikes: [{ type: String }], // array of phone numbers who disliked
+  comments: [{
+    _id:       { type: mongoose.Schema.Types.ObjectId, default: () => new mongoose.Types.ObjectId() },
+    phone:     { type: String, required: true },
+    name:      { type: String, required: true },
+    role:      { type: String, default: "user" },
+    text:      { type: String, required: true, maxlength: 500 },
+    createdAt: { type: Date, default: Date.now },
+  }],
+
   // Auto-delete after 18 hours
   expiresAt: {
     type: Date,

@@ -8,28 +8,62 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import { createServer } from "http";
 import { Server as SocketIO } from "socket.io";
-import jwt from "jsonwebtoken";
 import { connectDB } from "../db.js";
-import { getRedisClient, isRedisAvailable } from "../redis.js";
-import { roomKey, getMessages, saveMessages, MAX_MESSAGES, GROUP_ROOM } from "./routes/chat.js";
+import { getRedisClient } from "../redis.js";
+import { initializeChatSocket } from "../backend/sockets/chatSocket.js";
+import { blockViewer } from "../backend/middleware/auth.js";
 
-import authRoutes from "./routes/auth.js";
-import userRoutes from "./routes/users.js";
-import dashboardRoutes from "./routes/dashboard.js";
-import questionRoutes from "./routes/questions.js";
-import videoAnalysisRoutes from "./routes/videoAnalysis.js";
-import attendanceRoutes from "./routes/attendance.js";
-import submissionRoutes from "./routes/submissions.js";
-import chatRoutes from "./routes/chat.js";
-import qrRoutes from "./routes/qr.js";
-import dailyReportRoutes from "./routes/dailyReport.js";
-import liveSessionRoutes from "./routes/liveSessions.js";
-import monitoringRoutes, { setOnlineUsersRef, recordResponseTime } from "./routes/monitoring.js";
+// Monitoring service (for tracking metrics)
+import { setOnlineUsersRef, recordResponseTime } from "../backend/services/monitoring/monitoringService.js";
+
+// New MVC routes
+import authRoutes from "../backend/routes/auth.routes.js";
+import userRoutes from "../backend/routes/user.routes.js";
+import dashboardRoutes from "../backend/routes/dashboard.routes.js";
+import questionRoutes from "../backend/routes/questions.routes.js";
+import videoAnalysisRoutes from "../backend/routes/video.routes.js";
+import attendanceRoutes from "../backend/routes/attendance.routes.js";
+import chatRoutes from "../backend/routes/chat.routes.js";
+import liveSessionRoutes from "../backend/routes/liveSessions.routes.js";
+import monitoringRoutes from "../backend/routes/monitoring.routes.js";
+import submissionsRoutes from "../backend/routes/submissions.routes.js";
+
+console.log("[Routes] Loading MVC routes...");
+console.log("[Routes] Auth routes loaded:", !!authRoutes);
+console.log("[Routes] User routes loaded:", !!userRoutes);
+console.log("[Routes] Dashboard routes loaded:", !!dashboardRoutes);
+console.log("[Routes] Questions routes loaded:", !!questionRoutes);
+console.log("[Routes] Video routes loaded:", !!videoAnalysisRoutes);
+console.log("[Routes] Attendance routes loaded:", !!attendanceRoutes);
+console.log("[Routes] Chat routes loaded:", !!chatRoutes);
+console.log("[Routes] Live sessions routes loaded:", !!liveSessionRoutes);
+console.log("[Routes] Submissions routes loaded:", !!submissionsRoutes);
 import { recoverStuckJobs } from "./videoQueue.js";
 import { startScheduler } from "./scheduler.js";
 import { startDailyReset } from "./scheduler.js";
 
-dotenv.config();
+// Load environment variables from .env file (local development only)
+// In production (Railway), environment variables are set via dashboard
+const __filename_temp = fileURLToPath(import.meta.url);
+const __dirname_temp = path.dirname(__filename_temp);
+const envPath = path.join(__dirname_temp, '../.env');
+
+console.log('[ENV] Current directory:', process.cwd());
+console.log('[ENV] Script directory:', __dirname_temp);
+console.log('[ENV] Looking for .env at:', envPath);
+console.log('[ENV] .env exists:', fs.existsSync(envPath));
+
+if (fs.existsSync(envPath)) {
+  const result = dotenv.config({ path: envPath });
+  if (result.error) {
+    console.error('[ENV] Error loading .env:', result.error);
+  } else {
+    console.log('[ENV] Loaded .env file successfully');
+    console.log('[ENV] JWT_SECRET loaded:', !!process.env.JWT_SECRET);
+  }
+} else {
+  console.log('[ENV] No .env file found - using environment variables from system');
+}
 
 // Initialize Redis client
 const redis = getRedisClient();
@@ -55,9 +89,9 @@ process.on("unhandledRejection", (reason, promise) => {
   process.exit(1);
 });
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const httpServer = createServer(app);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || process.env.API_PORT || 3001;
 const isProd = process.env.NODE_ENV === "production";
 
@@ -75,183 +109,35 @@ if (isProd) {
 }
 
 // ── Socket.io ───────────────────────────────────────────────────────────────
-const io = new SocketIO(httpServer, {
-  cors: { origin: "*", credentials: true },
-});
+const socketAllowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(",").map(o => o.trim())
+  : [];
 
-// Auth middleware for socket connections
-io.use((socket, next) => {
-  const token = socket.handshake.auth?.token || socket.handshake.query?.token;
-  if (!token) return next(new Error("No token"));
-  try {
-    socket.user = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    next(new Error("Invalid token"));
-  }
+const io = new SocketIO(httpServer, {
+  cors: {
+    origin: isProd
+      ? (origin, cb) => {
+          if (!origin || socketAllowedOrigins.length === 0 || socketAllowedOrigins.includes("*")) {
+            return cb(null, true);
+          }
+          if (socketAllowedOrigins.includes(origin)) {
+            cb(null, true);
+          } else {
+            console.error(`[Socket.io CORS] Blocked origin: ${origin}`);
+            cb(new Error("Not allowed by CORS"));
+          }
+        }
+      : "*",
+    credentials: true,
+  },
 });
 
 // Track online users: phone → socketId
 const onlineUsers = new Map();
 setOnlineUsersRef(onlineUsers);
 
-io.on("connection", (socket) => {
-  const { phone, name, role } = socket.user;
-  onlineUsers.set(phone, socket.id);
-  console.log(`[Chat] Connected: ${name} (${role})`);
-
-  // ── Auto-join group room ────────────────────────────────────────────────
-  socket.join(GROUP_ROOM);
-
-  // ── Join group chat (load history) ─────────────────────────────────────
-  socket.on("group:join", async () => {
-    if (isRedisAvailable()) {
-      const redis = getRedisClient();
-      const messages = await getMessages(redis, GROUP_ROOM);
-      socket.emit("group:history", { messages });
-    }
-  });
-
-  // ── Send group message ──────────────────────────────────────────────────
-  socket.on("group:send", async ({ text, replyTo }) => {
-    if (!text?.trim()) return;
-
-    const message = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      from: phone,
-      fromName: name,
-      role,
-      text: text.trim(),
-      ts: Date.now(),
-      replyTo: replyTo || null, // { id, fromName, text }
-    };
-
-    if (isRedisAvailable()) {
-      const redis = getRedisClient();
-      const messages = await getMessages(redis, GROUP_ROOM);
-      messages.push(message);
-      if (messages.length > MAX_MESSAGES) messages.splice(0, messages.length - MAX_MESSAGES);
-      await saveMessages(redis, GROUP_ROOM, messages);
-    }
-
-    io.to(GROUP_ROOM).emit("group:message", { message });
-  });
-
-  // ── Group typing indicator ──────────────────────────────────────────────
-  socket.on("group:typing", ({ isTyping }) => {
-    socket.to(GROUP_ROOM).emit("group:typing", { from: phone, fromName: name, isTyping });
-  });
-
-  // ── Join a DM room with a peer ──────────────────────────────────────────
-  socket.on("chat:join", async ({ peerPhone }) => {
-    if (!peerPhone) return;
-    const room = roomKey(phone, peerPhone);
-    socket.join(room);
-
-    if (isRedisAvailable()) {
-      const redis = getRedisClient();
-      const messages = await getMessages(redis, room);
-
-      // Mark peer's undelivered messages as delivered now that we're in the room
-      let changed = false;
-      for (const msg of messages) {
-        if (msg.from === peerPhone && msg.status === "sent") {
-          msg.status = "delivered";
-          changed = true;
-        }
-      }
-      if (changed) {
-        await saveMessages(redis, room, messages);
-        // Tell sender their messages are delivered
-        const peerSocketId = onlineUsers.get(peerPhone);
-        if (peerSocketId) io.to(peerSocketId).emit("chat:delivered", { room });
-      }
-
-      socket.emit("chat:history", { room, messages });
-    }
-  });
-
-  // ── Send a message ──────────────────────────────────────────────────────
-  socket.on("chat:send", async ({ peerPhone, text }) => {
-    if (!peerPhone || !text?.trim()) return;
-
-    const room = roomKey(phone, peerPhone);
-    const peerOnline = onlineUsers.has(peerPhone);
-    const peerSocketId = onlineUsers.get(peerPhone);
-    const peerInRoom = peerSocketId
-      ? io.sockets.sockets.get(peerSocketId)?.rooms?.has(room)
-      : false;
-
-    const message = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      from: phone,
-      fromName: name,
-      text: text.trim(),
-      ts: Date.now(),
-      // sent → delivered (peer online) → seen (peer has room open)
-      status: peerInRoom ? "seen" : peerOnline ? "delivered" : "sent",
-    };
-
-    // Persist to Redis
-    if (isRedisAvailable()) {
-      const redis = getRedisClient();
-      const messages = await getMessages(redis, room);
-      messages.push(message);
-      if (messages.length > MAX_MESSAGES) messages.splice(0, messages.length - MAX_MESSAGES);
-      await saveMessages(redis, room, messages);
-    }
-
-    // Broadcast to both users in the room
-    io.to(room).emit("chat:message", { room, message });
-
-    // Notify peer if not in room
-    if (peerSocketId && !peerInRoom) {
-      io.to(peerSocketId).emit("chat:notify", {
-        from: phone,
-        fromName: name,
-        preview: text.trim().slice(0, 60),
-      });
-    }
-  });
-
-  // ── Mark messages as seen ───────────────────────────────────────────────
-  socket.on("chat:seen", async ({ peerPhone }) => {
-    if (!peerPhone) return;
-    const room = roomKey(phone, peerPhone);
-
-    if (isRedisAvailable()) {
-      const redis = getRedisClient();
-      const messages = await getMessages(redis, room);
-      let changed = false;
-      for (const msg of messages) {
-        // Only update messages sent by the peer (not mine)
-        if (msg.from === peerPhone && msg.status !== "seen") {
-          msg.status = "seen";
-          changed = true;
-        }
-      }
-      if (changed) await saveMessages(redis, room, messages);
-    }
-
-    // Tell the sender their messages were seen
-    const peerSocketId = onlineUsers.get(peerPhone);
-    if (peerSocketId) {
-      io.to(peerSocketId).emit("chat:seen", { by: phone, room });
-    }
-  });
-
-  // ── Typing indicator ────────────────────────────────────────────────────
-  socket.on("chat:typing", ({ peerPhone, isTyping }) => {
-    if (!peerPhone) return;
-    const room = roomKey(phone, peerPhone);
-    socket.to(room).emit("chat:typing", { from: phone, isTyping });
-  });
-
-  socket.on("disconnect", () => {
-    onlineUsers.delete(phone);
-    console.log(`[Chat] Disconnected: ${name}`);
-  });
-});
+// Initialize chat socket handlers
+initializeChatSocket(io, onlineUsers);
 
 // ── Express setup ───────────────────────────────────────────────────────────
 const uploadDir = path.join(__dirname, "../tmp/uploads");
@@ -259,16 +145,26 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
+// Make io available to controllers via req.app.get("io")
+app.set("io", io);
+
 // Security headers with HSTS
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // TODO: Remove unsafe-inline/eval gradually
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://static.cloudflareinsights.com"], // TODO: Remove unsafe-inline/eval gradually
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "https:", "blob:"],
-      connectSrc: ["'self'", process.env.R2_PUBLIC_URL || "https:", "wss:", "ws:"],
-      fontSrc: ["'self'", "data:"],
+      connectSrc: [
+        "'self'",
+        process.env.R2_PUBLIC_URL || "https:",
+        "https://*.95507d8602ddb955795f0d78ed3d2df5.r2.cloudflarestorage.com",
+        "https://cloudflareinsights.com", // Cloudflare Web Analytics beacon
+        "wss:",
+        "ws:"
+      ],
+      fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'", "blob:", process.env.R2_PUBLIC_URL || "https:"],
       frameSrc: ["'none'"],
@@ -325,17 +221,6 @@ const apiLimiter = rateLimit({
 });
 app.use("/api", apiLimiter);
 
-// Video upload rate limit: 5 uploads per hour per user (prevents storage abuse)
-const videoUploadLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 5, // 5 uploads per hour
-  message: { error: "Too many video uploads. Please try again later." },
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => req.user?.id || req.ip, // Rate limit by user ID if authenticated
-  skip: (req) => !req.path.includes('/upload') && !req.path.includes('/confirm'), // Only apply to upload endpoints
-});
-
 // ── Response time middleware ─────────────────────────────────────────────────
 app.use((req, res, next) => {
   const start = Date.now();
@@ -345,18 +230,55 @@ app.use((req, res, next) => {
 
 // ── API Routes ──────────────────────────────────────────────────────────────
 app.get("/api/health", (_, res) => res.json({ status: "ok", app: "Speak & Shine 🗣️" }));
+
+// Simple test endpoint to verify server is responding
+app.get("/api/test", (req, res) => {
+  res.json({ 
+    message: "Server is working!", 
+    timestamp: new Date().toISOString(),
+    env: process.env.NODE_ENV 
+  });
+});
+
+// Debug endpoint to list all registered routes (only in development)
+if (!isProd) {
+  app.get("/api/debug/routes", (req, res) => {
+    const routes = [];
+    app._router.stack.forEach((middleware) => {
+      if (middleware.route) {
+        routes.push({
+          path: middleware.route.path,
+          methods: Object.keys(middleware.route.methods)
+        });
+      } else if (middleware.name === 'router') {
+        middleware.handle.stack.forEach((handler) => {
+          if (handler.route) {
+            const path = middleware.regexp.source.replace('\\/?(?=\\/|$)', '').replace(/\\\//g, '/').replace('^', '');
+            routes.push({
+              path: path + handler.route.path,
+              methods: Object.keys(handler.route.methods)
+            });
+          }
+        });
+      }
+    });
+    res.json({ routes });
+  });
+}
+
 app.use("/api/auth",         authRoutes);
+// Block all write operations for viewer accounts across every route
+app.use("/api", blockViewer);
 app.use("/api/users",        userRoutes);
 app.use("/api/dashboard",    dashboardRoutes);
+console.log("[Routes] Dashboard routes mounted at /api/dashboard");
 app.use("/api/questions",    questionRoutes);
-app.use("/api/video",        videoUploadLimiter, videoAnalysisRoutes); // Apply video rate limiter
+app.use("/api/video",        videoAnalysisRoutes); // Rate limiting applied per-route inside video.routes.js
 app.use("/api/attendance",   attendanceRoutes);
-app.use("/api/submissions",  submissionRoutes);
 app.use("/api/chat",         chatRoutes);
-app.use("/api/qr",           qrRoutes);
-app.use("/api/daily-report", dailyReportRoutes);
 app.use("/api/live-sessions", liveSessionRoutes);
 app.use("/api/monitoring",   monitoringRoutes);
+app.use("/api/submissions",  submissionsRoutes);
 
 app.use("/api", (_, res) => res.status(404).json({ error: "API route not found" }));
 
@@ -404,7 +326,12 @@ if (isProd) {
       },
     }));
     // SPA fallback — all non-API, non-asset routes serve index.html
-    app.get("*", (req, res) => {
+    // Express 5 compatible: use app.use() instead of app.get() for catch-all
+    app.use((req, res, next) => {
+      // Skip API routes - let them 404 properly
+      if (req.path.startsWith("/api/")) {
+        return next();
+      }
       // Don't serve index.html for asset requests that weren't found
       if (req.path.match(/\.(js|css|png|jpg|svg|ico|wasm|json)$/)) {
         return res.status(404).send("Not found");

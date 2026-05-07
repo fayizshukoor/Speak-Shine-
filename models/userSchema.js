@@ -7,6 +7,7 @@ const userSchema = new mongoose.Schema({
   fine: { type: Number, default: 0 },
   completed: { type: Boolean, default: false },
   streak: { type: Number, default: 0 },
+  consecutiveSkips: { type: Number, default: 0 }, // days missed in a row — auto-disable at 3
   weeklySubmissions: { type: Number, default: 0 },
   weeklyFine: { type: Number, default: 0 },
   monthlySubmissions: { type: Number, default: 0 },

@@ -361,7 +361,7 @@ export default function VideoAnalysis() {
         </div>
 
         {mode === "upload"
-          ? <UploadCard onAnalysisStarted={onAnalysisStarted} />
+          ? <UploadCard onAnalysisStarted={onAnalysisStarted} isMonthlyReflection={isMonthlyReflection} isMonthlyGoals={isMonthlyGoals} isWeeklyReflection={isWeeklyReflection} />
           : <RecordCard  onAnalysisStarted={onAnalysisStarted} question={todayQuestion} isMonthlyReflection={isMonthlyReflection} isMonthlyGoals={isMonthlyGoals} isWeeklyReflection={isWeeklyReflection} />
         }
 
@@ -375,26 +375,11 @@ export default function VideoAnalysis() {
               {report.status === "failed"     && "❌ Analysis Failed"}
             </div>
             {(report.status === "loading" || report.status === "processing") && (
-              <div className="spinner-wrap">
-                <div className="spinner" />
-                {queueInfo && queueInfo.position > 1 ? (
-                  <>
-                    <p style={{ color: "var(--warning)", fontWeight: 600, marginTop: "0.75rem" }}>
-                      🚦 Position #{queueInfo.position} in queue
-                    </p>
-                    <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: "0.25rem" }}>
-                      ~{queueInfo.estimatedWait} min estimated wait
-                    </p>
-                  </>
-                ) : (
-                  <p style={{ color: "var(--muted)" }}>
-                    {report.status === "loading" ? "Loading report…" : (progressStage || "Starting analysis…")}
-                  </p>
-                )}
-                {report.status === "processing" && !queueInfo && (
-                  <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: "0.5rem" }}>Usually takes 2–3 minutes</p>
-                )}
-              </div>
+              <ProcessingProgress
+                stage={progressStage}
+                queueInfo={queueInfo}
+                isLoading={report.status === "loading"}
+              />
             )}
             {report.status === "failed" && (
               <div className="error-box">
@@ -501,8 +486,117 @@ export default function VideoAnalysis() {
   );
 }
 
+// ── Processing Progress Component ────────────────────────────────────────────
+// Maps SSE stage strings to ordered pipeline steps with icons and labels.
+
+const PIPELINE_STEPS = [
+  { key: "download",   match: /downloading/i,        icon: "⬇️", label: "Downloading video" },
+  { key: "virus",      match: /virus|scanning/i,     icon: "🔍", label: "Virus scan" },
+  { key: "codec",      match: /codec|validating/i,   icon: "🎬", label: "Codec validation" },
+  { key: "moderation", match: /content|safety/i,     icon: "🛡️", label: "Content safety check" },
+  { key: "queuing",    match: /queuing|queue/i,       icon: "⏳", label: "Queued for AI" },
+  { key: "audio",      match: /audio|extract/i,       icon: "🎵", label: "Extracting audio" },
+  { key: "analysis",   match: /analys|video/i,        icon: "🎥", label: "Analysing video" },
+  { key: "speech",     match: /speech|scoring/i,      icon: "🗣️", label: "Scoring speech" },
+  { key: "feedback",   match: /feedback|generating/i, icon: "📝", label: "Generating feedback" },
+];
+
+function ProcessingProgress({ stage, queueInfo, isLoading }) {
+  // Determine which step is currently active
+  const activeIdx = stage
+    ? PIPELINE_STEPS.findIndex(s => s.match.test(stage))
+    : -1;
+
+  if (isLoading) {
+    return (
+      <div className="spinner-wrap">
+        <div className="spinner" />
+        <p style={{ color: "var(--muted)", marginTop: "0.75rem" }}>Loading report…</p>
+      </div>
+    );
+  }
+
+  if (queueInfo && queueInfo.position > 1) {
+    return (
+      <div style={{ padding: "1.5rem 0", textAlign: "center" }}>
+        <div style={{ fontSize: "2.5rem", marginBottom: "0.5rem" }}>🚦</div>
+        <p style={{ color: "var(--warning)", fontWeight: 700, fontSize: "1.1rem", marginBottom: "0.25rem" }}>
+          Position #{queueInfo.position} in queue
+        </p>
+        <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
+          ~{queueInfo.estimatedWait} min estimated wait
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: "1rem 0" }}>
+      {/* Spinner + current stage label */}
+      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1.25rem" }}>
+        <div className="spinner" style={{ flexShrink: 0 }} />
+        <span style={{ color: "var(--text)", fontWeight: 600, fontSize: "0.95rem" }}>
+          {stage || "Starting…"}
+        </span>
+      </div>
+
+      {/* Step pipeline */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        {PIPELINE_STEPS.map((step, i) => {
+          const isDone    = activeIdx > i;
+          const isActive  = activeIdx === i;
+          const isPending = activeIdx < i;
+          return (
+            <div key={step.key} style={{
+              display: "flex", alignItems: "center", gap: "0.75rem",
+              padding: "0.5rem 0.75rem", borderRadius: 10,
+              background: isActive  ? "rgba(99,102,241,0.12)"
+                        : isDone    ? "rgba(34,197,94,0.08)"
+                        : "transparent",
+              border: isActive  ? "1px solid rgba(99,102,241,0.3)"
+                    : isDone    ? "1px solid rgba(34,197,94,0.2)"
+                    : "1px solid transparent",
+              transition: "all 0.3s ease",
+              opacity: isPending ? 0.4 : 1,
+            }}>
+              {/* Status icon */}
+              <span style={{ fontSize: "1rem", minWidth: "1.25rem", textAlign: "center" }}>
+                {isDone   ? "✅"
+               : isActive ? step.icon
+               : "○"}
+              </span>
+              <span style={{
+                fontSize: "0.85rem",
+                fontWeight: isActive ? 700 : 400,
+                color: isActive ? "var(--text)" : isDone ? "var(--success)" : "var(--muted)",
+              }}>
+                {step.label}
+              </span>
+              {isActive && (
+                <span style={{
+                  marginLeft: "auto", fontSize: "0.72rem",
+                  color: "var(--primary)", fontWeight: 600,
+                  animation: "pulse 1.5s infinite",
+                }}>
+                  IN PROGRESS
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <p style={{ color: "var(--muted)", fontSize: "0.8rem", marginTop: "1rem", textAlign: "center" }}>
+        Usually takes 2–3 minutes · Don't close this tab
+      </p>
+
+      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
+    </div>
+  );
+}
+
 // ── Upload Card (direct-to-R2 flow) ─────────────────────────────────────────
-function UploadCard({ onAnalysisStarted }) {
+function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, isWeeklyReflection }) {
   const [file, setFile]           = useState(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress]   = useState(0);
@@ -569,7 +663,7 @@ function UploadCard({ onAnalysisStarted }) {
     <div className="card">
       <div className="section-title">📹 Upload Video for Analysis</div>
       <p style={{ color: "var(--muted)", marginBottom: "1rem" }}>
-        Minimum 1 minute · Max 5 minutes · Up to 110MB · MP4, MOV, AVI, WEBM, 3GP · Reports stored 18 hours
+        Minimum 1 minute · Max {isMonthlyReflection || isMonthlyGoals ? "10" : isWeeklyReflection ? "7" : "5"} minutes · Up to 110MB · MP4, MOV, AVI, WEBM, 3GP · Reports stored 18 hours
       </p>
       <div className="upload-area">
         <input id="video-input" type="file"
@@ -643,7 +737,12 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
   const pendingBlobRef  = useRef(null); // holds blob until preview video mounts
   const mimeTypeRef     = useRef("video/webm"); // store the actual MIME type used
 
-  const MAX_SECONDS = 300; // 5 min hard cap
+  // Dynamic time limits based on question type
+  const MAX_SECONDS = isMonthlyReflection || isMonthlyGoals 
+    ? 600  // 10 minutes for monthly reflection/goals
+    : isWeeklyReflection 
+    ? 420  // 7 minutes for weekly reflection
+    : 300; // 5 minutes for regular daily questions
 
   // Enumerate devices on mount
   useEffect(() => {
@@ -689,6 +788,13 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
 
   const startCountdown = async () => {
     setError(null);
+    
+    // Check MediaRecorder support
+    if (!window.MediaRecorder) {
+      setError("Your browser doesn't support video recording. Please use the upload option or try a different browser.");
+      return;
+    }
+    
     try {
       // ── Option 1: browser-level noise suppression via getUserMedia constraints ──
       const isMobile = window.innerWidth < 600;
@@ -732,43 +838,144 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
       }, 1000);
     } catch (err) {
       setNcStatus("idle");
-      setError("Could not access camera/mic: " + err.message);
+      setError("Could not access camera/mic: " + err.message + ". Please check permissions and try again.");
     }
   };
 
   const startRecording = (stream) => {
     chunksRef.current = [];
 
-    // Pick best codec — prefer VP9 (better quality/size), fallback to VP8, then mp4
-    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
-      ? "video/webm;codecs=vp9,opus"
-      : MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")
-      ? "video/webm;codecs=vp8,opus"
-      : MediaRecorder.isTypeSupported("video/webm")
-      ? "video/webm"
-      : "video/mp4";
+    // Use the most basic MediaRecorder configuration possible for maximum compatibility
+    let recorder;
+    try {
+      // Try the most basic configuration first - no codec specification
+      recorder = new MediaRecorder(stream);
+      console.log(`[Recording] Using basic MediaRecorder (no codec specified)`);
+    } catch (err) {
+      console.error(`[Recording] Basic MediaRecorder failed:`, err);
+      setError("Your browser doesn't support video recording. Please use a different browser.");
+      setStep("setup");
+      cleanup();
+      return;
+    }
 
-    mimeTypeRef.current = mimeType; // Store for later use
+    // Store the actual MIME type the browser chose
+    mimeTypeRef.current = recorder.mimeType || "video/webm";
+    console.log(`[Recording] Browser selected MIME type: ${mimeTypeRef.current}`);
 
-    // Higher bitrate for better quality: 2.5Mbps video + 128kbps audio
-    const recorder = new MediaRecorder(stream, {
-      mimeType,
-      // Optimized bitrates for speech analysis (60% smaller files, good quality)
-      videoBitsPerSecond: 1_000_000,  // 1 Mbps (down from 2.5 Mbps)
-      audioBitsPerSecond: 96_000,     // 96 kbps (down from 128 kbps)
-    });
     recorderRef.current = recorder;
-    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+    
+    // Track recording health
+    let lastChunkTime = Date.now();
+    let totalDataReceived = 0;
+    let chunkCount = 0;
+    
+    recorder.ondataavailable = (e) => { 
+      chunkCount++;
+      const now = Date.now();
+      const timeSinceLastChunk = now - lastChunkTime;
+      lastChunkTime = now;
+      
+      if (e.data && e.data.size > 0) {
+        totalDataReceived += e.data.size;
+        console.log(`[Recording] Chunk ${chunkCount}: ${e.data.size} bytes (${timeSinceLastChunk}ms since last)`);
+        chunksRef.current.push(e.data);
+        
+        // Real-time health check - warn if chunks are too small
+        const expectedSizePerChunk = 50000; // ~50KB per second minimum
+        if (e.data.size < expectedSizePerChunk && elapsed > 5) {
+          console.warn(`[Recording] Small chunk detected: ${e.data.size} bytes (expected ~${expectedSizePerChunk})`);
+        }
+      } else {
+        console.error(`[Recording] Empty chunk ${chunkCount} received after ${timeSinceLastChunk}ms`);
+      }
+      
+      // Log recording health every 10 chunks
+      if (chunkCount % 10 === 0) {
+        const avgChunkSize = totalDataReceived / chunkCount;
+        console.log(`[Recording] Health check - ${chunkCount} chunks, ${totalDataReceived} bytes total, ${avgChunkSize.toFixed(0)} avg/chunk`);
+      }
+    };
+    
     recorder.onstop = () => {
-      console.log(`[Recording] Creating blob with MIME type: ${mimeType}`);
-      const blob = new Blob(chunksRef.current, { type: mimeType });
+      console.log(`[Recording] Stop event - ${chunksRef.current.length} chunks collected, ${totalDataReceived} bytes total`);
+      
+      // Validate chunks before creating blob
+      const validChunks = chunksRef.current.filter(chunk => chunk && chunk.size > 0);
+      const totalSize = validChunks.reduce((sum, chunk) => sum + chunk.size, 0);
+      
+      console.log(`[Recording] Valid chunks: ${validChunks.length}, Total size: ${totalSize} bytes`);
+      
+      if (validChunks.length === 0 || totalSize === 0) {
+        console.error(`[Recording] No valid chunks found!`);
+        setError("Recording failed - no data captured. Browser may not support recording.");
+        setStep("setup");
+        cleanup();
+        return;
+      }
+      
+      // More aggressive size validation
+      const expectedMinSize = elapsed * 3000; // ~3KB per second (very conservative)
+      const expectedMaxSize = elapsed * 500000; // ~500KB per second (generous)
+      
+      if (totalSize < expectedMinSize) {
+        console.error(`[Recording] File too small: ${totalSize} bytes for ${elapsed}s (expected min: ${expectedMinSize})`);
+        setError(`Recording corrupted - file too small (${Math.round(totalSize/1024)}KB for ${elapsed}s). Try a different browser.`);
+        setStep("setup");
+        cleanup();
+        return;
+      }
+      
+      if (totalSize > expectedMaxSize) {
+        console.warn(`[Recording] File very large: ${totalSize} bytes for ${elapsed}s (expected max: ${expectedMaxSize})`);
+      }
+      
+      console.log(`[Recording] Creating blob with MIME type: ${mimeTypeRef.current}`);
+      const blob = new Blob(validChunks, { type: mimeTypeRef.current });
       console.log(`[Recording] Blob created - type: ${blob.type}, size: ${blob.size}`);
-      pendingBlobRef.current = blob; // store for useEffect to pick up after render
+      
+      // Final validation - check if blob is accessible
+      try {
+        const url = URL.createObjectURL(blob);
+        URL.revokeObjectURL(url); // Clean up immediately
+        console.log(`[Recording] Blob validation passed`);
+      } catch (blobErr) {
+        console.error(`[Recording] Blob creation failed:`, blobErr);
+        setError("Recording failed - could not create video file. Try a different browser.");
+        setStep("setup");
+        cleanup();
+        return;
+      }
+      
+      pendingBlobRef.current = blob;
       setRecordedBlob(blob);
       setStep("preview");
       cleanup();
     };
-    recorder.start(1000); // collect chunks every 1s
+    
+    recorder.onerror = (e) => {
+      console.error(`[Recording] MediaRecorder error:`, e);
+      setError(`Recording error: ${e.error?.message || 'Unknown error'}. Try a different browser.`);
+      setStep("setup");
+      cleanup();
+    };
+    
+    recorder.onstatechange = (e) => {
+      console.log(`[Recording] State changed to: ${recorder.state}`);
+    };
+    
+    // Start with 2-second intervals for better chunk collection
+    try {
+      recorder.start(2000);
+      console.log(`[Recording] Started with 2000ms intervals`);
+    } catch (startErr) {
+      console.error(`[Recording] Failed to start:`, startErr);
+      setError("Could not start recording. Try a different browser.");
+      setStep("setup");
+      cleanup();
+      return;
+    }
+    
     setStep("recording");
     setElapsed(0);
     setIsPaused(false);
@@ -783,7 +990,15 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
   const stopRecording = () => {
     clearInterval(timerRef.current);
     if (recorderRef.current && recorderRef.current.state !== "inactive") {
-      recorderRef.current.stop();
+      console.log(`[Recording] Stopping recorder in state: ${recorderRef.current.state}`);
+      try {
+        recorderRef.current.stop();
+      } catch (err) {
+        console.error(`[Recording] Error stopping recorder:`, err);
+        setError("Error stopping recording. Please try again.");
+        setStep("setup");
+        cleanup();
+      }
     }
   };
 
@@ -815,6 +1030,24 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
   const submitRecording = async () => {
     if (!recordedBlob) return;
     if (elapsed < 60) { setError("Recording must be at least 1 minute. Please record again."); return; }
+    
+    // Additional blob validation before upload
+    console.log(`[Upload] Validating blob - size: ${recordedBlob.size}, type: ${recordedBlob.type}, elapsed: ${elapsed}s`);
+    
+    // Check if blob size is reasonable for the duration
+    const expectedMinSize = elapsed * 8000; // ~8KB per second minimum (very conservative)
+    const expectedMaxSize = elapsed * 200000; // ~200KB per second maximum (generous)
+    
+    if (recordedBlob.size < expectedMinSize) {
+      console.error(`[Upload] Blob too small: ${recordedBlob.size} bytes for ${elapsed}s (expected min: ${expectedMinSize})`);
+      setError(`Recording seems corrupted (too small: ${Math.round(recordedBlob.size/1024)}KB for ${elapsed}s). Please record again.`);
+      return;
+    }
+    
+    if (recordedBlob.size > expectedMaxSize) {
+      console.warn(`[Upload] Blob very large: ${recordedBlob.size} bytes for ${elapsed}s (expected max: ${expectedMaxSize})`);
+    }
+    
     setStep("uploading");
     setUploadProgress(0);
     setError(null);
@@ -830,6 +1063,8 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
       
       const ext = mimeType.includes("mp4") ? "mp4" : "webm";
       const file = new File([recordedBlob], `recording.${ext}`, { type: mimeType });
+      
+      console.log(`[Upload] Created file - name: ${file.name}, size: ${file.size}, type: ${file.type}`);
 
       // Step 1: Get presigned URL
       const { data: presign } = await api.get("/video/presign", {
@@ -841,9 +1076,26 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", presign.uploadUrl);
         xhr.setRequestHeader("Content-Type", file.type);
-        xhr.upload.onprogress = (e) => { if (e.total) setUploadProgress(Math.round((e.loaded / e.total) * 100)); };
-        xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed: ${xhr.status}`));
-        xhr.onerror = () => reject(new Error("Network error during upload"));
+        xhr.upload.onprogress = (e) => { 
+          if (e.total) {
+            const progress = Math.round((e.loaded / e.total) * 100);
+            setUploadProgress(progress);
+            console.log(`[Upload] Progress: ${progress}% (${e.loaded}/${e.total})`);
+          }
+        };
+        xhr.onload = () => {
+          console.log(`[Upload] XHR completed with status: ${xhr.status}`);
+          xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed: ${xhr.status}`));
+        };
+        xhr.onerror = () => {
+          console.error(`[Upload] XHR error`);
+          reject(new Error("Network error during upload"));
+        };
+        xhr.ontimeout = () => {
+          console.error(`[Upload] XHR timeout`);
+          reject(new Error("Upload timeout"));
+        };
+        xhr.timeout = 300000; // 5 minute timeout for large files
         xhr.send(file);
       });
 
@@ -853,15 +1105,17 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
         publicUrl: presign.publicUrl,
         mimeType:  file.type,
         isPublic:  true,
+        recordedDuration: elapsed, // Pass the actual recorded duration from frontend timer
       });
 
+      console.log(`[Upload] Analysis started with reportId: ${data.reportId}`);
       onAnalysisStarted(data.reportId);
       setStep("setup");
       setRecordedBlob(null);
       setElapsed(0);
     } catch (err) {
       console.error("[Upload] Error:", err);
-      setError(err.response?.data?.error || "Upload failed");
+      setError(err.response?.data?.error || err.message || "Upload failed");
       setStep("preview");
     }
   };
@@ -876,8 +1130,28 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
       {step === "setup" && (
         <div>
           <p style={{ color: "var(--muted)", marginBottom: "1.25rem", fontSize: "0.9rem" }}>
-            Minimum 1 min · Max 5 min · Speak clearly to the camera
+            Minimum 1 min · Max {isMonthlyReflection || isMonthlyGoals ? "10" : isWeeklyReflection ? "7" : "5"} min · Speak clearly to the camera
           </p>
+          
+          {/* Recording stability notice for long recordings */}
+          {(isMonthlyReflection || isMonthlyGoals || isWeeklyReflection) && (
+            <div style={{
+              background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)",
+              borderRadius: 12, padding: "0.85rem 1rem", marginBottom: "1.25rem",
+              fontSize: "0.82rem", color: "rgba(255,255,255,0.8)", lineHeight: 1.6,
+            }}>
+              ⚠️ <strong style={{ color: "#f59e0b" }}>Long Recording Notice:</strong> For recordings over 5 minutes, ensure stable internet and avoid switching apps. If you experience issues, try recording in shorter segments or use the upload option instead.
+            </div>
+          )}
+          
+          {/* Browser compatibility notice */}
+          <div style={{
+            background: "rgba(14,165,233,0.08)", border: "1px solid rgba(56,189,248,0.25)",
+            borderRadius: 10, padding: "0.75rem 1rem", marginBottom: "1.25rem",
+            fontSize: "0.8rem", color: "rgba(255,255,255,0.7)", lineHeight: 1.5,
+          }}>
+            💡 <strong style={{ color: "#38bdf8" }}>For best results:</strong> Use Chrome or Edge browsers. Recording uses advanced browser features that work best in modern browsers.
+          </div>
 
           {/* Monthly reflection reminder inside record card */}
           {isMonthlyReflection && (
@@ -1122,6 +1396,35 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
             Review your recording before submitting for analysis.
             {elapsed < 60 && <span style={{ color: "var(--danger)" }}> ⚠️ Too short ({fmtTime(elapsed)}) — minimum 1 minute.</span>}
           </p>
+          
+          {/* Recording info display */}
+          <div style={{ 
+            background: "var(--card2)", 
+            border: "1px solid var(--border2)", 
+            borderRadius: "8px", 
+            padding: "0.75rem 1rem", 
+            marginBottom: "1rem",
+            fontSize: "0.85rem",
+            color: "var(--muted)"
+          }}>
+            📊 Recording: {fmtTime(elapsed)} • {recordedBlob ? `${Math.round(recordedBlob.size / 1024)}KB` : 'Processing...'} • {mimeTypeRef.current || 'Unknown format'}
+            
+            {/* Corruption warning if blob is too small */}
+            {recordedBlob && recordedBlob.size < elapsed * 5000 && (
+              <div style={{ 
+                marginTop: "0.5rem", 
+                padding: "0.5rem", 
+                background: "rgba(248,113,113,0.1)", 
+                border: "1px solid rgba(248,113,113,0.3)",
+                borderRadius: "6px",
+                color: "#f87171",
+                fontSize: "0.8rem"
+              }}>
+                ⚠️ Recording may be corrupted (file too small). Consider using Upload option instead.
+              </div>
+            )}
+          </div>
+          
           <video ref={previewVideoRef} controls playsInline
             style={{ width: "100%", borderRadius: "12px", background: "#000", aspectRatio: "16/9", marginBottom: "1rem" }} />
           <div style={{ display: "flex", gap: "0.75rem" }}>
@@ -1130,6 +1433,21 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
               🚀 Submit for Analysis
             </button>
           </div>
+          
+          {/* Alternative upload suggestion */}
+          <div style={{
+            marginTop: "1rem",
+            padding: "0.75rem 1rem",
+            background: "rgba(14,165,233,0.08)",
+            border: "1px solid rgba(56,189,248,0.25)",
+            borderRadius: "8px",
+            fontSize: "0.8rem",
+            color: "rgba(255,255,255,0.7)",
+            lineHeight: 1.5,
+          }}>
+            💡 <strong style={{ color: "#38bdf8" }}>Having issues?</strong> You can also record with your phone's camera app and use the "Upload Video" option above for more reliable results.
+          </div>
+          
           {error && <div className="error-box" style={{ marginTop: "1rem" }}><p>{error}</p></div>}
         </div>
       )}
