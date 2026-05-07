@@ -499,10 +499,30 @@ const tt = { background: "#16162a", border: "1px solid #252545", borderRadius: 1
 const avg = (arr, k) => { const v = arr.filter(s => s[k] != null).map(s => s[k]); return v.length ? (v.reduce((a,b)=>a+b,0)/v.length).toFixed(1) : "—"; };
 const scoreColor = v => v >= 7 ? "var(--success)" : v >= 5 ? "var(--warning)" : "var(--danger)";
 
+const CACHE_KEY = "dashboard_cache";
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCachedDashboard() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw);
+    if (Date.now() - ts > CACHE_TTL) return null;
+    return data;
+  } catch { return null; }
+}
+
+function setCachedDashboard(data) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() }));
+  } catch {}
+}
+
 export default function UserDashboard() {
-  const [data, setData] = useState(null);
+  const cached = getCachedDashboard();
+  const [data, setData] = useState(cached); // show cached immediately
   const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cached); // skip spinner if cached
   const [liveSessions, setLiveSessions] = useState([]);
   const [sessionPage, setSessionPage] = useState(1);
   const navigate = useNavigate();
@@ -513,10 +533,13 @@ export default function UserDashboard() {
       api.get("/live-sessions").catch(() => ({ data: [] })),
     ]).then(([d, ls]) => {
       setData(d.data);
-      // show only live + upcoming sessions
+      setCachedDashboard(d.data); // save fresh data for next visit
       setLiveSessions((ls.data || []).filter(s => s.status === "live" || s.status === "scheduled"));
     })
-    .catch(err => setError(err.response?.data?.error || "Failed to load data"))
+    .catch(err => {
+      // Only show error if we have no cached data to fall back on
+      if (!getCachedDashboard()) setError(err.response?.data?.error || "Failed to load data");
+    })
     .finally(() => setLoading(false));
   }, []);
 

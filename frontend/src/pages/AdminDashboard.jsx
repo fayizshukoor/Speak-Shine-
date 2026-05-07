@@ -46,37 +46,148 @@ export default function AdminDashboard() {
   const [adminOtpError, setAdminOtpError] = useState("");
   const [adminActionToken, setAdminActionToken] = useState("");
 
-  const load = async () => {
+  // Lazy loading flags to track what's been loaded
+  const [dataLoaded, setDataLoaded] = useState({
+    dashboard: false,
+    users: false,
+    questions: false,
+    reports: false,
+    settings: false,
+  });
+
+  // Load only essential data on mount (dashboard overview)
+  const loadInitial = async () => {
     setLoading(true);
     try {
-      const [d,u,q,w,m,s] = await Promise.all([
-        api.get("/dashboard"),
-        api.get("/users"),
-        api.get("/questions?limit=200"),
-        api.get("/dashboard/report/weekly"),
-        api.get("/dashboard/report/monthly"),
-        api.get("/dashboard/settings")
-      ]);
-      setDash(d.data); 
-      setUsers(u.data); 
-      setQuestions(q.data.questions); 
-      setWeekly(w.data); 
-      setMonthly(m.data);
-      setSettings({ 
-        posterSendTime: s.data.posterSendTime || "08:00", 
-        questionGenerateTime: s.data.questionGenerateTime || "07:00" 
-      });
+      const d = await api.get("/dashboard");
+      setDash(d.data);
+      setDataLoaded(prev => ({ ...prev, dashboard: true }));
     } catch (err) {
-      console.error("Failed to load dashboard data:", err);
-      msg(err?.response?.data?.error || "Failed to load dashboard data", "danger");
-    } finally { 
-      setLoading(false); 
+      console.error("Failed to load dashboard:", err);
+      msg(err?.response?.data?.error || "Failed to load dashboard", "danger");
+    } finally {
+      setLoading(false);
     }
   };
-  useEffect(()=>{load();},[]);
+
+  // Load users data (for Users, Today, Submissions tabs)
+  const loadUsers = async () => {
+    if (dataLoaded.users) return; // Already loaded
+    try {
+      const u = await api.get("/users");
+      setUsers(u.data);
+      setDataLoaded(prev => ({ ...prev, users: true }));
+    } catch (err) {
+      console.error("Failed to load users:", err);
+      msg("Failed to load users", "danger");
+    }
+  };
+
+  // Load questions data (for Questions tab)
+  const loadQuestions = async () => {
+    if (dataLoaded.questions) return; // Already loaded
+    try {
+      const q = await api.get("/questions?limit=50"); // Reduced from 200 to 50
+      setQuestions(q.data.questions);
+      setDataLoaded(prev => ({ ...prev, questions: true }));
+    } catch (err) {
+      console.error("Failed to load questions:", err);
+      msg("Failed to load questions", "danger");
+    }
+  };
+
+  // Load reports data (for Reports tab)
+  const loadReports = async () => {
+    if (dataLoaded.reports) return; // Already loaded
+    try {
+      const [w, m] = await Promise.all([
+        api.get("/dashboard/report/weekly"),
+        api.get("/dashboard/report/monthly"),
+      ]);
+      setWeekly(w.data);
+      setMonthly(m.data);
+      setDataLoaded(prev => ({ ...prev, reports: true }));
+    } catch (err) {
+      console.error("Failed to load reports:", err);
+      msg("Failed to load reports", "danger");
+    }
+  };
+
+  // Load settings data (for Settings tab)
+  const loadSettings = async () => {
+    if (dataLoaded.settings) return; // Already loaded
+    try {
+      const s = await api.get("/dashboard/settings");
+      setSettings({
+        posterSendTime: s.data.posterSendTime || "08:00",
+        questionGenerateTime: s.data.questionGenerateTime || "07:00",
+      });
+      setDataLoaded(prev => ({ ...prev, settings: true }));
+    } catch (err) {
+      console.error("Failed to load settings:", err);
+      msg("Failed to load settings", "danger");
+    }
+  };
+
+  // Load initial data on mount
+  useEffect(() => {
+    loadInitial();
+  }, []);
+
+  // Load data based on active tab
+  useEffect(() => {
+    if (tab === "overview") {
+      // Overview needs dashboard data (already loaded)
+    } else if (tab === "today" || tab === "users" || tab === "submissions" || tab === "fines") {
+      loadUsers();
+    } else if (tab === "questions" || tab === "manual-questions") {
+      loadQuestions();
+    } else if (tab === "reports") {
+      loadReports();
+    } else if (tab === "settings") {
+      loadSettings();
+    }
+  }, [tab]);
 
   const msg = (text, type="success") => { setFlash({text,type}); setTimeout(()=>setFlash(null),3000); };
-  const toggleUser = async (phone) => { await api.patch(`/users/${phone}/toggle`); msg("Status toggled"); load(); };
+  
+  // Smart reload - only reload what's currently visible/needed
+  const reload = async (dataTypes = []) => {
+    const promises = [];
+    
+    if (dataTypes.includes('dashboard') || dataTypes.length === 0) {
+      promises.push(api.get("/dashboard").then(d => setDash(d.data)));
+    }
+    if (dataTypes.includes('users') || dataTypes.length === 0) {
+      promises.push(api.get("/users").then(u => setUsers(u.data)));
+    }
+    if (dataTypes.includes('questions')) {
+      promises.push(api.get("/questions?limit=50").then(q => setQuestions(q.data.questions)));
+    }
+    if (dataTypes.includes('reports')) {
+      promises.push(
+        Promise.all([
+          api.get("/dashboard/report/weekly"),
+          api.get("/dashboard/report/monthly"),
+        ]).then(([w, m]) => {
+          setWeekly(w.data);
+          setMonthly(m.data);
+        })
+      );
+    }
+    
+    if (promises.length > 0) {
+      await Promise.all(promises).catch(err => {
+        console.error("Reload failed:", err);
+      });
+    }
+  };
+  
+  const toggleUser = async (phone) => { 
+    await api.patch(`/users/${phone}/toggle`); 
+    msg("Status toggled"); 
+    reload(['users']); // Only reload users
+  };
   
   const viewStudentDetail = (user) => {
     setSelectedStudent(user);
@@ -103,7 +214,12 @@ export default function AdminDashboard() {
       type: "danger", title: "Remove User",
       message: "This user will be permanently removed. Are you sure?",
       confirmText: "Remove",
-      onConfirm: async () => { setModal(null); await api.delete(`/users/${phone}`); msg("Removed","danger"); load(); },
+      onConfirm: async () => { 
+        setModal(null); 
+        await api.delete(`/users/${phone}`); 
+        msg("Removed","danger"); 
+        reload(['users', 'dashboard']); // Reload users and dashboard stats
+      },
     });
   };
   const adjustFine = (phone, cur) => {
@@ -126,17 +242,35 @@ export default function AdminDashboard() {
         const u = users.find(x=>x.phone===phone);
         if (!u) return;
         await api.patch(`/users/${phone}/fine`,{amount:-(u.fine||0)});
-        msg("Fine reset"); load();
+        msg("Fine reset"); 
+        reload(['users', 'dashboard']); // Reload users and dashboard stats
       },
     });
   };
-  const saveQ = async (e) => { e.preventDefault(); if(editQ){await api.patch(`/questions/${editQ._id}`,qForm);setEditQ(null);msg("Updated!");}else{await api.post("/questions",qForm);msg("Added!");} setQForm({category:"",topic:"",question:""}); load(); };
+  const saveQ = async (e) => { 
+    e.preventDefault(); 
+    if(editQ){
+      await api.patch(`/questions/${editQ._id}`,qForm);
+      setEditQ(null);
+      msg("Updated!");
+    }else{
+      await api.post("/questions",qForm);
+      msg("Added!");
+    } 
+    setQForm({category:"",topic:"",question:""}); 
+    reload(['questions']); // Only reload questions
+  };
   const deleteQ = async (id) => {
     setModal({
       type: "danger", title: "Delete Question",
       message: "This question will be permanently deleted.",
       confirmText: "Delete",
-      onConfirm: async () => { setModal(null); await api.delete(`/questions/${id}`); msg("Deleted","danger"); load(); },
+      onConfirm: async () => { 
+        setModal(null); 
+        await api.delete(`/questions/${id}`); 
+        msg("Deleted","danger"); 
+        reload(['questions']); // Only reload questions
+      },
     });
   };
   const startEdit = (q) => { setEditQ(q); setQForm({category:q.category,topic:q.topic,question:q.question}); window.scrollTo({top:0,behavior:"smooth"}); };
@@ -165,7 +299,7 @@ export default function AdminDashboard() {
         try {
           await api.post("/users/reset/weekly");
           msg("Weekly submissions + fines reset for all users");
-          load();
+          reload(['users', 'dashboard', 'reports']); // Reload affected data
         } catch (err) {
           msg(err?.response?.data?.error || "Reset failed", "danger");
         } finally { setResetting(""); }
@@ -184,7 +318,7 @@ export default function AdminDashboard() {
         try {
           await api.post("/users/reset/monthly");
           msg("Monthly submissions reset for all users");
-          load();
+          reload(['users', 'dashboard', 'reports']); // Reload affected data
         } catch (err) {
           msg(err?.response?.data?.error || "Reset failed", "danger");
         } finally { setResetting(""); }
@@ -228,7 +362,8 @@ export default function AdminDashboard() {
             if (isNaN(+fineInput)) return;
             setModal(null);
             await api.patch(`/users/${modal.phone}/fine`, { amount: +fineInput });
-            msg(`Fine adjusted ₹${fineInput}`); load();
+            msg(`Fine adjusted ₹${fineInput}`); 
+            reload(['users', 'dashboard']); // Reload users and dashboard stats
           } : modal.onConfirm}
           onCancel={() => setModal(null)}
         />
@@ -358,7 +493,7 @@ export default function AdminDashboard() {
                 msg("✅ Question published! Users can now see it.");
                 setPublishQ(null);
                 setPublishCustom({topic:"",question:"",category:""});
-                load();
+                reload(['dashboard']); // Reload dashboard to show new question
               }catch(e){msg(e?.response?.data?.error||"Failed","danger");}
             }}>📢 Publish to Webapp</button>
           </div>
@@ -458,7 +593,7 @@ export default function AdminDashboard() {
                   setNewMember({ name:"", phone:"", password:"", role:"user" });
                   setAdminOtpStep("idle");
                   setAdminActionToken("");
-                  load();
+                  reload(['users', 'dashboard']); // Reload users and dashboard stats
                 } catch (err) {
                   const errMsg = err?.response?.data?.error || "Failed to create account";
                   // If token expired, reset to idle
@@ -535,7 +670,7 @@ export default function AdminDashboard() {
                     <RoleSelector 
                       phone={u.phone} 
                       currentRole={u.role || "user"}
-                      onRoleChange={() => load()}
+                      onRoleChange={() => reload(['users'])} // Only reload users
                     />
                   </td>
                   <td>🔥 {u.streak||0}</td>
