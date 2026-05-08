@@ -315,10 +315,41 @@ export function initializeChatSocket(io, onlineUsers) {
 
     // ── Live Session Chat ────────────────────────────────────────────────────
     // Each live session has its own isolated chat room: chat:live:{sessionId}
-    // Messages persist for 12h after the session ends.
+    // Messages deleted immediately when admin ends the session.
+
+    // Validate sessionId is a valid MongoDB ObjectId (24 hex chars)
+    function isValidSessionId(id) {
+      return typeof id === "string" && /^[a-f0-9]{24}$/i.test(id);
+    }
+
+    // Verify user is a participant in the session (or admin/trainer)
+    async function verifySessionParticipant(sessionId) {
+      if (role === "admin" || role === "trainer") return true;
+      try {
+        const LiveSession = (await import("../../models/liveSessionSchema.js")).default;
+        const session = await LiveSession.findById(sessionId).select("participants status").lean();
+        if (!session) return false;
+        if (session.status !== "live") return false;
+        return session.participants.includes(phone);
+      } catch {
+        return false;
+      }
+    }
 
     socket.on("live:join", async ({ sessionId }) => {
-      if (!sessionId || typeof sessionId !== "string") return;
+      // Security: validate sessionId format
+      if (!isValidSessionId(sessionId)) {
+        socket.emit("chat:error", { message: "Invalid session" });
+        return;
+      }
+
+      // Security: verify user is a participant
+      const allowed = await verifySessionParticipant(sessionId);
+      if (!allowed) {
+        socket.emit("chat:error", { message: "You are not a participant in this session" });
+        return;
+      }
+
       const liveRoom = liveSessionRoom(sessionId);
       socket.join(liveRoom);
 
@@ -337,18 +368,31 @@ export function initializeChatSocket(io, onlineUsers) {
     });
 
     socket.on("live:send", async ({ sessionId, text }) => {
-      if (!sessionId || typeof sessionId !== "string") return;
+      // Security: validate sessionId format
+      if (!isValidSessionId(sessionId)) {
+        socket.emit("chat:error", { message: "Invalid session" });
+        return;
+      }
 
+      // Security: rate limit
       if (!checkRateLimit(phone)) {
         socket.emit("chat:error", { message: "Sending too fast. Please slow down." });
         return;
       }
 
+      // Security: sanitize text
       let cleanText;
       try {
         cleanText = sanitizeText(text, LIMITS.CHAT_MESSAGE, "Message");
       } catch (err) {
         socket.emit("chat:error", { message: err instanceof SanitizeError ? err.message : "Invalid message" });
+        return;
+      }
+
+      // Security: verify user is still a participant
+      const allowed = await verifySessionParticipant(sessionId);
+      if (!allowed) {
+        socket.emit("chat:error", { message: "Session has ended or you are not a participant" });
         return;
       }
 
@@ -368,7 +412,6 @@ export function initializeChatSocket(io, onlineUsers) {
           const messages = await getMessages(redis, liveRoom);
           messages.push(message);
           if (messages.length > MAX_MESSAGES) messages.splice(0, messages.length - MAX_MESSAGES);
-          // Keep TTL alive while session is active (24h rolling)
           await saveMessages(redis, liveRoom, messages, 86400);
         }
         io.to(liveRoom).emit("live:message", { sessionId, message });
@@ -379,7 +422,8 @@ export function initializeChatSocket(io, onlineUsers) {
     });
 
     socket.on("live:typing", ({ sessionId, isTyping }) => {
-      if (!sessionId || typeof sessionId !== "string") return;
+      // Security: validate sessionId format only (typing is low-risk)
+      if (!isValidSessionId(sessionId)) return;
       const liveRoom = liveSessionRoom(sessionId);
       socket.to(liveRoom).emit("live:typing", { from: phone, fromName: name, isTyping: !!isTyping });
     });

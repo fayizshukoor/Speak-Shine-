@@ -235,8 +235,8 @@ export async function endSession(sessionId, io) {
     console.warn("[LiveKit] Could not delete room:", e.message);
   }
 
-  // Set 12h expiry on the session's chat messages
-  await expireLiveSessionChat(session._id.toString());
+  // Delete session chat messages immediately when session ends
+  await expireLiveSessionChat(session._id.toString(), true);
   
   // Emit socket event if io is available
   if (io) {

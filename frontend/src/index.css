@@ -1310,13 +1310,17 @@ button[aria-label="Toggle Chat"] {
 /* Participant tiles */
 .lk-participant-tile {
   border-radius: 12px !important;
-  overflow: hidden !important;
+  overflow: visible !important;
   border: 2px solid rgba(255,255,255,0.06) !important;
   background: #0d0d1f !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease !important;
 }
 .lk-participant-tile[data-lk-speaking="true"] {
   border-color: #4ade80 !important;
-  box-shadow: 0 0 0 3px rgba(74,222,128,0.18) !important;
+  box-shadow: 0 0 0 4px rgba(74,222,128,0.3), 0 0 24px rgba(74,222,128,0.2) !important;
+  transform: scale(1.04) !important;
+  z-index: 10 !important;
+  border-radius: 12px !important;
 }
 .lk-participant-name {
   color: #fff !important;

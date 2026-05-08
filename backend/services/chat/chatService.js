@@ -43,16 +43,22 @@ async function saveMessages(redis, key, messages, ttl = TTL) {
 
 /**
  * Set a 12-hour expiry on a live session chat room (called when session ends)
+ * Pass immediate=true to delete right away instead of expiring.
  */
-async function expireLiveSessionChat(sessionId) {
+async function expireLiveSessionChat(sessionId, immediate = false) {
   if (!isRedisAvailable()) return;
   try {
     const redis = getRedisClient();
     const key = liveSessionRoom(sessionId);
     const exists = await redis.exists(key);
     if (exists) {
-      await redis.expire(key, TTL_LIVE);
-      console.log(`[Chat] Live session ${sessionId} chat expires in 12h`);
+      if (immediate) {
+        await redis.del(key);
+        console.log(`[Chat] Live session ${sessionId} chat deleted immediately`);
+      } else {
+        await redis.expire(key, TTL_LIVE);
+        console.log(`[Chat] Live session ${sessionId} chat expires in 12h`);
+      }
     }
   } catch (err) {
     console.warn("[Chat] Failed to expire live session chat:", err.message);
