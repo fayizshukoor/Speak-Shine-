@@ -1289,24 +1289,17 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   100% { background-position:  200% center; }
 }
 
-/* ── LiveKit full-screen ── */
+/* ── LiveKit container ── */
 .lk-room-container {
-  background: #07071a !important;
-  height: 100vh !important;
-  width: 100vw !important;
-  position: fixed !important;
-  inset: 0 !important;
-  z-index: 400 !important;
-}
-.lk-video-conference {
   background: #07071a !important;
   height: 100% !important;
   width: 100% !important;
-  display: flex !important;
-  flex-direction: column !important;
 }
 
-/* Hide the built-in chat toggle button and chat panel */
+/* Hide LiveKit's built-in control bar — we use our own */
+.lk-control-bar { display: none !important; }
+
+/* Hide built-in chat */
 .lk-chat,
 .lk-chat-toggle,
 button[aria-label="Chat"],
@@ -1332,59 +1325,10 @@ button[aria-label="Toggle Chat"] {
   text-shadow: 0 1px 4px rgba(0,0,0,0.8) !important;
 }
 
-/* Control bar */
-.lk-control-bar {
-  background: rgba(8,8,20,0.97) !important;
-  backdrop-filter: blur(20px) !important;
-  -webkit-backdrop-filter: blur(20px) !important;
-  border-top: 1px solid rgba(255,255,255,0.07) !important;
-  padding: 0.65rem 1.5rem !important;
-  gap: 0.5rem !important;
-  justify-content: center !important;
-  z-index: 500 !important;
-  position: relative !important;
-  flex-shrink: 0 !important;
-}
-.lk-button {
-  background: rgba(255,255,255,0.07) !important;
-  border: 1px solid rgba(255,255,255,0.1) !important;
-  color: #e2e8f0 !important;
-  border-radius: 12px !important;
-  font-size: 0.78rem !important;
-  font-weight: 600 !important;
-  padding: 0.5rem 1rem !important;
-  transition: all 0.18s !important;
-}
-.lk-button:hover {
-  background: rgba(255,255,255,0.12) !important;
-  border-color: rgba(255,255,255,0.18) !important;
-}
-.lk-disconnect-button {
-  background: linear-gradient(135deg, #ef4444, #dc2626) !important;
-  border: none !important;
-  color: #fff !important;
-  font-weight: 700 !important;
-}
-.lk-disconnect-button:hover {
-  background: linear-gradient(135deg, #dc2626, #b91c1c) !important;
-}
-
-/* Grid / focus layouts */
+/* Grid layout */
 .lk-grid-layout,
 .lk-focus-layout {
   background: #07071a !important;
   padding: 0.5rem !important;
   gap: 0.5rem !important;
-}
-
-/* Mobile */
-@media (max-width: 640px) {
-  .lk-control-bar {
-    padding: 0.5rem 0.75rem !important;
-    gap: 0.3rem !important;
-  }
-  .lk-button {
-    padding: 0.45rem 0.65rem !important;
-    font-size: 0.72rem !important;
-  }
 }
