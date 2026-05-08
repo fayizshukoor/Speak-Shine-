@@ -207,6 +207,10 @@ export async function getUserProfile(phone) {
     topStreak,
     myStreakEntry,
   };
+}
+
+/**
+ * Get feedback score history for a user
  * Tries multiple phone formats to handle country code variations
  */
 export async function getUserScores(phone) {
