@@ -1332,3 +1332,19 @@ button[aria-label="Toggle Chat"] {
   padding: 0.5rem !important;
   gap: 0.5rem !important;
 }
+
+/* ── Live Room in-room chat panel ── */
+.live-room-chat .chat-window,
+.live-room-chat .group-chat-window {
+  height: 100% !important;
+  border-radius: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.live-room-chat .chat-messages {
+  flex: 1 !important;
+  overflow-y: auto !important;
+}

@@ -1,6 +1,7 @@
 /**
  * LiveRoom.jsx
  * RoomAudioRenderer + GridLayout + custom fixed ControlBar with device pickers.
+ * Includes in-room group chat panel (reuses GroupChat component).
  */
 
 import { useEffect, useState, useRef } from "react";
@@ -20,6 +21,7 @@ import { Track } from "livekit-client";
 import "@livekit/components-styles";
 import api from "../api/client.js";
 import { useToast } from "./Toast.jsx";
+import GroupChat from "./GroupChat.jsx";
 
 // ── Device Picker Popup ───────────────────────────────────────────────────────
 function DevicePicker({ kind, onClose }) {
@@ -57,7 +59,7 @@ function DevicePicker({ kind, onClose }) {
 }
 
 // ── Custom Control Bar ────────────────────────────────────────────────────────
-function CustomControls({ onLeave }) {
+function CustomControls({ onLeave, chatOpen, onChatToggle, unreadCount }) {
   const { localParticipant } = useLocalParticipant();
   const [micOn,  setMicOn]  = useState(true);
   const [camOn,  setCamOn]  = useState(true);
@@ -141,6 +143,38 @@ function CustomControls({ onLeave }) {
         <span style={{ fontSize: "1.2rem", lineHeight: 1 }}>🖥️</span>
         <span>Share</span>
       </TrackToggle>
+
+      {/* Chat toggle */}
+      <div style={{ position: "relative" }}>
+        <button
+          onClick={onChatToggle}
+          style={{
+            display: "flex", flexDirection: "column", alignItems: "center",
+            gap: "0.2rem", padding: "0.55rem 0.9rem", borderRadius: 12,
+            border: chatOpen ? "1px solid rgba(124,111,255,0.5)" : "1px solid rgba(255,255,255,0.1)",
+            background: chatOpen ? "rgba(124,111,255,0.2)" : "rgba(255,255,255,0.07)",
+            color: chatOpen ? "#a78bfa" : "#e2e8f0",
+            cursor: "pointer", fontSize: "0.62rem", fontWeight: 700, minWidth: 52,
+            transition: "all 0.15s",
+          }}
+        >
+          <span style={{ fontSize: "1.2rem", lineHeight: 1 }}>💬</span>
+          <span>Chat</span>
+        </button>
+        {/* Unread badge */}
+        {unreadCount > 0 && !chatOpen && (
+          <div style={{
+            position: "absolute", top: -4, right: -4,
+            width: 18, height: 18, borderRadius: "50%",
+            background: "#ef4444", color: "#fff",
+            fontSize: "0.6rem", fontWeight: 800,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            border: "2px solid rgba(6,6,18,0.98)",
+          }}>
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </div>
+        )}
+      </div>
 
       {/* Leave */}
       <DisconnectButton onClick={onLeave} style={{
@@ -271,15 +305,64 @@ function VideoGrid() {
 
 // ── Inner Room ────────────────────────────────────────────────────────────────
 function InnerRoom({ sessionId, userRole, onLeave, session }) {
+  const [chatOpen,    setChatOpen]    = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const handleUnread = () => {
+    setUnreadCount(c => c + 1);
+  };
+
+  const handleChatToggle = () => {
+    setChatOpen(v => !v);
+    if (!chatOpen) setUnreadCount(0); // clear badge when opening
+  };
+
+  const CHAT_WIDTH = 340;
+
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "#07071a", display: "flex", flexDirection: "column" }}>
       <RoomAudioRenderer />
       <SessionInfoBar session={session} />
       {(userRole === "admin" || userRole === "trainer") && <ParticipantsPanel sessionId={sessionId} />}
-      <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 76 }}>
+
+      {/* Video grid — shrinks when chat is open */}
+      <div style={{
+        position: "absolute",
+        top: 0, left: 0,
+        right: chatOpen ? CHAT_WIDTH : 0,
+        bottom: 76,
+        transition: "right 0.25s ease",
+      }}>
         <VideoGrid />
       </div>
-      <CustomControls onLeave={onLeave} />
+
+      {/* Chat panel — slides in from right */}
+      <div style={{
+        position: "fixed",
+        top: 0, right: 0, bottom: 76,
+        width: CHAT_WIDTH,
+        zIndex: 99997,
+        transform: chatOpen ? "translateX(0)" : "translateX(100%)",
+        transition: "transform 0.25s ease",
+        background: "rgba(8,8,20,0.98)",
+        backdropFilter: "blur(20px)",
+        borderLeft: "1px solid rgba(255,255,255,0.07)",
+        display: "flex", flexDirection: "column",
+      }}>
+        <div className="live-room-chat" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <GroupChat
+            onClose={() => setChatOpen(false)}
+            onUnread={handleUnread}
+          />
+        </div>
+      </div>
+
+      <CustomControls
+        onLeave={onLeave}
+        chatOpen={chatOpen}
+        onChatToggle={handleChatToggle}
+        unreadCount={unreadCount}
+      />
     </div>
   );
 }
