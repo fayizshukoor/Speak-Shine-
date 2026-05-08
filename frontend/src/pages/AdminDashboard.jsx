@@ -28,6 +28,7 @@ export default function AdminDashboard() {
   const [flash, setFlash] = useState(null);
   const [search, setSearch] = useState("");
   const [qSearch, setQSearch] = useState("");
+  const [qActionBusy, setQActionBusy] = useState(""); // "generating" | "cleaning" | ""
   const [qCat, setQCat] = useState("");
   const [modal, setModal] = useState(null);
   const [fineInput, setFineInput] = useState("");
@@ -93,6 +94,18 @@ export default function AdminDashboard() {
     } catch (err) {
       console.error("Failed to load questions:", err);
       msg("Failed to load questions", "danger");
+    }
+  };
+
+  // Force-refresh questions regardless of dataLoaded flag
+  const refreshQuestions = async () => {
+    try {
+      const q = await api.get("/questions?limit=50");
+      setQuestions(q.data.questions);
+      setDataLoaded(prev => ({ ...prev, questions: true }));
+    } catch (err) {
+      console.error("Failed to refresh questions:", err);
+      msg("Failed to refresh questions", "danger");
     }
   };
 
@@ -825,22 +838,38 @@ export default function AdminDashboard() {
               </div>
               <button
                 className="btn-primary"
-                style={{ whiteSpace: "nowrap", fontSize: "0.85rem", padding: "0.5rem 1rem" }}
+                style={{ whiteSpace: "nowrap", fontSize: "0.85rem", padding: "0.5rem 1rem", opacity: qActionBusy ? 0.6 : 1 }}
+                disabled={!!qActionBusy}
                 onClick={async () => {
+                  setQActionBusy("generating");
+                  msg("🤖 Generating questions… this takes ~30 seconds");
                   try {
-                    msg("🤖 Generating questions in background… refresh in ~30s");
                     await api.post("/questions/generate-now", { count: 14 });
-                    // Reload questions after a delay
-                    setTimeout(() => {
-                      setDataLoaded(prev => ({ ...prev, questions: false }));
-                      loadQuestions();
-                    }, 30000);
+                    const before = questions.length;
+                    let attempts = 0;
+                    const poll = setInterval(async () => {
+                      attempts++;
+                      await refreshQuestions();
+                      setQuestions(prev => {
+                        if (prev.length > before || attempts >= 12) {
+                          clearInterval(poll);
+                          setQActionBusy("");
+                          if (prev.length > before) {
+                            msg(`✅ Added ${prev.length - before} new question${prev.length - before !== 1 ? "s" : ""}! Bank now has ${prev.length}`);
+                          } else {
+                            msg("⚠️ Generation may still be running — refresh in a moment");
+                          }
+                        }
+                        return prev;
+                      });
+                    }, 5000);
                   } catch (e) {
+                    setQActionBusy("");
                     msg(e?.response?.data?.error || "Generate failed", "danger");
                   }
                 }}
               >
-                🤖 Generate Now
+                {qActionBusy === "generating" ? "⏳ Generating…" : "🤖 Generate Now"}
               </button>
             </div>
           )}
@@ -875,43 +904,67 @@ export default function AdminDashboard() {
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem",flexWrap:"wrap",gap:"0.5rem"}}>
               <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
                 <div className="section-title" style={{margin:0}}>Question Bank ({filteredQ.length}/{questions.length})</div>
+                {/* Generate button */}
                 <button
                   className="btn-ghost"
-                  style={{ fontSize: "0.78rem", padding: "0.3rem 0.7rem" }}
+                  style={{ fontSize: "0.78rem", padding: "0.3rem 0.7rem", opacity: qActionBusy ? 0.6 : 1 }}
+                  disabled={!!qActionBusy}
                   onClick={async () => {
+                    setQActionBusy("generating");
+                    msg("🤖 Generating 14 questions… this takes ~30 seconds");
                     try {
-                      msg("🤖 Generating 14 questions in background…");
                       await api.post("/questions/generate-now", { count: 14 });
-                      setTimeout(() => {
-                        setDataLoaded(prev => ({ ...prev, questions: false }));
-                        loadQuestions();
-                      }, 30000);
+                      // Poll every 5s for up to 60s until count increases
+                      const before = questions.length;
+                      let attempts = 0;
+                      const poll = setInterval(async () => {
+                        attempts++;
+                        await refreshQuestions();
+                        setQuestions(prev => {
+                          if (prev.length > before || attempts >= 12) {
+                            clearInterval(poll);
+                            setQActionBusy("");
+                            if (prev.length > before) {
+                              msg(`✅ Added ${prev.length - before} new question${prev.length - before !== 1 ? "s" : ""}! Bank now has ${prev.length}`);
+                            } else {
+                              msg("⚠️ Generation may still be running — refresh in a moment");
+                            }
+                          }
+                          return prev;
+                        });
+                      }, 5000);
                     } catch (e) {
+                      setQActionBusy("");
                       msg(e?.response?.data?.error || "Generate failed", "danger");
                     }
                   }}
                 >
-                  🤖 Generate
+                  {qActionBusy === "generating" ? "⏳ Generating…" : "🤖 Generate"}
                 </button>
+
+                {/* Clean Generic button */}
                 <button
                   className="btn-ghost danger"
-                  style={{ fontSize: "0.78rem", padding: "0.3rem 0.7rem" }}
+                  style={{ fontSize: "0.78rem", padding: "0.3rem 0.7rem", opacity: qActionBusy ? 0.6 : 1 }}
+                  disabled={!!qActionBusy}
                   onClick={async () => {
+                    setQActionBusy("cleaning");
                     try {
                       const res = await api.post("/questions/clean-generic");
+                      await refreshQuestions();
+                      setQActionBusy("");
                       if (res.data.deleted === 0) {
                         msg("✅ Bank is clean — no generic questions found");
                       } else {
-                        msg(`🗑️ Removed ${res.data.deleted} generic question${res.data.deleted !== 1 ? "s" : ""}`, "danger");
-                        setDataLoaded(prev => ({ ...prev, questions: false }));
-                        loadQuestions();
+                        msg(`🗑️ Removed ${res.data.deleted} generic question${res.data.deleted !== 1 ? "s" : ""}. Bank refreshed.`, "danger");
                       }
                     } catch (e) {
+                      setQActionBusy("");
                       msg(e?.response?.data?.error || "Clean failed", "danger");
                     }
                   }}
                 >
-                  🗑️ Clean Generic
+                  {qActionBusy === "cleaning" ? "⏳ Cleaning…" : "🗑️ Clean Generic"}
                 </button>
               </div>
               <div style={{display:"flex",gap:"0.5rem",flexWrap:"wrap"}}>
