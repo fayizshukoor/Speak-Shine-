@@ -23,6 +23,7 @@ import GroupChat from "./GroupChat.jsx";
 import LiveChat from "./LiveChat.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { getSharedSocket } from "../hooks/useSocket.js";
+import { useNoiseCancellation } from "../hooks/useNoiseCancellation.js";
 
 // ── Device Picker Popup ───────────────────────────────────────────────────────
 function DevicePicker({ kind, onClose }) {
@@ -95,7 +96,7 @@ function CtrlBtn({ icon, label, active = true, muted = false, danger = false, on
 }
 
 // ── Custom Control Bar ────────────────────────────────────────────────────────
-function CustomControls({ onLeave, chatOpen, onChatToggle, unreadCount }) {
+function CustomControls({ onLeave, chatOpen, onChatToggle, unreadCount, ncOn, onNcToggle, ncLoading }) {
   const { localParticipant } = useLocalParticipant();
   const [micOn,    setMicOn]    = useState(true);
   const [camOn,    setCamOn]    = useState(true);
@@ -181,6 +182,17 @@ function CustomControls({ onLeave, chatOpen, onChatToggle, unreadCount }) {
         active={!shareOn}
         onClick={toggleShare}
         style={shareOn ? { border: "1px solid rgba(124,111,255,0.5)", background: "rgba(124,111,255,0.2)", color: "#a78bfa" } : {}}
+      />
+
+      {/* Noise Cancellation */}
+      <CtrlBtn
+        icon={ncLoading ? "⏳" : ncOn ? "🎙️" : "🔊"}
+        label={ncLoading ? "Loading…" : ncOn ? "NC On" : "NC Off"}
+        active={!ncOn}
+        onClick={onNcToggle}
+        style={ncOn
+          ? { border: "1px solid rgba(74,222,128,0.5)", background: "rgba(74,222,128,0.12)", color: "#4ade80" }
+          : {}}
       />
 
       {/* Chat */}
@@ -388,8 +400,62 @@ function InnerRoom({ sessionId, userRole, onLeave, session }) {
   const [chatOpen,    setChatOpen]    = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [kicked,      setKicked]      = useState(false);
+  const [ncOn,        setNcOn]        = useState(false);
+  const [ncLoading,   setNcLoading]   = useState(false);
   const { token, user } = useAuth();
   const myPhone = user?.phone;
+  const { localParticipant } = useLocalParticipant();
+  const { applyNoiseCancellation, cleanupNC } = useNoiseCancellation();
+  const rawStreamRef = useRef(null); // keep original stream for toggling off
+
+  // ── Noise Cancellation toggle ──────────────────────────────────────────────
+  const handleNcToggle = async () => {
+    if (ncLoading) return;
+    setNcLoading(true);
+    try {
+      if (!ncOn) {
+        // Turn ON: get raw mic stream, apply RNNoise, publish clean track
+        const rawStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        rawStreamRef.current = rawStream;
+        const cleanStream = await applyNoiseCancellation(rawStream);
+        const cleanAudioTrack = cleanStream.getAudioTracks()[0];
+        if (cleanAudioTrack && localParticipant) {
+          await localParticipant.publishTrack(cleanAudioTrack, {
+            source: Track.Source.Microphone,
+            name: "microphone",
+          });
+          setNcOn(true);
+          console.log("[NC] Noise cancellation ON");
+        }
+      } else {
+        // Turn OFF: stop NC, republish raw mic
+        cleanupNC();
+        if (rawStreamRef.current) {
+          rawStreamRef.current.getTracks().forEach(t => t.stop());
+          rawStreamRef.current = null;
+        }
+        // Re-enable microphone normally through LiveKit
+        await localParticipant.setMicrophoneEnabled(false);
+        await localParticipant.setMicrophoneEnabled(true);
+        setNcOn(false);
+        console.log("[NC] Noise cancellation OFF");
+      }
+    } catch (err) {
+      console.error("[NC] Toggle failed:", err.message);
+    } finally {
+      setNcLoading(false);
+    }
+  };
+
+  // Cleanup NC on unmount
+  useEffect(() => {
+    return () => {
+      cleanupNC();
+      if (rawStreamRef.current) {
+        rawStreamRef.current.getTracks().forEach(t => t.stop());
+      }
+    };
+  }, []);
 
   // ── Background socket listeners (always active, regardless of chat panel state) ──
   useEffect(() => {
@@ -485,7 +551,7 @@ function InnerRoom({ sessionId, userRole, onLeave, session }) {
         </div>
       )}
 
-      <CustomControls onLeave={onLeave} chatOpen={chatOpen} onChatToggle={handleChatToggle} unreadCount={unreadCount} />
+      <CustomControls onLeave={onLeave} chatOpen={chatOpen} onChatToggle={handleChatToggle} unreadCount={unreadCount} ncOn={ncOn} onNcToggle={handleNcToggle} ncLoading={ncLoading} />
     </div>
   );
 }
