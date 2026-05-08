@@ -4,7 +4,7 @@
  */
 
 import jwt from "jsonwebtoken";
-import { roomKey, getMessages, saveMessages, MAX_MESSAGES, GROUP_ROOM } from "../services/chat/chatService.js";
+import { roomKey, liveSessionRoom, getMessages, saveMessages, MAX_MESSAGES, GROUP_ROOM } from "../services/chat/chatService.js";
 import { isRedisAvailable, getRedisClient } from "../../redis.js";
 import { sanitizeText, isValidPhone, SanitizeError, LIMITS } from "../utils/textSanitizer.js";
 
@@ -311,6 +311,77 @@ export function initializeChatSocket(io, onlineUsers) {
       if (!isValidPhone(peerPhone)) return;
       const room = roomKey(phone, peerPhone);
       socket.to(room).emit("chat:typing", { from: phone, isTyping: !!isTyping });
+    });
+
+    // ── Live Session Chat ────────────────────────────────────────────────────
+    // Each live session has its own isolated chat room: chat:live:{sessionId}
+    // Messages persist for 12h after the session ends.
+
+    socket.on("live:join", async ({ sessionId }) => {
+      if (!sessionId || typeof sessionId !== "string") return;
+      const liveRoom = liveSessionRoom(sessionId);
+      socket.join(liveRoom);
+
+      try {
+        if (isRedisAvailable()) {
+          const redis = getRedisClient();
+          const messages = await getMessages(redis, liveRoom);
+          socket.emit("live:history", { sessionId, messages });
+        } else {
+          socket.emit("live:history", { sessionId, messages: [] });
+        }
+      } catch (err) {
+        console.error(`[Chat] live:join error for ${name}:`, err);
+        socket.emit("live:history", { sessionId, messages: [] });
+      }
+    });
+
+    socket.on("live:send", async ({ sessionId, text }) => {
+      if (!sessionId || typeof sessionId !== "string") return;
+
+      if (!checkRateLimit(phone)) {
+        socket.emit("chat:error", { message: "Sending too fast. Please slow down." });
+        return;
+      }
+
+      let cleanText;
+      try {
+        cleanText = sanitizeText(text, LIMITS.CHAT_MESSAGE, "Message");
+      } catch (err) {
+        socket.emit("chat:error", { message: err instanceof SanitizeError ? err.message : "Invalid message" });
+        return;
+      }
+
+      const liveRoom = liveSessionRoom(sessionId);
+      const message = {
+        id:       `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        from:     phone,
+        fromName: name,
+        role,
+        text:     cleanText,
+        ts:       Date.now(),
+      };
+
+      try {
+        if (isRedisAvailable()) {
+          const redis = getRedisClient();
+          const messages = await getMessages(redis, liveRoom);
+          messages.push(message);
+          if (messages.length > MAX_MESSAGES) messages.splice(0, messages.length - MAX_MESSAGES);
+          // Keep TTL alive while session is active (24h rolling)
+          await saveMessages(redis, liveRoom, messages, 86400);
+        }
+        io.to(liveRoom).emit("live:message", { sessionId, message });
+      } catch (err) {
+        console.error(`[Chat] live:send error for ${name}:`, err);
+        socket.emit("chat:error", { message: "Failed to send message" });
+      }
+    });
+
+    socket.on("live:typing", ({ sessionId, isTyping }) => {
+      if (!sessionId || typeof sessionId !== "string") return;
+      const liveRoom = liveSessionRoom(sessionId);
+      socket.to(liveRoom).emit("live:typing", { from: phone, fromName: name, isTyping: !!isTyping });
     });
 
     socket.on("disconnect", () => {

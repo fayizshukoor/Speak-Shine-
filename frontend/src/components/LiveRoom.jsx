@@ -20,6 +20,7 @@ import "@livekit/components-styles";
 import api from "../api/client.js";
 import { useToast } from "./Toast.jsx";
 import GroupChat from "./GroupChat.jsx";
+import LiveChat from "./LiveChat.jsx";
 
 // ── Device Picker Popup ───────────────────────────────────────────────────────
 function DevicePicker({ kind, onClose }) {
@@ -384,12 +385,11 @@ function InnerRoom({ sessionId, userRole, onLeave, session }) {
             >✕</button>
           </div>
 
-          {/* GroupChat without its own header */}
+          {/* LiveChat — session-specific, isolated from group chat */}
           <div className="live-room-chat" style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-            <GroupChat
-              onClose={() => setChatOpen(false)}
+            <LiveChat
+              sessionId={sessionId}
               onUnread={handleUnread}
-              hideHeader
             />
           </div>
         </div>

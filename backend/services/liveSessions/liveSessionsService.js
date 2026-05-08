@@ -5,6 +5,7 @@
 
 import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
 import LiveSession from "../../../models/liveSessionSchema.js";
+import { expireLiveSessionChat } from "../chat/chatService.js";
 
 const LIVEKIT_URL = process.env.LIVEKIT_URL || "wss://your-project.livekit.cloud";
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
@@ -233,6 +234,9 @@ export async function endSession(sessionId, io) {
   } catch (e) {
     console.warn("[LiveKit] Could not delete room:", e.message);
   }
+
+  // Set 12h expiry on the session's chat messages
+  await expireLiveSessionChat(session._id.toString());
   
   // Emit socket event if io is available
   if (io) {
