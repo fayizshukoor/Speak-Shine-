@@ -1,29 +1,23 @@
 /**
  * LiveRoom.jsx — Full-screen video conference
  *
- * Uses LiveKit's GridLayout + RoomAudioRenderer for correct audio/video.
- * Custom grid fills all available space with no black voids.
- * Responsive: works on mobile, tablet, desktop.
+ * Uses LiveKit's VideoConference (handles audio, video, layout correctly).
+ * Chat panel hidden via CSS — we use our own app chat.
+ * Rendered without Layout wrapper so it truly fills 100vh.
  */
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import {
   LiveKitRoom,
-  GridLayout,
-  ParticipantTile,
-  RoomAudioRenderer,
-  ControlBar,
-  useTracks,
+  VideoConference,
   useParticipants,
-  useLocalParticipant,
 } from "@livekit/components-react";
-import { Track } from "livekit-client";
 import "@livekit/components-styles";
 import api from "../api/client.js";
 import { useToast } from "./Toast.jsx";
 
-// ── Admin Controls Panel ─────────────────────────────────────────────────────
-function AdminControls({ sessionId }) {
+// ── Admin / Trainer Controls Panel ───────────────────────────────────────────
+function ParticipantsPanel({ sessionId }) {
   const participants = useParticipants();
   const [busy, setBusy]           = useState({});
   const [collapsed, setCollapsed] = useState(false);
@@ -63,7 +57,7 @@ function AdminControls({ sessionId }) {
         onClick={() => setCollapsed(v => !v)}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-          <span style={{ fontSize: "0.85rem" }}>🛡️</span>
+          <span>🛡️</span>
           {!collapsed && (
             <span style={{ fontWeight: 700, fontSize: "0.8rem", color: "#e2e8f0" }}>
               Participants
@@ -119,14 +113,14 @@ function AdminControls({ sessionId }) {
                       background: p.isMicrophoneEnabled ? "rgba(74,222,128,0.12)" : "rgba(248,113,113,0.12)",
                       color: p.isMicrophoneEnabled ? "#4ade80" : "#f87171",
                     }}>
-                      {p.isMicrophoneEnabled ? "🎤 On" : "🔇 Off"}
+                      {p.isMicrophoneEnabled ? "🎤" : "🔇"}
                     </span>
                     <span style={{
                       fontSize: "0.58rem", padding: "0.08rem 0.28rem", borderRadius: 4,
                       background: p.isCameraEnabled ? "rgba(74,222,128,0.12)" : "rgba(248,113,113,0.12)",
                       color: p.isCameraEnabled ? "#4ade80" : "#f87171",
                     }}>
-                      {p.isCameraEnabled ? "📹 On" : "🚫 Off"}
+                      {p.isCameraEnabled ? "📹" : "🚫"}
                     </span>
                   </div>
                 </div>
@@ -201,7 +195,7 @@ function SessionInfoBar({ session }) {
       borderRadius: 10, padding: "0.45rem 0.85rem",
       display: "flex", alignItems: "center", gap: "0.6rem",
       boxShadow: "0 4px 20px rgba(0,0,0,0.6)",
-      maxWidth: "calc(100vw - 280px)", // don't overlap admin panel
+      maxWidth: "calc(100vw - 280px)",
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", flexShrink: 0 }}>
         <div style={{
@@ -228,121 +222,19 @@ function SessionInfoBar({ session }) {
   );
 }
 
-// ── Responsive Video Grid ─────────────────────────────────────────────────────
-function ResponsiveGrid() {
-  const tracks = useTracks(
-    [
-      { source: Track.Source.Camera,      withPlaceholder: true },
-      { source: Track.Source.ScreenShare, withPlaceholder: false },
-    ],
-    { onlySubscribed: false }
-  );
-
-  const count = tracks.length;
-
-  // Calculate grid columns based on count and viewport
-  const getColumns = () => {
-    if (count === 1) return 1;
-    if (count === 2) return 2;
-    if (count === 3) return 2; // 2+1 layout handled below
-    if (count === 4) return 2;
-    if (count <= 6)  return 3;
-    if (count <= 9)  return 3;
-    return 4;
-  };
-
-  const cols = getColumns();
-
-  // For 3 participants: use CSS grid-template-areas for centered 3rd tile
-  const is3 = count === 3;
-
+// ── Inner Room (needs LiveKit context) ────────────────────────────────────────
+function InnerRoom({ sessionId, userRole, session }) {
   return (
-    <div style={{
-      flex: 1,
-      display: "grid",
-      gridTemplateColumns: `repeat(${cols}, 1fr)`,
-      gridTemplateRows: is3 ? "1fr 1fr" : `repeat(${Math.ceil(count / cols)}, 1fr)`,
-      gap: "0.5rem",
-      padding: "0.5rem",
-      height: "100%",
-      width: "100%",
-      boxSizing: "border-box",
-      ...(is3 ? { gridTemplateAreas: '"a b" "c c"' } : {}),
-    }}>
-      {tracks.map((track, i) => (
-        <div
-          key={track.participant.identity + track.source}
-          style={{
-            position: "relative",
-            borderRadius: 12,
-            overflow: "hidden",
-            background: "#0d0d1f",
-            minHeight: 0,
-            // Center the 3rd tile in 3-participant layout
-            ...(is3 && i === 2 ? {
-              gridArea: "c",
-              maxWidth: "50%",
-              width: "100%",
-              margin: "0 auto",
-              justifySelf: "center",
-            } : {}),
-          }}
-        >
-          <ParticipantTile
-            trackRef={track}
-            style={{ width: "100%", height: "100%", borderRadius: 12 }}
-          />
-        </div>
-      ))}
-    </div>
-  );
-}
+    <>
+      {/* VideoConference handles audio + video + layout + controls */}
+      <VideoConference />
 
-// ── Inner Room ────────────────────────────────────────────────────────────────
-function InnerRoom({ sessionId, userRole, onLeave, session }) {
-  return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 400,
-      background: "#07071a",
-      display: "flex", flexDirection: "column",
-    }}>
-      {/* Audio renderer — MUST be present for remote audio to play */}
-      <RoomAudioRenderer />
-
-      {/* Overlays */}
+      {/* Our overlays on top */}
       <SessionInfoBar session={session} />
       {(userRole === "admin" || userRole === "trainer") && (
-        <AdminControls sessionId={sessionId} />
+        <ParticipantsPanel sessionId={sessionId} />
       )}
-
-      {/* Video grid — fills all space between top and bottom bar */}
-      <div style={{
-        flex: 1,
-        paddingTop: 52,    // clear the info bar
-        paddingBottom: 80, // clear the control bar
-        overflow: "hidden",
-        display: "flex",
-      }}>
-        <ResponsiveGrid />
-      </div>
-
-      {/* Control bar — styled via CSS */}
-      <ControlBar
-        variation="minimal"
-        controls={{ microphone: true, camera: true, screenShare: true, chat: false, leave: true }}
-        style={{
-          position: "fixed", bottom: 0, left: 0, right: 0,
-          zIndex: 9998,
-          background: "rgba(8,8,20,0.97)",
-          backdropFilter: "blur(20px)",
-          borderTop: "1px solid rgba(255,255,255,0.07)",
-          padding: "0.6rem 1.5rem",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          gap: "0.5rem",
-          height: 72,
-        }}
-      />
-    </div>
+    </>
   );
 }
 
@@ -412,7 +304,7 @@ export default function LiveRoom({ sessionId, userRole, onLeave }) {
       video={true}
       audio={true}
       onDisconnected={onLeave}
-      style={{ height: "100vh", width: "100vw" }}
+      style={{ height: "100vh", width: "100vw", position: "fixed", inset: 0, zIndex: 400 }}
     >
       <InnerRoom
         sessionId={sessionId}

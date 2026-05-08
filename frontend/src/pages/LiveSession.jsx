@@ -141,14 +141,15 @@ export default function LiveSession() {
     );
   }
 
-  return (
-    <Layout title={session.title}>
+  // When in room — render full-screen with NO Layout wrapper
+  if (inRoom) {
+    return (
       <LiveRoom
         sessionId={id}
         userRole={user.role}
         onLeave={handleLeave}
         onSessionEnded={handleLeave}
       />
-    </Layout>
-  );
+    );
+  }
 }
