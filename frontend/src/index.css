@@ -1864,4 +1864,15 @@ button[aria-label="Toggle Chat"] {
   border-radius: 0;
 }
 
+/* Hide native fullscreen button from video controls bar */
+.community-video-wrap video::-webkit-media-controls-fullscreen-button {
+  display: none !important;
+}
+.community-video-wrap video::-webkit-media-controls-toggle-closed-captions-button {
+  display: none !important;
+}
+.community-video-wrap video::-webkit-media-controls-overflow-button {
+  display: none !important;
+}
+
 
