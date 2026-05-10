@@ -49,7 +49,15 @@ function DevicePicker({ kind, onClose }) {
         </div>
       )}
       {devices?.map(d => (
-        <button type="button" key={d.deviceId} onClick={() => { setActiveMediaDevice(d.deviceId); onClose(); }}
+        <button type="button" key={d.deviceId} onClick={async (e) => { 
+          e.preventDefault();
+          try {
+            await setActiveMediaDevice(d.deviceId); 
+          } catch(err) {
+            console.error("Device swap failed:", err);
+          }
+          onClose(); 
+        }}
           style={{
             display: "flex", alignItems: "center", gap: "0.5rem",
             width: "100%", padding: "0.5rem 0.6rem", borderRadius: 8,
@@ -73,7 +81,7 @@ function CtrlBtn({ icon, label, active = true, muted = false, danger = false, pe
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={(e) => { e.preventDefault(); onClick(e); }}
       disabled={pending}
       style={{
         display: "flex", flexDirection: "column", alignItems: "center",
@@ -247,7 +255,7 @@ function CustomControls({ onLeave, chatOpen, onChatToggle, unreadCount, ncOn, on
           label={micOn ? "Mute" : "Unmute"}
           active={micOn} muted={!micOn}
           pending={micPending}
-          onClick={() => toggleMic()}
+          onClick={async () => { try { await toggleMic(); } catch(e) { console.error(e); } }}
           style={{ borderRadius: "16px 0 0 16px" }}
         />
         <button type="button" style={chevronStyle(!micOn)} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setPicker(p => p === "audioinput" ? null : "audioinput"); }}>▲</button>
@@ -261,7 +269,7 @@ function CustomControls({ onLeave, chatOpen, onChatToggle, unreadCount, ncOn, on
           label={camOn ? "Camera" : "No Cam"}
           active={camOn} muted={!camOn}
           pending={camPending}
-          onClick={() => toggleCam()}
+          onClick={async () => { try { await toggleCam(); } catch(e) { console.error(e); } }}
           style={{ borderRadius: "16px 0 0 16px" }}
         />
         <button type="button" style={chevronStyle(!camOn)} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setPicker(p => p === "videoinput" ? null : "videoinput"); }}>▲</button>
@@ -274,7 +282,7 @@ function CustomControls({ onLeave, chatOpen, onChatToggle, unreadCount, ncOn, on
         label={shareOn ? "Sharing" : "Share"}
         active={!shareOn}
         pending={sharePending}
-        onClick={() => toggleShare()}
+        onClick={async () => { try { await toggleShare(); } catch(e) { console.error(e); } }}
         style={shareOn ? { border: "1px solid rgba(124,111,255,0.5)", background: "rgba(124,111,255,0.2)", color: "#a78bfa" } : {}}
       />
 
