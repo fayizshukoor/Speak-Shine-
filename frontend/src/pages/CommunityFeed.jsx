@@ -480,7 +480,11 @@ export default function CommunityFeed() {
   const [showComments, setShowComments] = useState({}); // id → bool
   const isObscured = useContentProtection();
 
-  const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="280" height="140"><text x="50%" y="50%" transform="rotate(-25 140 70)" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="900" fill="rgba(255,255,255,0.15)" stroke="rgba(0,0,0,0.6)" stroke-width="0.5" letter-spacing="1">${user?.name || "User"} • ${user?.phone || ""}</text></svg>`;
+  const identity = `${user?.name || "User"} • ${user?.phone || ""}`;
+  const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="120">
+    <text x="150" y="45" transform="rotate(-20 150 60)" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="900" fill="rgba(255,255,255,0.5)" stroke="rgba(0,0,0,0.9)" stroke-width="1" letter-spacing="2">${identity}</text>
+    <text x="150" y="90" transform="rotate(-20 150 60)" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" font-weight="700" fill="rgba(255,255,255,0.3)" stroke="rgba(0,0,0,0.7)" stroke-width="0.5" letter-spacing="1">🔒 CONFIDENTIAL</text>
+  </svg>`;
   const watermarkUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgStr)}`;
 
   useEffect(() => {
@@ -615,22 +619,51 @@ export default function CommunityFeed() {
 
               {/* Video player */}
               {playing === item._id ? (
-                <div style={{ position: "relative" }}>
+                <div style={{ position: "relative", borderRadius: "10px", overflow: "hidden" }}>
                   <video
                     src={item.videoUrl}
-                    controls controlsList="nodownload" autoPlay playsInline preload="metadata"
+                    controls controlsList="nodownload nofullscreen noremoteplayback" autoPlay playsInline preload="metadata"
                     disablePictureInPicture
                     onContextMenu={e => e.preventDefault()}
-                    style={{ width: "100%", borderRadius: "10px", background: "#000", maxHeight: "400px", pointerEvents: "auto" }}
+                    style={{ width: "100%", borderRadius: "10px", background: "#000", maxHeight: "400px", display: "block" }}
                   />
-                  {/* Anti-piracy Watermark */}
+
+                  {/* Tiled repeating diagonal watermark */}
                   <div style={{
                     position: "absolute", inset: 0,
                     pointerEvents: "none", zIndex: 10,
                     backgroundImage: `url("${watermarkUrl}")`,
                     backgroundRepeat: "repeat",
-                    opacity: 0.8
+                    backgroundSize: "300px 120px",
                   }} />
+
+                  {/* Top-left corner stamp */}
+                  <div style={{
+                    position: "absolute", top: 10, left: 10, zIndex: 20,
+                    pointerEvents: "none",
+                    background: "rgba(0,0,0,0.65)",
+                    borderRadius: 6,
+                    padding: "4px 10px",
+                    color: "rgba(255,255,255,0.85)",
+                    fontSize: "0.72rem", fontWeight: 800,
+                    letterSpacing: "0.05em",
+                    backdropFilter: "blur(4px)",
+                    border: "1px solid rgba(255,255,255,0.15)"
+                  }}>🔒 {identity}</div>
+
+                  {/* Bottom-right corner stamp */}
+                  <div style={{
+                    position: "absolute", bottom: 46, right: 10, zIndex: 20,
+                    pointerEvents: "none",
+                    background: "rgba(0,0,0,0.65)",
+                    borderRadius: 6,
+                    padding: "4px 10px",
+                    color: "rgba(255,180,0,0.9)",
+                    fontSize: "0.7rem", fontWeight: 800,
+                    letterSpacing: "0.04em",
+                    backdropFilter: "blur(4px)",
+                    border: "1px solid rgba(255,180,0,0.3)"
+                  }}>CONFIDENTIAL • {identity}</div>
 
                   <button onClick={() => setPlaying(null)}
                     style={{ marginTop: "0.5rem", fontSize: "0.78rem", color: "var(--muted)", background: "none", border: "none", cursor: "pointer" }}>
