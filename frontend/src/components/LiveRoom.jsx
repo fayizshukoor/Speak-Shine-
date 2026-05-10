@@ -14,6 +14,7 @@ import {
   useLocalParticipant,
   useTracks,
   useTrackToggle,
+  useMediaDeviceSelect,
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
 import "@livekit/components-styles";
