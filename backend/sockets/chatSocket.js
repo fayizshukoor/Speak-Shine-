@@ -428,6 +428,42 @@ export function initializeChatSocket(io, onlineUsers) {
       socket.to(liveRoom).emit("live:typing", { from: phone, fromName: name, isTyping: !!isTyping });
     });
 
+    // ── Live: Hand Raise ─────────────────────────────────────────────────────
+    socket.on("live:raise-hand", ({ sessionId }) => {
+      if (!isValidSessionId(sessionId)) return;
+      const liveRoom = liveSessionRoom(sessionId);
+      io.to(liveRoom).emit("live:hand-raised", {
+        from: phone,
+        fromName: name,
+        role,
+        ts: Date.now(),
+      });
+      console.log(`[Chat] ✋ Hand raised: ${name} in session ${sessionId}`);
+    });
+
+    socket.on("live:lower-hand", ({ sessionId }) => {
+      if (!isValidSessionId(sessionId)) return;
+      const liveRoom = liveSessionRoom(sessionId);
+      io.to(liveRoom).emit("live:hand-lowered", { from: phone });
+      console.log(`[Chat] ✋ Hand lowered: ${name} in session ${sessionId}`);
+    });
+
+    // ── Live: Emoji Reaction ─────────────────────────────────────────────────
+    // Ephemeral — not stored, just broadcast to all in the session room
+    socket.on("live:reaction", ({ sessionId, emoji }) => {
+      if (!isValidSessionId(sessionId)) return;
+      // Whitelist allowed emojis to prevent abuse
+      const ALLOWED_EMOJIS = ["👍","❤️","😂","😮","👏","🎉","🔥","😍","🙌","💯","🤔","😢","💪","🚀","⭐"];
+      if (!ALLOWED_EMOJIS.includes(emoji)) return;
+      const liveRoom = liveSessionRoom(sessionId);
+      io.to(liveRoom).emit("live:reaction", {
+        from: phone,
+        fromName: name,
+        emoji,
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      });
+    });
+
     socket.on("disconnect", () => {
       onlineUsers.delete(phone);
       console.log(`[Chat] Disconnected: ${name} (${phone})`);

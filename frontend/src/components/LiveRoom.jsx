@@ -4,7 +4,7 @@
  * Includes in-room group chat panel (reuses GroupChat component).
  */
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import {
   LiveKitRoom,
   GridLayout,
@@ -95,8 +95,95 @@ function CtrlBtn({ icon, label, active = true, muted = false, danger = false, on
   );
 }
 
+// ── Emoji Reactions Overlay ──────────────────────────────────────────────────
+const EMOJI_LIST = ["👍","❤️","😂","😮","👏","🎉","🔥","😍","🙌","💯","🤔","😢","💪","🚀","⭐"];
+
+function FloatingReactions({ reactions }) {
+  return (
+    <div style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:99990, overflow:"hidden" }}>
+      {reactions.map(r => (
+        <div key={r.id} style={{
+          position:"absolute",
+          left: r.x + "%",
+          bottom: "90px",
+          fontSize: "2.4rem",
+          lineHeight:1,
+          animation:"floatUp 3s ease-out forwards",
+          userSelect:"none",
+        }}>
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:"0.15rem" }}>
+            <span>{r.emoji}</span>
+            <span style={{ fontSize:"0.55rem", color:"#e2e8f0", background:"rgba(0,0,0,0.55)", borderRadius:6, padding:"0.05rem 0.3rem", whiteSpace:"nowrap" }}>{r.fromName}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Emoji Picker Bar ──────────────────────────────────────────────────────────
+function EmojiPickerBar({ onPick, onClose }) {
+  return (
+    <div style={{
+      position:"absolute", bottom:"calc(100% + 10px)", left:"50%",
+      transform:"translateX(-50%)",
+      background:"rgba(10,10,26,0.98)", backdropFilter:"blur(20px)",
+      border:"1px solid rgba(124,111,255,0.25)", borderRadius:16,
+      padding:"0.5rem 0.6rem",
+      display:"flex", gap:"0.3rem", flexWrap:"wrap",
+      maxWidth:260, zIndex:100000,
+      boxShadow:"0 -8px 32px rgba(0,0,0,0.7)",
+      animation:"slideUpIn 0.15s ease",
+    }}>
+      {EMOJI_LIST.map(e => (
+        <button key={e} onClick={() => { onPick(e); onClose(); }} style={{
+          background:"none", border:"none", fontSize:"1.5rem",
+          cursor:"pointer", borderRadius:8, padding:"0.25rem",
+          transition:"transform 0.12s, background 0.12s",
+          lineHeight:1,
+        }}
+          onMouseEnter={ev => { ev.currentTarget.style.background="rgba(124,111,255,0.2)"; ev.currentTarget.style.transform="scale(1.3)"; }}
+          onMouseLeave={ev => { ev.currentTarget.style.background="none"; ev.currentTarget.style.transform="scale(1)"; }}
+        >{e}</button>
+      ))}
+    </div>
+  );
+}
+
+// ── Hand Raise Queue (host view) ─────────────────────────────────────────────
+function HandRaiseQueue({ raisedHands, onDismiss }) {
+  if (raisedHands.length === 0) return null;
+  return (
+    <div style={{
+      position:"fixed", top:60, left:"50%", transform:"translateX(-50%)",
+      zIndex:99995, display:"flex", flexDirection:"column", gap:"0.4rem",
+      pointerEvents:"none",
+    }}>
+      {raisedHands.map(h => (
+        <div key={h.from} style={{
+          display:"flex", alignItems:"center", gap:"0.5rem",
+          background:"rgba(251,191,36,0.15)", backdropFilter:"blur(16px)",
+          border:"1px solid rgba(251,191,36,0.4)", borderRadius:10,
+          padding:"0.4rem 0.8rem", pointerEvents:"all",
+          animation:"slideUpIn 0.2s ease",
+          boxShadow:"0 4px 20px rgba(0,0,0,0.6)",
+        }}>
+          <span style={{ fontSize:"1.1rem" }}>✋</span>
+          <span style={{ fontSize:"0.78rem", fontWeight:700, color:"#fde68a" }}>{h.fromName}</span>
+          <span style={{ fontSize:"0.68rem", color:"#92400e" }}>raised hand</span>
+          <button onClick={() => onDismiss(h.from)} style={{
+            background:"rgba(251,191,36,0.2)", border:"1px solid rgba(251,191,36,0.3)",
+            color:"#fbbf24", borderRadius:6, cursor:"pointer",
+            fontSize:"0.62rem", fontWeight:700, padding:"0.1rem 0.4rem",
+          }}>✓ Dismiss</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Custom Control Bar ────────────────────────────────────────────────────────
-function CustomControls({ onLeave, chatOpen, onChatToggle, unreadCount, ncOn, onNcToggle, ncLoading }) {
+function CustomControls({ onLeave, chatOpen, onChatToggle, unreadCount, ncOn, onNcToggle, ncLoading, handRaised, onHandToggle, onReaction }) {
   const { localParticipant, isMicrophoneEnabled, isCameraEnabled } = useLocalParticipant();
   const [shareOn,  setShareOn]  = useState(false);
   const [picker,   setPicker]   = useState(null);
@@ -212,7 +299,6 @@ function CustomControls({ onLeave, chatOpen, onChatToggle, unreadCount, ncOn, on
                 : {}
           }
         />
-        {/* Unread badge — prominent, pulsing */}
         {unreadCount > 0 && !chatOpen && (
           <div style={{
             position: "absolute", top: -6, right: -6,
@@ -230,6 +316,23 @@ function CustomControls({ onLeave, chatOpen, onChatToggle, unreadCount, ncOn, on
             {unreadCount > 99 ? "99+" : unreadCount}
           </div>
         )}
+      </div>
+
+      {/* Hand Raise */}
+      <CtrlBtn
+        icon={handRaised ? "✋" : "🖐️"}
+        label={handRaised ? "Lower" : "Raise"}
+        active={!handRaised}
+        onClick={onHandToggle}
+        style={handRaised
+          ? { border:"1px solid rgba(251,191,36,0.6)", background:"rgba(251,191,36,0.2)", color:"#fbbf24", animation:"handPulse 1s ease-in-out infinite" }
+          : {}}
+      />
+
+      {/* Emoji Reactions */}
+      <div style={{ position:"relative" }}>
+        <CtrlBtn icon="😀" label="React" active onClick={() => setPicker(p => p === "emoji" ? null : "emoji")} style={picker==="emoji" ? { border:"1px solid rgba(124,111,255,0.5)", background:"rgba(124,111,255,0.2)", color:"#a78bfa" } : {}} />
+        {picker === "emoji" && <EmojiPickerBar onPick={onReaction} onClose={() => setPicker(null)} />}
       </div>
 
       {/* Leave */}
@@ -404,11 +507,15 @@ function InnerRoom({ sessionId, userRole, onLeave, session }) {
   const [kicked,      setKicked]      = useState(false);
   const [ncOn,        setNcOn]        = useState(false);
   const [ncLoading,   setNcLoading]   = useState(false);
+  const [handRaised,  setHandRaised]  = useState(false);
+  const [raisedHands, setRaisedHands] = useState([]); // [{from, fromName, ts}]
+  const [reactions,   setReactions]   = useState([]);  // [{id, emoji, fromName, x}]
   const { token, user } = useAuth();
   const myPhone = user?.phone;
   const { localParticipant } = useLocalParticipant();
   const { applyNoiseCancellation, cleanupNC } = useNoiseCancellation();
-  const rawStreamRef = useRef(null); // keep original stream for toggling off
+  const rawStreamRef = useRef(null);
+  const socketRef    = useRef(null);
 
   // ── Noise Cancellation toggle ──────────────────────────────────────────────
   const handleNcToggle = async () => {
@@ -459,15 +566,32 @@ function InnerRoom({ sessionId, userRole, onLeave, session }) {
     };
   }, []);
 
-  // ── Background socket listeners (always active, regardless of chat panel state) ──
+  // ── Hand raise toggle ─────────────────────────────────────────────────────
+  const handleHandToggle = useCallback(() => {
+    if (!socketRef.current) return;
+    if (!handRaised) {
+      socketRef.current.emit("live:raise-hand", { sessionId });
+      setHandRaised(true);
+    } else {
+      socketRef.current.emit("live:lower-hand", { sessionId });
+      setHandRaised(false);
+    }
+  }, [handRaised, sessionId]);
+
+  // ── Emoji reaction send ────────────────────────────────────────────────────
+  const handleReaction = useCallback((emoji) => {
+    if (!socketRef.current) return;
+    socketRef.current.emit("live:reaction", { sessionId, emoji });
+  }, [sessionId]);
+
+  // ── Background socket listeners ───────────────────────────────────────────
   useEffect(() => {
     if (!token) return;
     const socket = getSharedSocket(token);
+    socketRef.current = socket;
 
-    // Count unread messages when chat panel is closed
     const onLiveMessage = ({ message }) => {
       if (!message) return;
-      // Only count messages from others, and only when chat is closed
       if (message.from !== myPhone) {
         setChatOpen(open => {
           if (!open) setUnreadCount(c => c + 1);
@@ -476,7 +600,6 @@ function InnerRoom({ sessionId, userRole, onLeave, session }) {
       }
     };
 
-    // Kicked from session
     const onKicked = ({ sessionId: sid }) => {
       if (sid?.toString() === sessionId?.toString()) {
         setKicked(true);
@@ -484,20 +607,41 @@ function InnerRoom({ sessionId, userRole, onLeave, session }) {
       }
     };
 
-    socket.on("live:message",   onLiveMessage);
-    socket.on("session:kicked", onKicked);
+    const onHandRaised = ({ from, fromName, ts }) => {
+      setRaisedHands(prev => {
+        if (prev.some(h => h.from === from)) return prev;
+        return [...prev, { from, fromName, ts }];
+      });
+    };
+    const onHandLowered = ({ from }) => {
+      setRaisedHands(prev => prev.filter(h => h.from !== from));
+      if (from === myPhone) setHandRaised(false);
+    };
 
-    // Join the session chat room so we receive messages even when panel is closed
-    if (socket.connected) {
-      socket.emit("live:join", { sessionId });
-    }
+    const onReaction = ({ id, emoji, fromName }) => {
+      const x = 5 + Math.random() * 85; // random horizontal %
+      const rid = id || `${Date.now()}-${Math.random()}`;
+      setReactions(prev => [...prev, { id: rid, emoji, fromName, x }]);
+      setTimeout(() => setReactions(prev => prev.filter(r => r.id !== rid)), 3200);
+    };
+
+    socket.on("live:message",     onLiveMessage);
+    socket.on("session:kicked",   onKicked);
+    socket.on("live:hand-raised", onHandRaised);
+    socket.on("live:hand-lowered",onHandLowered);
+    socket.on("live:reaction",    onReaction);
+
+    if (socket.connected) socket.emit("live:join", { sessionId });
     const onConnect = () => socket.emit("live:join", { sessionId });
     socket.on("connect", onConnect);
 
     return () => {
-      socket.off("live:message",   onLiveMessage);
-      socket.off("session:kicked", onKicked);
-      socket.off("connect",        onConnect);
+      socket.off("live:message",     onLiveMessage);
+      socket.off("session:kicked",   onKicked);
+      socket.off("live:hand-raised", onHandRaised);
+      socket.off("live:hand-lowered",onHandLowered);
+      socket.off("live:reaction",    onReaction);
+      socket.off("connect",          onConnect);
     };
   }, [token, sessionId, myPhone]);
 
@@ -519,11 +663,16 @@ function InnerRoom({ sessionId, userRole, onLeave, session }) {
     );
   }
 
+  const dismissHand = (from) => setRaisedHands(prev => prev.filter(h => h.from !== from));
+
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "#07071a", display: "flex", flexDirection: "column" }}>
       <RoomAudioRenderer />
       <SessionInfoBar session={session} />
       {(userRole === "admin" || userRole === "trainer") && <ParticipantsPanel sessionId={sessionId} />}
+      {(userRole === "admin" || userRole === "trainer") && <HandRaiseQueue raisedHands={raisedHands} onDismiss={dismissHand} />}
+
+      <FloatingReactions reactions={reactions} />
 
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 76 }}>
         <VideoGrid />
@@ -553,7 +702,18 @@ function InnerRoom({ sessionId, userRole, onLeave, session }) {
         </div>
       )}
 
-      <CustomControls onLeave={onLeave} chatOpen={chatOpen} onChatToggle={handleChatToggle} unreadCount={unreadCount} ncOn={ncOn} onNcToggle={handleNcToggle} ncLoading={ncLoading} />
+      <CustomControls
+        onLeave={onLeave}
+        chatOpen={chatOpen}
+        onChatToggle={handleChatToggle}
+        unreadCount={unreadCount}
+        ncOn={ncOn}
+        onNcToggle={handleNcToggle}
+        ncLoading={ncLoading}
+        handRaised={handRaised}
+        onHandToggle={handleHandToggle}
+        onReaction={handleReaction}
+      />
     </div>
   );
 }
