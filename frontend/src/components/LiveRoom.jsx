@@ -821,7 +821,7 @@ export default function LiveRoom({ sessionId, userRole, onLeave }) {
   );
 
   return (
-    <LiveKitRoom token={token} serverUrl={lkUrl} connect={true} video={true} audio={true} onDisconnected={onLeave} style={{ height: "100vh", width: "100vw" }}>
+    <LiveKitRoom token={token} serverUrl={lkUrl} connect={true} video={true} audio={true} onDisconnected={() => console.warn("LiveKit disconnected")} style={{ height: "100vh", width: "100vw" }}>
       <InnerRoom sessionId={sessionId} userRole={userRole} onLeave={onLeave} session={session} />
     </LiveKitRoom>
   );
