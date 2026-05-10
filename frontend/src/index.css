@@ -1369,6 +1369,16 @@ button[aria-label="Toggle Chat"] {
   50%       { box-shadow: 0 0 0 8px rgba(251,191,36,0); }
 }
 
+@keyframes waveHand {
+  0%   { transform: rotate(0deg);   }
+  15%  { transform: rotate(20deg);  }
+  30%  { transform: rotate(-10deg); }
+  45%  { transform: rotate(20deg);  }
+  60%  { transform: rotate(-5deg);  }
+  75%  { transform: rotate(10deg);  }
+  100% { transform: rotate(0deg);   }
+}
+
 @keyframes slideUpIn {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }

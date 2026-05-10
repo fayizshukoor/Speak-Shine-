@@ -120,24 +120,51 @@ function CtrlBtn({ icon, label, active = true, muted = false, danger = false, pe
 }
 
 // ── Emoji Reactions Overlay ──────────────────────────────────────────────────
-const EMOJI_LIST = ["👍","❤️","😂","😮","👏","🎉","🔥","😍","🙌","💯","🤔","😢","💪","🚀","⭐"];
+const EMOJI_LIST = [
+  "👍","👎","❤️","😂","😮","😢",
+  "👏","🎉","🔥","😍","🙌","💯",
+  "🤔","💪","🚀","⭐","😎","🥳",
+];
 
 function FloatingReactions({ reactions }) {
   return (
     <div style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:99990, overflow:"hidden" }}>
-      {reactions.map(r => (
+      {reactions.map((r, i) => (
         <div key={r.id} style={{
           position:"absolute",
           left: r.x + "%",
-          bottom: "90px",
-          fontSize: "2.4rem",
-          lineHeight:1,
-          animation:"floatUp 3s ease-out forwards",
+          bottom: "96px",
           userSelect:"none",
+          animation:`floatUp 3.2s cubic-bezier(0.25,0.46,0.45,0.94) forwards`,
+          animationDelay: `${(i % 3) * 0.08}s`,
         }}>
-          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:"0.15rem" }}>
-            <span>{r.emoji}</span>
-            <span style={{ fontSize:"0.55rem", color:"#e2e8f0", background:"rgba(0,0,0,0.55)", borderRadius:6, padding:"0.05rem 0.3rem", whiteSpace:"nowrap" }}>{r.fromName}</span>
+          {/* Glow bubble */}
+          <div style={{
+            display:"flex", flexDirection:"column", alignItems:"center", gap:"0.25rem",
+          }}>
+            <div style={{
+              fontSize:"2.6rem", lineHeight:1,
+              background:"rgba(10,10,26,0.75)",
+              backdropFilter:"blur(12px)",
+              borderRadius:"50%",
+              width:"3.4rem", height:"3.4rem",
+              display:"flex", alignItems:"center", justifyContent:"center",
+              border:"1.5px solid rgba(255,255,255,0.15)",
+              boxShadow:"0 4px 20px rgba(0,0,0,0.6), 0 0 12px rgba(124,111,255,0.3)",
+            }}>{r.emoji}</div>
+            <div style={{
+              fontSize:"0.58rem", fontWeight:700,
+              color:"#fff",
+              background:"linear-gradient(135deg,rgba(124,111,255,0.85),rgba(79,70,229,0.85))",
+              backdropFilter:"blur(8px)",
+              borderRadius:"20px",
+              padding:"0.1rem 0.45rem",
+              whiteSpace:"nowrap",
+              maxWidth:"80px",
+              overflow:"hidden",
+              textOverflow:"ellipsis",
+              boxShadow:"0 2px 8px rgba(0,0,0,0.5)",
+            }}>{r.fromName}</div>
           </div>
         </div>
       ))}
@@ -145,61 +172,135 @@ function FloatingReactions({ reactions }) {
   );
 }
 
-// ── Emoji Picker Bar ──────────────────────────────────────────────────────────
+// ── Emoji Picker Panel ────────────────────────────────────────────────────────
 function EmojiPickerBar({ onPick, onClose }) {
   return (
     <div style={{
-      position:"absolute", bottom:"calc(100% + 10px)", left:"50%",
+      position:"absolute", bottom:"calc(100% + 12px)", left:"50%",
       transform:"translateX(-50%)",
-      background:"rgba(10,10,26,0.98)", backdropFilter:"blur(20px)",
-      border:"1px solid rgba(124,111,255,0.25)", borderRadius:16,
-      padding:"0.5rem 0.6rem",
-      display:"flex", gap:"0.4rem", flexWrap:"nowrap",
-      width: "max-content", zIndex:100000,
-      boxShadow:"0 -8px 32px rgba(0,0,0,0.7)",
-      animation:"slideUpIn 0.15s ease",
+      background:"rgba(8,8,22,0.98)", backdropFilter:"blur(24px)",
+      border:"1px solid rgba(124,111,255,0.3)",
+      borderRadius:20,
+      padding:"0.75rem 0.7rem 0.6rem",
+      width: 262, zIndex:100000,
+      boxShadow:"0 -12px 48px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.04)",
+      animation:"slideUpIn 0.18s cubic-bezier(0.34,1.56,0.64,1)",
     }}>
-      {EMOJI_LIST.map(e => (
-        <button type="button" key={e} onClick={() => { onPick(e); onClose(); }} style={{
-          background:"none", border:"none", fontSize:"1.6rem",
-          cursor:"pointer", borderRadius:8, padding:"0.3rem",
-          transition:"transform 0.12s, background 0.12s",
-          lineHeight:1,
-        }}
-          onMouseEnter={ev => { ev.currentTarget.style.background="rgba(124,111,255,0.2)"; ev.currentTarget.style.transform="scale(1.3)"; }}
-          onMouseLeave={ev => { ev.currentTarget.style.background="none"; ev.currentTarget.style.transform="scale(1)"; }}
-        >{e}</button>
-      ))}
+      {/* Header */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"0.5rem" }}>
+        <span style={{ fontSize:"0.62rem", fontWeight:800, color:"#a78bfa", textTransform:"uppercase", letterSpacing:"0.1em" }}>
+          😀 Send Reaction
+        </span>
+        <button type="button" onClick={onClose} style={{
+          background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)",
+          color:"#a78bfa", cursor:"pointer", borderRadius:6,
+          width:20, height:20, fontSize:"0.7rem",
+          display:"flex", alignItems:"center", justifyContent:"center",
+        }}>✕</button>
+      </div>
+      {/* Grid */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:"0.3rem" }}>
+        {EMOJI_LIST.map(e => (
+          <button type="button" key={e}
+            onClick={() => { onPick(e); onClose(); }}
+            style={{
+              background:"none", border:"1px solid transparent",
+              fontSize:"1.55rem", cursor:"pointer",
+              borderRadius:10, padding:"0.3rem",
+              transition:"transform 0.12s, background 0.12s, border-color 0.12s",
+              lineHeight:1, textAlign:"center",
+            }}
+            onMouseEnter={ev => {
+              ev.currentTarget.style.background="rgba(124,111,255,0.2)";
+              ev.currentTarget.style.borderColor="rgba(124,111,255,0.4)";
+              ev.currentTarget.style.transform="scale(1.35) translateY(-2px)";
+            }}
+            onMouseLeave={ev => {
+              ev.currentTarget.style.background="none";
+              ev.currentTarget.style.borderColor="transparent";
+              ev.currentTarget.style.transform="scale(1)";
+            }}
+          >{e}</button>
+        ))}
+      </div>
     </div>
   );
 }
 
 // ── Hand Raise Queue (host view) ─────────────────────────────────────────────
-function HandRaiseQueue({ raisedHands, onDismiss }) {
+function HandRaiseQueue({ raisedHands, onDismiss, onDismissAll }) {
   if (raisedHands.length === 0) return null;
   return (
     <div style={{
       position:"fixed", top:60, left:"50%", transform:"translateX(-50%)",
-      zIndex:99995, display:"flex", flexDirection:"column", gap:"0.4rem",
-      pointerEvents:"none",
+      zIndex:99995, display:"flex", flexDirection:"column", gap:"0.35rem",
+      pointerEvents:"none", minWidth:300, maxWidth:380,
     }}>
-      {raisedHands.map(h => (
+      {/* Queue header */}
+      <div style={{
+        display:"flex", alignItems:"center", justifyContent:"space-between",
+        background:"rgba(251,191,36,0.2)", backdropFilter:"blur(20px)",
+        border:"1px solid rgba(251,191,36,0.5)",
+        borderRadius:12, padding:"0.4rem 0.75rem",
+        boxShadow:"0 0 24px rgba(251,191,36,0.25), 0 4px 20px rgba(0,0,0,0.7)",
+        pointerEvents:"all",
+        animation:"slideUpIn 0.2s cubic-bezier(0.34,1.56,0.64,1)",
+      }}>
+        <div style={{ display:"flex", alignItems:"center", gap:"0.4rem" }}>
+          <span style={{ fontSize:"1.2rem", animation:"waveHand 1.2s ease-in-out infinite" }}>✋</span>
+          <span style={{ fontSize:"0.75rem", fontWeight:800, color:"#fde68a", letterSpacing:"0.02em" }}>
+            Raised Hands
+          </span>
+          <div style={{
+            background:"linear-gradient(135deg,#fbbf24,#f59e0b)",
+            color:"#78350f", borderRadius:"99px",
+            fontSize:"0.62rem", fontWeight:900,
+            padding:"0.05rem 0.45rem", minWidth:20, textAlign:"center",
+            boxShadow:"0 2px 8px rgba(251,191,36,0.5)",
+          }}>{raisedHands.length}</div>
+        </div>
+        {raisedHands.length > 1 && (
+          <button type="button" onClick={onDismissAll} style={{
+            background:"rgba(251,191,36,0.15)", border:"1px solid rgba(251,191,36,0.35)",
+            color:"#fbbf24", borderRadius:8, cursor:"pointer",
+            fontSize:"0.6rem", fontWeight:700, padding:"0.15rem 0.5rem",
+            transition:"all 0.15s",
+          }}>✓ All</button>
+        )}
+      </div>
+
+      {/* Individual hand entries */}
+      {raisedHands.map((h, idx) => (
         <div key={h.from} style={{
-          display:"flex", alignItems:"center", gap:"0.5rem",
-          background:"rgba(251,191,36,0.15)", backdropFilter:"blur(16px)",
-          border:"1px solid rgba(251,191,36,0.4)", borderRadius:10,
-          padding:"0.4rem 0.8rem", pointerEvents:"all",
-          animation:"slideUpIn 0.2s ease",
+          display:"flex", alignItems:"center", gap:"0.6rem",
+          background:"rgba(10,10,26,0.92)", backdropFilter:"blur(20px)",
+          border:"1px solid rgba(251,191,36,0.25)",
+          borderLeft:"3px solid rgba(251,191,36,0.7)",
+          borderRadius:10, padding:"0.45rem 0.75rem",
+          pointerEvents:"all",
+          animation:`slideUpIn 0.2s cubic-bezier(0.34,1.56,0.64,1) ${idx * 0.05}s both`,
           boxShadow:"0 4px 20px rgba(0,0,0,0.6)",
         }}>
-          <span style={{ fontSize:"1.1rem" }}>✋</span>
-          <span style={{ fontSize:"0.78rem", fontWeight:700, color:"#fde68a" }}>{h.fromName}</span>
-          <span style={{ fontSize:"0.68rem", color:"#92400e" }}>raised hand</span>
+          {/* Avatar */}
+          <div style={{
+            width:28, height:28, borderRadius:"50%",
+            background:"linear-gradient(135deg,#fbbf24,#f59e0b)",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            fontSize:"0.7rem", fontWeight:800, color:"#78350f",
+            flexShrink:0, boxShadow:"0 0 8px rgba(251,191,36,0.4)",
+          }}>{h.fromName?.[0]?.toUpperCase() || "?"}</div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:"0.78rem", fontWeight:700, color:"#fde68a", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+              {h.fromName}
+            </div>
+            <div style={{ fontSize:"0.6rem", color:"rgba(251,191,36,0.55)", marginTop:"0.05rem" }}>wants to speak</div>
+          </div>
           <button type="button" onClick={() => onDismiss(h.from)} style={{
-            background:"rgba(251,191,36,0.2)", border:"1px solid rgba(251,191,36,0.3)",
-            color:"#fbbf24", borderRadius:6, cursor:"pointer",
-            fontSize:"0.62rem", fontWeight:700, padding:"0.1rem 0.4rem",
-          }}>✓ Dismiss</button>
+            background:"rgba(74,222,128,0.12)", border:"1px solid rgba(74,222,128,0.3)",
+            color:"#4ade80", borderRadius:8, cursor:"pointer",
+            fontSize:"0.62rem", fontWeight:700, padding:"0.2rem 0.55rem",
+            whiteSpace:"nowrap", flexShrink:0, transition:"all 0.15s",
+          }}>✓ Done</button>
         </div>
       ))}
     </div>
@@ -336,12 +437,19 @@ function CustomControls({ onLeave, chatOpen, onChatToggle, unreadCount, ncOn, on
       {/* Hand Raise */}
       <CtrlBtn
         icon={handRaised ? "✋" : "🖐️"}
-        label={handRaised ? "Lower" : "Raise"}
+        label={handRaised ? "Lower Hand" : "Raise Hand"}
         active={!handRaised}
         onClick={onHandToggle}
-        style={handRaised
-          ? { border:"1px solid rgba(251,191,36,0.6)", background:"rgba(251,191,36,0.2)", color:"#fbbf24", animation:"handPulse 1s ease-in-out infinite" }
-          : {}}
+        style={handRaised ? {
+          border:"1.5px solid rgba(251,191,36,0.7)",
+          background:"linear-gradient(135deg,rgba(251,191,36,0.22),rgba(245,158,11,0.15))",
+          color:"#fde68a",
+          boxShadow:"0 0 0 3px rgba(251,191,36,0.2), 0 4px 16px rgba(251,191,36,0.2)",
+          animation:"handPulse 1.2s ease-in-out infinite",
+        } : {
+          border:"1px solid rgba(255,255,255,0.1)",
+          background:"rgba(255,255,255,0.05)",
+        }}
       />
 
       {/* Emoji Reactions */}
@@ -508,24 +616,35 @@ function MyParticipantTile(props) {
   const isHandRaised = trackRef?.participant && raisedHands.some(h => h.from === trackRef.participant.identity);
 
   return (
-    // Only the wrapper gets the grid placement classes and styles
-    <div className={className} style={{ ...style, position: "relative", overflow: "hidden", borderRadius: "10px" }}>
-      {/* The actual ParticipantTile renders normally, filling the wrapper. It doesn't get the grid classes duplicated! */}
+    <div
+      className={className}
+      style={{
+        ...style,
+        position: "relative", overflow: "hidden", borderRadius: "12px",
+        // Glowing amber border when hand is raised
+        ...(isHandRaised ? {
+          outline: "3px solid rgba(251,191,36,0.85)",
+          outlineOffset: "-3px",
+          boxShadow: "0 0 0 4px rgba(251,191,36,0.25), 0 0 24px rgba(251,191,36,0.3)",
+          animation: "handPulse 1.2s ease-in-out infinite",
+        } : {}),
+      }}
+    >
       <ParticipantTile trackRef={trackRef} style={{ width: "100%", height: "100%" }} {...rest} />
-      
+
       {isHandRaised && (
         <div style={{
-          position: "absolute", top: "12px", right: "12px", zIndex: 50,
-          background: "rgba(251,191,36,0.95)", backdropFilter: "blur(8px)",
-          border: "2px solid #fbbf24",
-          borderRadius: "12px",
-          padding: "0.3rem 0.7rem",
-          fontSize: "1.5rem",
-          boxShadow: "0 4px 16px rgba(251,191,36,0.6)",
-          animation: "handPulse 1s ease-in-out infinite",
-          display: "flex", alignItems: "center", gap: "0.5rem"
+          position: "absolute", top: 10, right: 10, zIndex: 50,
+          display: "flex", alignItems: "center", gap: "0.35rem",
+          background: "rgba(10,10,26,0.88)",
+          backdropFilter: "blur(12px)",
+          border: "1.5px solid rgba(251,191,36,0.7)",
+          borderRadius: "40px",
+          padding: "0.25rem 0.65rem 0.25rem 0.45rem",
+          boxShadow: "0 4px 16px rgba(0,0,0,0.6), 0 0 12px rgba(251,191,36,0.35)",
         }}>
-          ✋ <span style={{ fontSize: "0.9rem", fontWeight: 800, color: "#78350f", letterSpacing: "0.02em" }}>Hand Raised</span>
+          <span style={{ fontSize: "1.1rem", animation: "waveHand 1.2s ease-in-out infinite", display: "inline-block" }}>✋</span>
+          <span style={{ fontSize: "0.7rem", fontWeight: 800, color: "#fde68a", letterSpacing: "0.02em" }}>Hand Raised</span>
         </div>
       )}
     </div>
@@ -729,14 +848,15 @@ function InnerRoom({ sessionId, userRole, onLeave, session }) {
     );
   }
 
-  const dismissHand = (from) => setRaisedHands(prev => prev.filter(h => h.from !== from));
+  const dismissHand    = (from) => setRaisedHands(prev => prev.filter(h => h.from !== from));
+  const dismissAllHands = ()     => setRaisedHands([]);
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "#07071a", display: "flex", flexDirection: "column" }}>
       <RoomAudioRenderer />
       <SessionInfoBar session={session} />
       {(userRole === "admin" || userRole === "trainer") && <ParticipantsPanel sessionId={sessionId} />}
-      {(userRole === "admin" || userRole === "trainer") && <HandRaiseQueue raisedHands={raisedHands} onDismiss={dismissHand} />}
+      {(userRole === "admin" || userRole === "trainer") && <HandRaiseQueue raisedHands={raisedHands} onDismiss={dismissHand} onDismissAll={dismissAllHands} />}
 
       <FloatingReactions reactions={reactions} />
 
