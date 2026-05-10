@@ -96,16 +96,19 @@ function useContentProtection() {
     };
     const handleBlur = () => setIsObscured(true);
     const handleFocus = () => setIsObscured(false);
+    const handleVisibility = () => setIsObscured(document.hidden);
 
     window.addEventListener("contextmenu", handleContextMenu);
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("blur", handleBlur);
     window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       window.removeEventListener("contextmenu", handleContextMenu);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("blur", handleBlur);
       window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, []);
 
