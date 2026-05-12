@@ -594,7 +594,7 @@ export async function listPendingRegistrations() {
 }
 
 /**
- * Admin — approve a pending registration → creates Auth record
+ * Admin — approve a pending registration → creates Auth + User records
  */
 export async function approvePendingRegistration(pendingId) {
   const pending = await PendingRegistration.findById(pendingId);
@@ -617,6 +617,39 @@ export async function approvePendingRegistration(pendingId) {
     role: "user",
     isActive: true,
   });
+
+  // Create the User tracking record (same as admin-create flow for role "user")
+  // Try to link to an existing WhatsApp user first
+  const stripped = pending.phone;
+  let waUser = await User.findOne({ phone: { $in: [stripped, `91${stripped}`] } });
+  if (!waUser) {
+    // Try matching by userId JID pattern
+    waUser = await User.findOne({ userId: new RegExp(stripped.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) });
+  }
+
+  if (!waUser) {
+    // No existing WhatsApp record — create a fresh User document
+    await User.create({
+      userId: `web:${stripped}`,
+      name: pending.name,
+      phone: stripped,
+      fine: 0,
+      completed: false,
+      streak: 0,
+      weeklySubmissions: 0,
+      weeklyFine: 0,
+      monthlySubmissions: 0,
+      feedbackScores: [],
+    });
+  } else {
+    // Sync name/phone to existing WhatsApp user if missing
+    const updates = {};
+    if (!waUser.name) updates.name = pending.name;
+    if (!waUser.phone) updates.phone = stripped;
+    if (Object.keys(updates).length > 0) {
+      await User.updateOne({ _id: waUser._id }, { $set: updates });
+    }
+  }
 
   // Remove from pending
   await PendingRegistration.findByIdAndDelete(pendingId);
