@@ -3,6 +3,7 @@ import Layout from "../components/Layout.jsx";
 import Modal from "../components/Modal.jsx";
 import api from "../api/client.js";
 import { useNoiseCancellation } from "../hooks/useNoiseCancellation.js";
+import { useVideoFrameHash } from "../hooks/useVideoFrameHash.js";
 
 // ── Mode toggle ──────────────────────────────────────────────────────────────
 // "upload"  → existing file-upload flow
@@ -600,8 +601,9 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
   const [file, setFile]           = useState(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress]   = useState(0);
-  const [stage, setStage]         = useState(""); // "uploading" | "confirming"
+  const [stage, setStage]         = useState(""); // "hashing" | "uploading" | "confirming"
   const [error, setError]         = useState(null);
+  const { generateHashAndFrames, cacheResult, isHashing, hashProgress } = useVideoFrameHash();
 
   const handleFileChange = (e) => {
     const f = e.target.files[0];
@@ -620,6 +622,27 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
 
     try {
       const fileToUpload = file;
+      
+      // Step 0: Extract frames and generate hash
+      setStage("hashing");
+      let videoHash = null;
+      let frames = null;
+      let cachedResult = null;
+      try {
+        const result = await generateHashAndFrames(fileToUpload);
+        videoHash = result.hash;
+        frames = result.frames; // 16 high-quality frame blobs
+        cachedResult = result.cachedResult;
+        
+        if (result.cached) {
+          console.log('[Upload] ⚡ Video previously checked - security checks will be skipped');
+        }
+        console.log(`[Upload] Extracted ${frames.length} frames for AI analysis`);
+      } catch (hashErr) {
+        console.warn('[Upload] Frame extraction failed, continuing without:', hashErr);
+        // Continue without frames - server will extract them
+      }
+      
       setStage("uploading");
 
       // Step 1: Get presigned URL from our server
@@ -640,14 +663,53 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
         xhr.send(fileToUpload);
       });
 
-      // Step 3: Tell our server the upload is done — start analysis
+      // Step 3: Upload frames if extracted (optional - server can fall back to extracting from video)
+      let frameKeys = null;
+      if (frames && frames.length > 0) {
+        try {
+          setStage("uploading-frames");
+          console.log('[Upload] Uploading frames to server...');
+          
+          // Convert frames to base64 for JSON transport
+          const frameDataPromises = frames.map(blob => {
+            return new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result.split(',')[1]); // Get base64 part
+              reader.readAsDataURL(blob);
+            });
+          });
+          
+          const frameData = await Promise.all(frameDataPromises);
+          
+          // Send frames to server
+          const { data: frameUpload } = await api.post("/video/upload-frames", {
+            reportKey: presign.key,
+            frames: frameData,
+          });
+          
+          frameKeys = frameUpload.frameKeys;
+          console.log('[Upload] ⚡ Frames uploaded - server will skip frame extraction!');
+        } catch (frameErr) {
+          console.warn('[Upload] Frame upload failed, server will extract from video:', frameErr);
+          // Continue without frames - not critical
+        }
+      }
+
+      // Step 4: Tell our server the upload is done — start analysis
       setStage("confirming");
       const { data } = await api.post("/video/confirm", {
         key:       presign.key,
         publicUrl: presign.publicUrl,
         mimeType:  fileToUpload.type || "video/mp4",
         isPublic:  true,
+        videoHash: videoHash, // Send hash for cache checking
+        frameKeys: frameKeys, // Send frame keys if uploaded
       });
+      
+      // Cache successful result for future uploads
+      if (videoHash && data.success) {
+        cacheResult(videoHash, { passed: true });
+      }
 
       onAnalysisStarted(data.reportId);
       setFile(null);
@@ -678,15 +740,17 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
           <div style={{ marginBottom: "1rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.4rem", fontSize: "0.9rem", color: "var(--muted)" }}>
               <span>
-                {stage === "confirming" ? "Starting analysis…" :
+                {stage === "hashing" ? "🔍 Analyzing video frames…" :
+                 stage === "confirming" ? "Starting analysis…" :
                  progress < 100 ? "☁️ Uploading to cloud…" : "Finalising…"}
               </span>
+              {stage === "hashing" && <span>{hashProgress}%</span>}
               {stage === "uploading" && <span>{progress}%</span>}
             </div>
             <div style={{ background: "var(--bg)", borderRadius: "6px", height: "8px", overflow: "hidden" }}>
               <div style={{
                 height: "100%",
-                width: stage === "confirming" ? "100%" : `${progress}%`,
+                width: stage === "hashing" ? `${hashProgress}%` : stage === "confirming" ? "100%" : `${progress}%`,
                 background: "var(--primary)",
                 borderRadius: "6px",
                 transition: "width 0.3s ease"
@@ -696,7 +760,8 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
         )}
         <button className="btn-primary" onClick={handleUpload} disabled={!file || uploading} style={{ width: "100%" }}>
           {uploading ?
-            (stage === "confirming" ? "Starting analysis…" : `Uploading ${progress}%…`) :
+            (stage === "hashing" ? `Analyzing ${hashProgress}%…` :
+             stage === "confirming" ? "Starting analysis…" : `Uploading ${progress}%…`) :
             "Upload & Analyze"}
         </button>
       </div>
@@ -713,6 +778,7 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
 function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthlyGoals, isWeeklyReflection }) {
   const [step, setStep]             = useState("setup");
   const [cameras, setCameras]       = useState([]);
+  const { generateHashAndFrames, cacheResult, isHashing, hashProgress } = useVideoFrameHash();
   const [mics, setMics]             = useState([]);
   const [camId, setCamId]           = useState("");
   const [micId, setMicId]           = useState("");
@@ -1066,6 +1132,25 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
       
       console.log(`[Upload] Created file - name: ${file.name}, size: ${file.size}, type: ${file.type}`);
 
+      // Step 0: Generate frame hash for cache checking
+      let videoHash = null;
+      let frames = null;
+      try {
+        setUploadProgress(5);
+        const result = await generateHashAndFrames(file);
+        videoHash = result.hash;
+        frames = result.frames;
+        
+        if (result.cached) {
+          console.log('[Upload] ⚡ Video previously checked - security checks will be skipped');
+        }
+        console.log(`[Upload] Extracted ${frames.length} frames for AI analysis`);
+        setUploadProgress(10);
+      } catch (hashErr) {
+        console.warn('[Upload] Frame extraction failed, continuing without:', hashErr);
+        // Continue without frames - not critical
+      }
+
       // Step 1: Get presigned URL
       const { data: presign } = await api.get("/video/presign", {
         params: { filename: file.name, mimeType: file.type },
@@ -1078,7 +1163,9 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
         xhr.setRequestHeader("Content-Type", file.type);
         xhr.upload.onprogress = (e) => { 
           if (e.total) {
-            const progress = Math.round((e.loaded / e.total) * 100);
+            // Reserve 10% for hashing, 90% for upload
+            const uploadPercent = Math.round((e.loaded / e.total) * 90);
+            const progress = 10 + uploadPercent;
             setUploadProgress(progress);
             console.log(`[Upload] Progress: ${progress}% (${e.loaded}/${e.total})`);
           }
@@ -1099,6 +1186,37 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
         xhr.send(file);
       });
 
+      // Step 2.5: Upload frames if extracted (optional - server can fall back to extracting from video)
+      let frameKeys = null;
+      if (frames && frames.length > 0) {
+        try {
+          console.log('[Upload] Uploading frames to server...');
+          
+          // Convert frames to base64 for JSON transport
+          const frameDataPromises = frames.map(blob => {
+            return new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result.split(',')[1]); // Get base64 part
+              reader.readAsDataURL(blob);
+            });
+          });
+          
+          const frameData = await Promise.all(frameDataPromises);
+          
+          // Send frames to server
+          const { data: frameUpload } = await api.post("/video/upload-frames", {
+            reportKey: presign.key,
+            frames: frameData,
+          });
+          
+          frameKeys = frameUpload.frameKeys;
+          console.log('[Upload] ⚡ Frames uploaded - server will skip frame extraction!');
+        } catch (frameErr) {
+          console.warn('[Upload] Frame upload failed, server will extract from video:', frameErr);
+          // Continue without frames - not critical
+        }
+      }
+
       // Step 3: Confirm with server
       const { data } = await api.post("/video/confirm", {
         key:       presign.key,
@@ -1106,7 +1224,14 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
         mimeType:  file.type,
         isPublic:  true,
         recordedDuration: elapsed, // Pass the actual recorded duration from frontend timer
+        videoHash: videoHash, // Send hash for cache checking
+        frameKeys: frameKeys, // Send frame keys if uploaded
       });
+      
+      // Cache successful result for future uploads
+      if (videoHash && data.success) {
+        cacheResult(videoHash, { passed: true });
+      }
 
       console.log(`[Upload] Analysis started with reportId: ${data.reportId}`);
       onAnalysisStarted(data.reportId);
