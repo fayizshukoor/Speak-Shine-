@@ -11,7 +11,7 @@ import User from "../models/userSchema.js";
 import DailyReport from "../models/dailyReportSchema.js";
 import VideoReport from "../models/videoReportSchema.js";
 import { generateAndInsertQuestions } from "../backend/services/ai/questionGenerator.js";
-import { deleteFromR2 } from "../r2.js";
+import { deleteFromR2 } from "../backend/config/storage.js";
 
 const TIMEZONE = "Asia/Kolkata";
 
