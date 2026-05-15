@@ -1,7 +1,8 @@
 /**
  * useVideoFrameHash Hook
- * Extracts 16 frames from video and generates a hash for duplicate detection
- * Caches results in localStorage to skip security checks for previously uploaded videos
+ * Extracts 16 frames from video for:
+ * 1. Hash generation (duplicate detection)
+ * 2. Visual analysis (Gemini AI - eye contact, body language)
  */
 
 import { useState, useCallback } from "react";
@@ -19,19 +20,17 @@ async function hashFrameData(frameDataArray) {
 }
 
 /**
- * Extract 16 evenly-spaced frames from video and generate hash
+ * Extract 16 evenly-spaced frames from video
+ * Returns both hash (for caching) and full frames (for AI analysis)
  */
-async function extractFrameHash(videoFile) {
+async function extractFramesAndHash(videoFile, quality = 'high') {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     
-    // Small canvas for fast processing (32x32 pixels)
-    canvas.width = 32;
-    canvas.height = 32;
-    
     const frames = [];
+    const frameBlobs = []; // Full-quality frames for AI
     let currentFrame = 0;
     const totalFrames = 16;
     
@@ -47,13 +46,32 @@ async function extractFrameHash(videoFile) {
       const duration = video.duration;
       const interval = duration / (totalFrames + 1); // Skip first and last frame
       
+      // Set canvas size based on quality
+      if (quality === 'high') {
+        // Use video dimensions but cap at 720p for reasonable size
+        const maxDimension = 720;
+        const scale = Math.min(1, maxDimension / Math.max(video.videoWidth, video.videoHeight));
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
+      } else {
+        // Low quality for hashing only
+        canvas.width = 32;
+        canvas.height = 32;
+      }
+      
       const captureFrame = () => {
         if (currentFrame >= totalFrames) {
           URL.revokeObjectURL(video.src);
           
-          // Generate hash from all frames
+          // Generate hash from low-res data
           hashFrameData(frames)
-            .then(hash => resolve({ hash, duration }))
+            .then(hash => resolve({ 
+              hash, 
+              duration,
+              frames: frameBlobs, // Full-quality frames
+              width: canvas.width,
+              height: canvas.height
+            }))
             .catch(reject);
           return;
         }
@@ -67,28 +85,40 @@ async function extractFrameHash(videoFile) {
           // Draw frame to canvas
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           
-          // Get image data (downsampled to 8x8 for perceptual hash)
-          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const data = imageData.data;
-          
-          // Simple perceptual hash: average brightness per 4x4 block
-          let blockHash = '';
-          for (let y = 0; y < 32; y += 4) {
-            for (let x = 0; x < 32; x += 4) {
-              let sum = 0;
-              for (let by = 0; by < 4; by++) {
-                for (let bx = 0; bx < 4; bx++) {
-                  const idx = ((y + by) * 32 + (x + bx)) * 4;
-                  // Grayscale: (R + G + B) / 3
-                  sum += (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+          // For hashing: Get low-res perceptual hash
+          if (quality === 'low' || quality === 'both') {
+            const imageData = ctx.getImageData(0, 0, 32, 32);
+            const data = imageData.data;
+            
+            let blockHash = '';
+            for (let y = 0; y < 32; y += 4) {
+              for (let x = 0; x < 32; x += 4) {
+                let sum = 0;
+                for (let by = 0; by < 4; by++) {
+                  for (let bx = 0; bx < 4; bx++) {
+                    const idx = ((y + by) * 32 + (x + bx)) * 4;
+                    sum += (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+                  }
                 }
+                const avg = Math.floor(sum / 16);
+                blockHash += avg.toString(16).padStart(2, '0');
               }
-              const avg = Math.floor(sum / 16);
-              blockHash += avg.toString(16).padStart(2, '0');
             }
+            frames.push(blockHash);
           }
           
-          frames.push(blockHash);
+          // For AI: Get high-quality frame as blob
+          if (quality === 'high' || quality === 'both') {
+            canvas.toBlob((blob) => {
+              if (blob) {
+                frameBlobs.push(blob);
+              }
+              currentFrame++;
+              captureFrame();
+            }, 'image/jpeg', 0.85); // 85% quality JPEG
+            return; // Wait for blob callback
+          }
+          
           currentFrame++;
           captureFrame();
         } catch (err) {
@@ -186,10 +216,10 @@ export function useVideoFrameHash() {
   const [hashError, setHashError] = useState(null);
   
   /**
-   * Generate hash and check cache
-   * Returns: { hash, cached, cachedResult, duration }
+   * Generate hash and extract frames for AI
+   * Returns: { hash, cached, cachedResult, duration, frames, width, height }
    */
-  const generateHash = useCallback(async (videoFile) => {
+  const generateHashAndFrames = useCallback(async (videoFile) => {
     setIsHashing(true);
     setHashProgress(0);
     setHashError(null);
@@ -200,22 +230,25 @@ export function useVideoFrameHash() {
       
       setHashProgress(10);
       
-      // Extract frames and generate hash
-      const { hash, duration } = await extractFrameHash(videoFile);
+      // Extract frames (both hash and full-quality for AI)
+      const result = await extractFramesAndHash(videoFile, 'both');
       
       setHashProgress(80);
       
       // Check cache
-      const cached = checkCache(hash);
+      const cached = checkCache(result.hash);
       
       setHashProgress(100);
       setIsHashing(false);
       
       return {
-        hash,
+        hash: result.hash,
         cached: !!cached,
         cachedResult: cached?.result || null,
-        duration,
+        duration: result.duration,
+        frames: result.frames, // Array of Blob objects for AI
+        width: result.width,
+        height: result.height,
       };
     } catch (err) {
       console.error('[VideoHash] Error:', err);
@@ -233,7 +266,7 @@ export function useVideoFrameHash() {
   }, []);
   
   return {
-    generateHash,
+    generateHashAndFrames,
     cacheResult,
     isHashing,
     hashProgress,

@@ -29,9 +29,10 @@ const execFileAsync = promisify(execFile);
  * @param {string}   displayName  - User's display name
  * @param {Function} onProgress   - async (stage: string) => void
  * @param {number}   knownDuration - Optional known duration from recording timer (seconds)
+ * @param {Array<string>} browserFrames - Optional browser-extracted frames (base64)
  * @returns {Promise<object>}     - { analysis, duration }
  */
-export async function processWebVideo(videoPath, displayName = "User", onProgress = () => {}, knownDuration = null) {
+export async function processWebVideo(videoPath, displayName = "User", onProgress = () => {}, knownDuration = null, browserFrames = null) {
   const id = Date.now();
   let audioPath = null;
   const isUrl = videoPath.startsWith("http");
@@ -91,11 +92,18 @@ export async function processWebVideo(videoPath, displayName = "User", onProgres
     // Stage 2: Visual + transcription in parallel
     const parallelStage = startStage("parallel");
 
-    const visualPromise = withTimeout(
-      analyzeVideo(videoPath),
-      Number(process.env.VISUAL_TIMEOUT_MS) || VISUAL_TIMEOUT_MS,
-      "visual"
-    );
+    // Visual analysis - use browser frames if provided
+    const visualPromise = browserFrames && browserFrames.length > 0
+      ? withTimeout(
+          analyzeVideo(videoPath, browserFrames), // Pass browser frames
+          Number(process.env.VISUAL_TIMEOUT_MS) || VISUAL_TIMEOUT_MS,
+          "visual"
+        )
+      : withTimeout(
+          analyzeVideo(videoPath), // Extract from video
+          Number(process.env.VISUAL_TIMEOUT_MS) || VISUAL_TIMEOUT_MS,
+          "visual"
+        );
 
     let transcription = null;
     let speechResult = null;
