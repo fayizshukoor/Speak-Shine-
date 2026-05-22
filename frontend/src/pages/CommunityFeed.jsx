@@ -619,7 +619,7 @@ function ProtectedVideoPlayer({ src, identity, watermarkUrl, fullscreenId, itemI
     };
   }, []);
 
-  const pct = duration > 0 ? (current / duration) * 1000 : 0;
+  const pct = duration > 0 ? (current / duration) * 100 : 0;
 
   return (
     <div
@@ -646,7 +646,15 @@ function ProtectedVideoPlayer({ src, identity, watermarkUrl, fullscreenId, itemI
         onCanPlay={() => { setBuffering(false); if (videoRef.current?.duration) setDuration(videoRef.current.duration); }}
         onLoadedData={() => { setBuffering(false); if (videoRef.current?.duration) setDuration(videoRef.current.duration); }}
         onStalled={() => setBuffering(true)}
-        onTimeUpdate={() => setCurrent(videoRef.current?.currentTime || 0)}
+        onTimeUpdate={() => {
+          const v = videoRef.current;
+          if (!v) return;
+          setCurrent(v.currentTime);
+          // Re-read duration on every tick in case it wasn't available at load time
+          if (v.duration && isFinite(v.duration) && v.duration !== duration) {
+            setDuration(v.duration);
+          }
+        }}
         onLoadedMetadata={() => { const d = videoRef.current?.duration; if (d && isFinite(d)) setDuration(d); }}
         onDurationChange={() => { const d = videoRef.current?.duration; if (d && isFinite(d)) setDuration(d); }}
         onEnded={() => setPlaying(false)}
@@ -770,7 +778,7 @@ function ProtectedVideoPlayer({ src, identity, watermarkUrl, fullscreenId, itemI
           {/* Fill */}
           <div style={{
             position: "absolute", left: 0, height: 4,
-            width: `${(pct / 1000) * 100}%`,
+            width: `${pct}%`,
             background: "#ff0000", borderRadius: 99,
             pointerEvents: "none",
           }} />
@@ -787,7 +795,7 @@ function ProtectedVideoPlayer({ src, identity, watermarkUrl, fullscreenId, itemI
           <div style={{
             position: "absolute", width: 14, height: 14, borderRadius: "50%",
             background: "#ff0000", border: "2px solid #fff",
-            left: `calc(${(pct / 1000) * 100}% - 7px)`,
+            left: `calc(${pct}% - 7px)`,
             boxShadow: "0 0 4px rgba(0,0,0,0.6)",
             pointerEvents: "none",
           }} />
