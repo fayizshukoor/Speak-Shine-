@@ -1,10 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState, useEffect } from "react";
 import { ToastProvider } from "./components/Toast.jsx";
 import { ConfirmProvider } from "./components/ConfirmDialog.jsx";
 import ChatLauncher from "./components/ChatLauncher.jsx";
 import InstallPrompt from "./components/InstallPrompt.jsx";
+import WakeUpScreen from "./components/WakeUpScreen.jsx";
 
 // Lazy-load all pages — each becomes its own JS chunk, only loaded when needed
 const Login           = lazy(() => import("./pages/Login.jsx"));
@@ -64,6 +65,28 @@ function ChatLauncherConditional() {
 }
 
 export default function App() {
+  const [serverReady, setServerReady] = useState(false);
+
+  // On first load, quickly probe the health endpoint.
+  // If it responds immediately (server already warm), skip the wake-up screen.
+  // If it times out / errors, show the wake-up screen until it's up.
+  useEffect(() => {
+    const BASE = import.meta.env.VITE_API_URL
+      ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, "")
+      : "";
+
+    fetch(`${BASE}/api/health`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(4000),
+    })
+      .then(r => { if (r.ok) setServerReady(true); })
+      .catch(() => { /* server sleeping — WakeUpScreen will poll */ });
+  }, []);
+
+  if (!serverReady) {
+    return <WakeUpScreen onReady={() => setServerReady(true)} />;
+  }
+
   return (
     <AuthProvider>
       <ToastProvider>
