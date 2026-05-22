@@ -360,29 +360,49 @@ if (isProd) {
 
 // ── Self-ping to prevent Render free tier sleep ─────────────────────────────
 // Render spins down free services after 15 min of inactivity.
-// Pinging our own health endpoint every 14 min keeps the server awake
-// so midnight cron jobs (daily reset, question publish) always fire.
+// Smart ping strategy:
+//   - Active hours (06:00–23:30 IST): ping every 14 min to stay awake for users
+//   - Night hours (23:30–05:45 IST): let server sleep EXCEPT around midnight
+//     to ensure the daily reset cron fires at 00:00 IST
 function startSelfPing() {
   if (!isProd) return; // only needed in production
   const selfUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
   const pingUrl = `${selfUrl}/api/health`;
 
+  function getISTHour() {
+    const now = new Date();
+    const ist = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+    return ist.getHours() + ist.getMinutes() / 60; // e.g. 23.75 = 23:45
+  }
+
+  function shouldPing() {
+    const h = getISTHour();
+    // Ping 06:00–00:05 IST (covers full day + midnight reset cron)
+    // Sleep 00:05–06:00 IST — saves ~6 hrs/day (~180 hrs/month)
+    if (h >= 6 || h <= 0.083) return true; // 0.083 = 00:05
+    return false;
+  }
+
   setInterval(async () => {
+    if (!shouldPing()) {
+      console.log(`[SelfPing] 💤 Night hours — skipping ping to save free hours`);
+      return;
+    }
     try {
       const { default: https } = await import("https");
       const { default: http  } = await import("http");
       const client = pingUrl.startsWith("https") ? https : http;
       client.get(pingUrl, (res) => {
-        console.log(`[SelfPing] ✅ Pinged ${pingUrl} — status ${res.statusCode}`);
+        console.log(`[SelfPing] ✅ Pinged — status ${res.statusCode}`);
       }).on("error", (err) => {
         console.warn(`[SelfPing] ⚠️ Ping failed: ${err.message}`);
       });
     } catch (err) {
       console.warn(`[SelfPing] ⚠️ Ping error: ${err.message}`);
     }
-  }, 14 * 60 * 1000); // every 14 minutes
+  }, 14 * 60 * 1000); // check every 14 minutes
 
-  console.log(`[SelfPing] 🔁 Self-ping started → ${pingUrl} every 14 min`);
+  console.log(`[SelfPing] 🔁 Smart self-ping started (active 06:00–00:05 IST, sleep 00:05–06:00 IST)`);
 }
 
 // ── Startup missed-reset catch-up ────────────────────────────────────────────
