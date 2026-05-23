@@ -363,9 +363,12 @@ if (isProd) {
 // ── Self-ping to prevent Render free tier sleep ─────────────────────────────
 // Render spins down free services after 15 min of inactivity.
 // Smart ping strategy:
-//   - Active hours (06:00–23:30 IST): ping every 14 min to stay awake for users
-//   - Night hours (23:30–05:45 IST): let server sleep EXCEPT around midnight
+//   - Active hours (05:45–00:20 IST): ping every 14 min to stay awake for users
+//   - Night hours (00:20–05:45 IST): let server sleep to save free hours
 //     to ensure the daily reset cron fires at 00:00 IST
+//
+// ⚠️  cron-job.org must be set to 05:45 IST so Render has 15 min to cold-start
+//     before the 06:00 active period. Without this the 6 AM ping gets a 503.
 function startSelfPing() {
   if (!isProd) return; // only needed in production
   const selfUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
@@ -379,9 +382,9 @@ function startSelfPing() {
 
   function shouldPing() {
     const h = getISTHour();
-    // Ping 06:00–00:05 IST (covers full day + midnight reset cron)
-    // Sleep 00:05–06:00 IST — saves ~6 hrs/day (~180 hrs/month)
-    if (h >= 6 || h <= 0.083) return true; // 0.083 = 00:05
+    // Ping 05:45–00:20 IST (covers full day + warm-up buffer + midnight reset)
+    // Sleep 00:20–05:45 IST — saves ~5.5 hrs/day (~165 hrs/month)
+    if (h >= 5.75 || h <= 0.333) return true; // 5.75 = 05:45, 0.333 = 00:20
     return false;
   }
 
@@ -404,7 +407,7 @@ function startSelfPing() {
     }
   }, 14 * 60 * 1000); // check every 14 minutes
 
-  console.log(`[SelfPing] 🔁 Smart self-ping started (active 06:00–00:05 IST, sleep 00:05–06:00 IST)`);
+  console.log(`[SelfPing] 🔁 Smart self-ping started (active 05:45–00:20 IST, sleep 00:20–05:45 IST)`);
 }
 
 // ── Startup missed-reset catch-up ────────────────────────────────────────────
