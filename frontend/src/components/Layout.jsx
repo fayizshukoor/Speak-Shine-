@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import Modal from "./Modal.jsx";
 import { io } from "socket.io-client";
+import NotificationBell from "./NotificationBell.jsx";
 
 // ── Live session banner (shown on all pages when a session goes live) ────────
 function LiveSessionBanner() {
@@ -329,6 +330,8 @@ export default function Layout({ children, title }) {
               )}
             </div>
           )}
+
+          <NotificationBell />
 
           <span className={`role-badge ${user?.role}`}>{user?.role}</span>
           <span className="header-name">{user?.name}</span>

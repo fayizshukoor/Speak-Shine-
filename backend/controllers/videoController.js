@@ -263,6 +263,31 @@ export async function addComment(req, res) {
 
     const saved = report.comments[report.comments.length - 1];
     res.json({ comment: saved });
+
+    // ── Notify the video owner (fire-and-forget, non-blocking) ──────────────
+    // Only notify if the commenter is NOT the video owner
+    try {
+      const User = (await import("../../models/userSchema.js")).default;
+      const owner = await User.findById(report.userId).select("phone").lean();
+
+      if (owner && owner.phone !== phone) {
+        const { createNotification } = await import("../services/notification/notificationService.js");
+        const { getOnlineUsers } = await import("../sockets/chatSocket.js");
+
+        const preview = cleanText.length > 60 ? cleanText.slice(0, 60) + "…" : cleanText;
+        await createNotification({
+          recipientPhone: owner.phone,
+          type:           "comment",
+          message:        `${name} commented: "${preview}"`,
+          url:            "/community",
+          io:             req.app.get("io"),
+          onlineUsers:    getOnlineUsers(),
+        });
+      }
+    } catch (notifErr) {
+      // Notifications are non-critical — log but never fail the comment response
+      console.error("[Comment] Notification error (non-fatal):", notifErr.message);
+    }
   } catch (error) {
     console.error("[Comment] Add error:", error.message);
     res.status(500).json({ error: "Failed to add comment" });

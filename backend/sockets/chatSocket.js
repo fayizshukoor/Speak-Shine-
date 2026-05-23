@@ -58,6 +58,14 @@ let _io = null;
 let _onlineUsers = null;
 
 /**
+ * Returns the current onlineUsers Map (phone → socketId).
+ * Used by notificationService to check if a recipient is connected.
+ */
+export function getOnlineUsers() {
+  return _onlineUsers;
+}
+
+/**
  * Force-logout a user by phone number in real time.
  * Emits `force:logout` to their socket if they are currently connected.
  * Called by userService.toggleUserStatus when an account is disabled.

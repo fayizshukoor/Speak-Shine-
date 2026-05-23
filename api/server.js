@@ -27,6 +27,7 @@ import chatRoutes from "../backend/routes/chat.routes.js";
 import liveSessionRoutes from "../backend/routes/liveSessions.routes.js";
 import monitoringRoutes from "../backend/routes/monitoring.routes.js";
 import submissionsRoutes from "../backend/routes/submissions.routes.js";
+import notificationRoutes from "../backend/routes/notification.routes.js";
 
 console.log("[Routes] Loading MVC routes...");
 console.log("[Routes] Auth routes loaded:", !!authRoutes);
@@ -294,6 +295,7 @@ app.use("/api/chat",         chatRoutes);
 app.use("/api/live-sessions", liveSessionRoutes);
 app.use("/api/monitoring",   monitoringRoutes);
 app.use("/api/submissions",  submissionsRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 app.use("/api", (_, res) => res.status(404).json({ error: "API route not found" }));
 
