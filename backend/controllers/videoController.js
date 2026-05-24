@@ -14,13 +14,26 @@ export async function getPresignedUrl(req, res) {
   try {
     const { filename = "video.webm", mimeType = "video/webm" } = req.query;
     
+    console.log("[Presign] Request - filename:", filename, "mimeType:", mimeType, "userId:", req.user?.id);
+    
+    if (!req.user || !req.user.id) {
+      console.error("[Presign] No user or user.id in request");
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    
     const result = await videoService.getPresignedUrl(filename, mimeType, req.user.id);
+    console.log("[Presign] Success - key:", result.key);
     res.json(result);
   } catch (error) {
+    console.error("[Presign] Error details:", {
+      message: error.message,
+      stack: error.stack,
+      statusCode: error.statusCode,
+      user: req.user?.id
+    });
     if (error.statusCode) {
       return res.status(error.statusCode).json({ error: error.message });
     }
-    console.error("[Presign] Error:", error.message);
     res.status(500).json({ error: "Failed to generate upload URL" });
   }
 }

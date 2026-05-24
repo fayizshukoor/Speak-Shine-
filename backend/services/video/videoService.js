@@ -313,20 +313,34 @@ async function uploadToR2Buffer(buffer, key, mimeType) {
  * Get presigned upload URL for direct browser upload to R2
  */
 export async function getPresignedUrl(filename, mimeType, userId) {
-  // Validate MIME type
-  const baseType = mimeType.split(';')[0].trim();
-  if (!ALLOWED_VIDEO_TYPES.includes(baseType)) {
-    const error = new Error("Invalid file type. Only video files are allowed.");
-    error.statusCode = 400;
+  try {
+    console.log("[VideoService] getPresignedUrl - filename:", filename, "mimeType:", mimeType, "userId:", userId);
+    
+    // Validate MIME type
+    const baseType = mimeType.split(';')[0].trim();
+    if (!ALLOWED_VIDEO_TYPES.includes(baseType)) {
+      const error = new Error("Invalid file type. Only video files are allowed.");
+      error.statusCode = 400;
+      throw error;
+    }
+    
+    const safeFilename = sanitizeFilename(filename);
+    console.log("[VideoService] Safe filename:", safeFilename);
+    
+    const key = getR2Key(userId, safeFilename);
+    console.log("[VideoService] Generated R2 key:", key);
+    
+    const uploadUrl = await getPresignedUploadUrl(key, mimeType);
+    console.log("[VideoService] Generated presigned URL (length):", uploadUrl?.length);
+    
+    const publicUrl = `${process.env.R2_PUBLIC_URL?.replace(/\/$/, "")}/${key}`;
+    console.log("[VideoService] Public URL:", publicUrl);
+    
+    return { uploadUrl, key, publicUrl };
+  } catch (error) {
+    console.error("[VideoService] getPresignedUrl error:", error.message, error.stack);
     throw error;
   }
-  
-  const safeFilename = sanitizeFilename(filename);
-  const key = getR2Key(userId, safeFilename);
-  const uploadUrl = await getPresignedUploadUrl(key, mimeType);
-  const publicUrl = `${process.env.R2_PUBLIC_URL?.replace(/\/$/, "")}/${key}`;
-  
-  return { uploadUrl, key, publicUrl };
 }
 
 /**
