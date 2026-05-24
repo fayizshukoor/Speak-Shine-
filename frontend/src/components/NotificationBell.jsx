@@ -112,6 +112,10 @@ export default function NotificationBell() {
     const next = !open;
     setOpen(next);
     if (next && unreadCount > 0) markAllRead();
+    // When closing, remove already-read notifications from view for cleanliness
+    if (!next) {
+      setNotifications(prev => prev.filter(n => !n.read));
+    }
   };
 
   // ── Relative time helper ────────────────────────────────────────────────────

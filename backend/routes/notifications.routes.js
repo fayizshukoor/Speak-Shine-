@@ -5,17 +5,24 @@ import Notification from "../../models/notificationSchema.js";
 const router = express.Router();
 router.use(authMiddleware);
 
-// GET /api/notifications — fetch unread notifications for logged-in user
+// GET /api/notifications — fetch notifications for logged-in user
+// Returns: unread ones + read ones from last 24 hours only
 router.get("/", async (req, res) => {
   try {
+    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const notifications = await Notification.find({
       recipientPhone: req.user.phone,
+      $or: [
+        { read: false },                          // all unread
+        { read: true, createdAt: { $gte: since24h } }, // read but recent
+      ],
     })
       .sort({ createdAt: -1 })
       .limit(30)
       .lean();
 
-    res.json(notifications);
+    const unreadCount = notifications.filter(n => !n.read).length;
+    res.json({ notifications, unreadCount });
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch notifications" });
   }

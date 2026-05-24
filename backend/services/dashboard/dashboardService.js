@@ -209,7 +209,26 @@ export async function getUserProfile(phone) {
     },
     topStreak,
     myStreakEntry,
-    streakRecord: await StreakRecord.findOne().lean(),
+    streakRecord: await (async () => {
+      // Always check if current top user beats the stored record
+      const topUser = sortedByStreak[0];
+      const existing = await StreakRecord.findOne().lean();
+      if (topUser && (topUser.streak || 0) > 0) {
+        if (!existing || topUser.streak > existing.streak) {
+          return await StreakRecord.findOneAndUpdate(
+            {},
+            {
+              name: topUser.name || topUser.userId || "Unknown",
+              userId: topUser.userId || null,
+              streak: topUser.streak,
+              achievedAt: new Date(),
+            },
+            { upsert: true, new: true }
+          ).lean();
+        }
+      }
+      return existing;
+    })(),
   };
 }
 

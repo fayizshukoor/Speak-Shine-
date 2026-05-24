@@ -331,11 +331,10 @@ export default function Layout({ children, title }) {
             </div>
           )}
 
-          <NotificationBell />
+          <NotificationBell token={localStorage.getItem("token")} />
 
           <span className={`role-badge ${user?.role}`}>{user?.role}</span>
           <span className="header-name">{user?.name}</span>
-          <NotificationBell token={localStorage.getItem("token")} />
           <button className="logout-btn" onClick={handleLogout}>Logout</button>
 
           {/* Hamburger — mobile only */}
