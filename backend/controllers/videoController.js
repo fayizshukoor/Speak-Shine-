@@ -43,10 +43,11 @@ export async function proxyUpload(req, res) {
 
     console.log(`[ProxyUpload] Uploading ${(body.length / 1024 / 1024).toFixed(1)}MB to R2 for user: ${req.user?.id}`);
 
-    // PUT the buffer directly to R2 using the presigned URL
+    // PUT the buffer directly to R2 using the presigned URL.
+    // IMPORTANT: Do NOT send Content-Type — the presigned URL only signs "host",
+    // so any extra headers in the actual request cause SignatureDoesNotMatch.
     const r2Response = await fetch(uploadUrl, {
-      method:  "PUT",
-      headers: { "Content-Type": mimeType },
+      method: "PUT",
       body,
     });
 

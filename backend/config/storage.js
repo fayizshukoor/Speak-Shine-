@@ -156,14 +156,15 @@ export async function getPresignedUploadUrl(key, mimeType = "video/webm") {
     // Use r2Presign client which has requestChecksumCalculation: "when_required"
     // This prevents the SDK from injecting x-amz-checksum-crc32 into the signed headers,
     // which R2 doesn't support and rejects with SignatureDoesNotMatch.
+    // Note: ContentType is intentionally omitted from the command — presigned PUT URLs
+    // only sign "host" by default, so sending Content-Type in the actual request
+    // causes SignatureDoesNotMatch. The proxy forwards the body without Content-Type.
     const command = new PutObjectCommand({
-      Bucket:      BUCKET,
-      Key:         key,
-      ContentType: mimeType,
+      Bucket: BUCKET,
+      Key:    key,
     });
     
-    const url = await getSignedUrl(r2Presign, command, { expiresIn: 900 }); // 15 min
-    console.log("[R2] Presigned URL generated successfully");
+    const url = await getSignedUrl(r2Presign, command, { expiresIn: 900 }); // 15 min    console.log("[R2] Presigned URL generated successfully");
     return url;
   } catch (error) {
     console.error("[R2] Failed to generate presigned URL:", {
