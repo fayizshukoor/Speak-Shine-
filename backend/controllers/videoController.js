@@ -5,27 +5,19 @@
 
 import * as videoService from "../services/video/videoService.js";
 import * as videoQueue from "../services/video/videoQueue.js";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-
-// Reusable S3 client for proxy uploads — checksum disabled for R2 compatibility
-const proxyS3 = new S3Client({
-  region: "auto",
-  endpoint: process.env.R2_ENDPOINT,
-  credentials: {
-    accessKeyId:     process.env.R2_ACCESS_KEY_ID,
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-  },
-  requestChecksumCalculation: "when_required",
-  responseChecksumValidation: "when_required",
-});
+import { uploadToR2 } from "../config/storage.js";
+import fs from "fs";
+import path from "path";
+import os from "os";
 
 /**
  * PUT /api/video/proxy-upload
- * Receives the video body from the browser and uploads it directly to R2
- * using the AWS SDK. Avoids all presigned URL signature issues.
+ * Receives the video body from the browser, writes it to a temp file,
+ * then uploads to R2 using the same uploadToR2() path that already works.
  * express.raw() middleware buffers the body before this handler runs.
  */
 export async function proxyUpload(req, res) {
+  let tempPath = null;
   try {
     const key      = req.headers["x-r2-key"];
     const mimeType = req.headers["x-mime-type"] || "video/mp4";
@@ -48,19 +40,22 @@ export async function proxyUpload(req, res) {
 
     console.log(`[ProxyUpload] Uploading ${(body.length / 1024 / 1024).toFixed(1)}MB → R2 key: ${key}`);
 
-    await proxyS3.send(new PutObjectCommand({
-      Bucket:      process.env.R2_BUCKET_NAME,
-      Key:         key,
-      Body:        body,
-      ContentType: mimeType,
-    }));
+    // Write buffer to a temp file so uploadToR2 (which uses fs.createReadStream) can read it
+    tempPath = path.join(os.tmpdir(), `proxy-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    fs.writeFileSync(tempPath, body);
 
-    const publicUrl = `${process.env.R2_PUBLIC_URL?.replace(/\/$/, "")}/${key}`;
+    // uploadToR2 uses the pre-initialized r2 client + Upload class — already proven to work
+    const publicUrl = await uploadToR2(tempPath, key, mimeType);
+
     console.log(`[ProxyUpload] ✅ Uploaded successfully: ${publicUrl}`);
     res.json({ success: true, publicUrl });
   } catch (error) {
     console.error("[ProxyUpload] Error:", error.message);
-    res.status(500).json({ error: "Upload failed: " + error.message });
+    res.status(500).json({ error: error.message || "Upload failed" });
+  } finally {
+    if (tempPath && fs.existsSync(tempPath)) {
+      try { fs.unlinkSync(tempPath); } catch {}
+    }
   }
 }
 
