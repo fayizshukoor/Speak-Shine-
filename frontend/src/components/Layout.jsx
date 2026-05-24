@@ -4,7 +4,6 @@ import { useNavigate, useLocation, Link } from "react-router-dom";
 import Modal from "./Modal.jsx";
 import NotificationBell from "./NotificationBell.jsx";
 import { io } from "socket.io-client";
-import NotificationBell from "./NotificationBell.jsx";
 
 // ── Live session banner (shown on all pages when a session goes live) ────────
 function LiveSessionBanner() {
