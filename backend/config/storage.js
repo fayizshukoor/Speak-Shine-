@@ -10,42 +10,61 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import fs from "fs";
 import path from "path";
 
-// Validate R2 configuration on startup
-if (!process.env.R2_ENDPOINT) {
-  console.error("[R2] FATAL: R2_ENDPOINT is not set");
-  throw new Error("R2_ENDPOINT environment variable is required");
-}
-if (!process.env.R2_ACCESS_KEY_ID) {
-  console.error("[R2] FATAL: R2_ACCESS_KEY_ID is not set");
-  throw new Error("R2_ACCESS_KEY_ID environment variable is required");
-}
-if (!process.env.R2_SECRET_ACCESS_KEY) {
-  console.error("[R2] FATAL: R2_SECRET_ACCESS_KEY is not set");
-  throw new Error("R2_SECRET_ACCESS_KEY environment variable is required");
-}
-if (!process.env.R2_BUCKET_NAME) {
-  console.error("[R2] FATAL: R2_BUCKET_NAME is not set");
-  throw new Error("R2_BUCKET_NAME environment variable is required");
-}
-
-console.log("[R2] Configuration loaded:", {
-  endpoint: process.env.R2_ENDPOINT,
-  bucket: process.env.R2_BUCKET_NAME,
-  accessKeyId: process.env.R2_ACCESS_KEY_ID?.substring(0, 8) + "...",
-  secretKeyLength: process.env.R2_SECRET_ACCESS_KEY?.length
-});
-
-const r2 = new S3Client({
-  region: "auto",
-  endpoint: process.env.R2_ENDPOINT,
-  credentials: {
-    accessKeyId:     process.env.R2_ACCESS_KEY_ID,
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-  },
-});
-
+// Validate R2 configuration but don't crash - just warn
+const R2_ENDPOINT = process.env.R2_ENDPOINT;
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
+const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
 const BUCKET = process.env.R2_BUCKET_NAME || "speak-shine-videos";
 const PUBLIC_URL = (process.env.R2_PUBLIC_URL || "").replace(/\/$/, "");
+
+let r2ConfigValid = true;
+const missingVars = [];
+
+if (!R2_ENDPOINT) missingVars.push("R2_ENDPOINT");
+if (!R2_ACCESS_KEY_ID) missingVars.push("R2_ACCESS_KEY_ID");
+if (!R2_SECRET_ACCESS_KEY) missingVars.push("R2_SECRET_ACCESS_KEY");
+if (!BUCKET) missingVars.push("R2_BUCKET_NAME");
+
+if (missingVars.length > 0) {
+  console.error("[R2] ⚠️  WARNING: Missing R2 configuration:", missingVars.join(", "));
+  console.error("[R2] Video upload functionality will not work until these are set.");
+  r2ConfigValid = false;
+} else {
+  console.log("[R2] ✅ Configuration loaded:", {
+    endpoint: R2_ENDPOINT,
+    bucket: BUCKET,
+    accessKeyId: R2_ACCESS_KEY_ID?.substring(0, 8) + "...",
+    secretKeyLength: R2_SECRET_ACCESS_KEY?.length
+  });
+}
+
+// Create S3 client only if config is valid
+let r2 = null;
+if (r2ConfigValid) {
+  try {
+    r2 = new S3Client({
+      region: "auto",
+      endpoint: R2_ENDPOINT,
+      credentials: {
+        accessKeyId: R2_ACCESS_KEY_ID,
+        secretAccessKey: R2_SECRET_ACCESS_KEY,
+      },
+    });
+    console.log("[R2] ✅ S3 client initialized successfully");
+  } catch (error) {
+    console.error("[R2] ❌ Failed to initialize S3 client:", error.message);
+    r2ConfigValid = false;
+  }
+}
+
+/**
+ * Check if R2 is properly configured
+ */
+function ensureR2Configured() {
+  if (!r2ConfigValid || !r2) {
+    throw new Error("R2 storage is not configured. Please set R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, and R2_BUCKET_NAME environment variables.");
+  }
+}
 
 /**
  * Build a unique R2 object key for a video.
@@ -68,6 +87,8 @@ export function getR2Key(userId, originalName) {
  * @returns {Promise<string>} — public URL
  */
 export async function uploadToR2(filePath, key, mimeType = "video/webm") {
+  ensureR2Configured();
+  
   const fileStream = fs.createReadStream(filePath);
 
   const upload = new Upload({
@@ -93,6 +114,8 @@ export async function uploadToR2(filePath, key, mimeType = "video/webm") {
  * @param {string} key — R2 object key
  */
 export async function deleteFromR2(key) {
+  ensureR2Configured();
+  
   try {
     await r2.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
     console.log(`[R2] Deleted: ${key}`);
@@ -110,6 +133,8 @@ export async function deleteFromR2(key) {
  * @returns {Promise<string>} — presigned PUT URL
  */
 export async function getPresignedUploadUrl(key, mimeType = "video/webm") {
+  ensureR2Configured();
+  
   try {
     console.log("[R2] Generating presigned URL - key:", key, "mimeType:", mimeType);
     
@@ -143,6 +168,8 @@ export async function getPresignedUploadUrl(key, mimeType = "video/webm") {
  * @returns {Promise<string>} — presigned GET URL
  */
 export async function getPresignedDownloadUrl(key, expiresIn = 3600) {
+  ensureR2Configured();
+  
   const command = new GetObjectCommand({
     Bucket: BUCKET,
     Key: key,
