@@ -984,6 +984,14 @@ export async function deleteVideoReport(reportId, authId) {
 
   // Delete report
   await VideoReport.findByIdAndDelete(reportId);
+
+  // Delete all notifications related to this video
+  try {
+    const Notification = (await import("../../../models/notificationSchema.js")).default;
+    await Notification.deleteMany({ reportId: report._id });
+  } catch (err) {
+    console.error("[VideoService] Failed to delete notifications:", err.message);
+  }
   
   return { success: true, message: "Video deleted successfully" };
 }

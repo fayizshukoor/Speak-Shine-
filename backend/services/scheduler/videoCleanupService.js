@@ -39,6 +39,15 @@ export async function cleanExpiredVideos() {
           { _id: report._id },
           { $set: { videoKey: null, videoUrl: null } }
         );
+        
+        // Delete all notifications related to this video
+        try {
+          const Notification = (await import("../../../models/notificationSchema.js")).default;
+          await Notification.deleteMany({ reportId: report._id });
+        } catch (notifErr) {
+          console.error(`[VideoCleanup] Failed to delete notifications for report ${report._id}:`, notifErr.message);
+        }
+        
         cleaned.push(report._id);
       } catch (err) {
         console.error(`[VideoCleanup] Failed to clean ${report.videoKey}:`, err.message);
@@ -119,6 +128,15 @@ export async function cleanVideosOlderThan(days) {
           { _id: report._id },
           { $set: { videoKey: null, videoUrl: null } }
         );
+        
+        // Delete all notifications related to this video
+        try {
+          const Notification = (await import("../../../models/notificationSchema.js")).default;
+          await Notification.deleteMany({ reportId: report._id });
+        } catch (notifErr) {
+          console.error(`[VideoCleanup] Failed to delete notifications for report ${report._id}:`, notifErr.message);
+        }
+        
         cleaned.push(report._id);
       } catch (err) {
         failed.push({

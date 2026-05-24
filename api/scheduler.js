@@ -557,6 +557,13 @@ async function cleanExpiredVideos() {
         { _id: report._id },
         { $set: { videoKey: null, videoUrl: null, frameKeys: [] } }
       );
+
+      // Delete all notifications related to this video
+      try {
+        await Notification.deleteMany({ reportId: report._id });
+      } catch (notifErr) {
+        console.error(`[Scheduler] Failed to delete notifications for report ${report._id}:`, notifErr.message);
+      }
     }
 
     console.log(`[Scheduler] ✅ Cleaned ${toClean.length} report(s)`);
