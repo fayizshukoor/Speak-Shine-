@@ -8,6 +8,27 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import { createServer } from "http";
 import { Server as SocketIO } from "socket.io";
+
+// ── Load .env FIRST before any other imports that use process.env ────────────
+// dotenv.config() with override:true ensures .env always wins over PM2 cached env
+{
+  const __fn = fileURLToPath(import.meta.url);
+  const __dn = path.dirname(__fn);
+  const envPath = path.join(__dn, '../.env');
+  if (fs.existsSync(envPath)) {
+    const result = dotenv.config({ path: envPath, override: true });
+    if (result.error) {
+      console.error('[ENV] Error loading .env:', result.error.message);
+    } else {
+      console.log('[ENV] ✅ .env loaded successfully (override mode)');
+      console.log('[ENV] NODE_ENV:', process.env.NODE_ENV);
+      console.log('[ENV] R2_ACCESS_KEY_ID:', process.env.R2_ACCESS_KEY_ID?.substring(0, 8) + '...');
+    }
+  } else {
+    console.log('[ENV] No .env file — using system environment variables');
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 import { connectDB } from "../backend/config/database.js";
 import { getRedisClient } from "../backend/config/redis.js";
 import { initializeChatSocket } from "../backend/sockets/chatSocket.js";
@@ -44,28 +65,9 @@ import { recoverStuckJobs } from "./videoQueue.js";
 import { startScheduler } from "./scheduler.js";
 import { startDailyReset } from "./scheduler.js";
 
-// Load environment variables from .env file (local development only)
-// In production (Railway), environment variables are set via dashboard
-const __filename_temp = fileURLToPath(import.meta.url);
-const __dirname_temp = path.dirname(__filename_temp);
-const envPath = path.join(__dirname_temp, '../.env');
-
-console.log('[ENV] Current directory:', process.cwd());
-console.log('[ENV] Script directory:', __dirname_temp);
-console.log('[ENV] Looking for .env at:', envPath);
-console.log('[ENV] .env exists:', fs.existsSync(envPath));
-
-if (fs.existsSync(envPath)) {
-  const result = dotenv.config({ path: envPath });
-  if (result.error) {
-    console.error('[ENV] Error loading .env:', result.error);
-  } else {
-    console.log('[ENV] Loaded .env file successfully');
-    console.log('[ENV] JWT_SECRET loaded:', !!process.env.JWT_SECRET);
-  }
-} else {
-  console.log('[ENV] No .env file found - using environment variables from system');
-}
+// (env already loaded at top of file — see dotenv block above)
+const __filename_server = fileURLToPath(import.meta.url);
+const __dirname_server = path.dirname(__filename_server);
 
 // Initialize Redis client
 const redis = getRedisClient();
