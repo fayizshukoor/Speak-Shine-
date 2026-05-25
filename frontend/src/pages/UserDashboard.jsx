@@ -926,7 +926,7 @@ export default function UserDashboard() {
         )}
         {(profile?.fine ?? 0) < 0 && (
           <p style={{ fontSize: "0.75rem", color: "#4ade80", marginTop: "0.75rem", textAlign: "center", lineHeight: 1.5 }}>
-            🛡️ Your 7-day streak reward gives you a fine buffer — missed days are absorbed before any fine is charged.
+            🛡️ Your 7-day streak reward gives you a fine buffer — missed days are absorbed before any fine is charged, and your streak is kept until the buffer runs out.
           </p>
         )}
       </div>
