@@ -43,7 +43,7 @@ export async function proxyUpload(req, res) {
     console.log(`[ProxyUpload] ✅ Uploaded successfully: ${publicUrl}`);
     res.json({ success: true, publicUrl });
   } catch (error) {
-    console.error("[ProxyUpload] Error:", error.message);
+    console.error("[ProxyUpload] Error:", error.message, "| Code:", error.Code || error.name, "| HTTP:", error.$metadata?.httpStatusCode);
     res.status(500).json({ error: error.message || "Upload failed" });
   }
 }
