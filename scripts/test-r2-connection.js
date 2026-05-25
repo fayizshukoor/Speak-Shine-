@@ -3,7 +3,7 @@
  * Run with: node scripts/test-r2-connection.js
  */
 
-import { S3Client, ListBucketsCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, ListBucketsCommand, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import dotenv from "dotenv";
 
@@ -46,6 +46,7 @@ console.log("\n2. Creating S3 client...");
 const r2 = new S3Client({
   region: "auto",
   endpoint: process.env.R2_ENDPOINT,
+  forcePathStyle: true,
   credentials: {
     accessKeyId: process.env.R2_ACCESS_KEY_ID,
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
@@ -102,6 +103,34 @@ try {
   if (error.stack) {
     console.error("   Stack trace:", error.stack.split('\n').slice(0, 5).join('\n'));
   }
+  process.exit(1);
+}
+
+// Test 3: Actual upload
+console.log("\n5. Testing actual file upload (PutObjectCommand)...");
+try {
+  const testKey = `test/upload-test-${Date.now()}.txt`;
+  await r2.send(new PutObjectCommand({
+    Bucket: process.env.R2_BUCKET_NAME,
+    Key: testKey,
+    Body: Buffer.from("R2 upload test at " + new Date().toISOString()),
+    ContentType: "text/plain",
+  }));
+  console.log("   ✅ PutObjectCommand succeeded — key:", testKey);
+
+  // Clean up
+  await r2.send(new DeleteObjectCommand({
+    Bucket: process.env.R2_BUCKET_NAME,
+    Key: testKey,
+  }));
+  console.log("   ✅ Cleanup successful");
+} catch (error) {
+  console.error("   ❌ PutObjectCommand FAILED:", error.message);
+  console.error("   Error details:", {
+    name: error.name,
+    code: error.Code || error.code,
+    statusCode: error.$metadata?.httpStatusCode
+  });
   process.exit(1);
 }
 
