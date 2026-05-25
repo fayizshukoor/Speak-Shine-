@@ -39,9 +39,9 @@ if (missingVars.length > 0) {
 }
 
 // Create S3 client only if config is valid
-let r2 = null;
-// Separate client for presigned URLs — disables automatic checksum injection
 // AWS SDK v3.600+ adds x-amz-checksum-crc32 by default; R2 rejects it with SignatureDoesNotMatch
+// Both clients use requestChecksumCalculation: "when_required" to prevent this
+let r2 = null;
 let r2Presign = null;
 if (r2ConfigValid) {
   try {
@@ -52,6 +52,8 @@ if (r2ConfigValid) {
         accessKeyId: R2_ACCESS_KEY_ID,
         secretAccessKey: R2_SECRET_ACCESS_KEY,
       },
+      requestChecksumCalculation: "when_required",
+      responseChecksumValidation: "when_required",
     });
     // Presign client: requestChecksumCalculation "when_required" stops the SDK
     // from auto-adding checksum headers that R2 doesn't support
