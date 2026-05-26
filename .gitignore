@@ -7,3 +7,15 @@ frontend/dist/
 # Video upload temporary files
 tmp/uploads/*
 !tmp/uploads/.gitkeep
+.env.production
+pem/
+*.pem
+# Ignore local env files for frontend/backend
+frontend/.env
+frontend/.env.local
+backend/.env
+# Local backend config override (do not commit)
+backend/config/dev.config.js
+# Local dotenv overrides
+.env.local
+.env.*.local
