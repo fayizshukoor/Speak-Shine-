@@ -1,0 +1,62 @@
+version: '3.9'
+
+services:
+
+  app:
+    build: .
+    container_name: speak-shine-app
+
+    restart: always
+
+    env_file:
+      - .env
+
+    ports:
+      - "3001:3001"
+
+    depends_on:
+      - mongodb
+
+    networks:
+      - speakshine-network
+
+  mongodb:
+    image: mongo:7
+
+    container_name: speak-shine-mongodb
+
+    restart: always
+
+    ports:
+      - "27017:27017"
+
+    volumes:
+      - mongodb_data:/data/db
+
+    networks:
+      - speakshine-network
+
+  nginx:
+    image: nginx:latest
+
+    container_name: speak-shine-nginx
+
+    restart: always
+
+    ports:
+      - "80:80"
+
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+
+    depends_on:
+      - app
+
+    networks:
+      - speakshine-network
+
+volumes:
+  mongodb_data:
+
+networks:
+  speakshine-network:
