@@ -55,9 +55,9 @@ jobs:
 
             cd ~/Speak-Shine-
 
-            echo "================================="
-            echo "Pull latest GitHub code"
-            echo "================================="
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd
 
             git pull origin main
 
