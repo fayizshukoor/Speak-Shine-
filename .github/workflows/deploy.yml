@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to AWS EC2
+      - name: Deploy with Rollback
         uses: appleboy/ssh-action@master
 
         with:
@@ -21,19 +21,40 @@ jobs:
           script: |
             cd ~/Speak-Shine-
 
+            echo "Pull latest code"
             git pull origin main
 
-            docker stop speak-shine-container || true
+            echo "Backup current container"
+            docker rename speak-shine-container speak-shine-backup || true
 
-            docker rm speak-shine-container || true
-
+            echo "Build new image"
             docker build -t speak-shine .
 
+            echo "Run new container"
             docker run -d \
               --env-file .env \
               -p 3001:3001 \
               --name speak-shine-container \
               speak-shine
+
+            echo "Waiting for app health check..."
+            sleep 15
+
+            if docker ps | grep speak-shine-container; then
+              echo "New deployment successful"
+
+              docker rm -f speak-shine-backup || true
+            else
+              echo "Deployment failed. Rolling back..."
+
+              docker rm -f speak-shine-container || true
+
+              docker rename speak-shine-backup speak-shine-container
+
+              docker start speak-shine-container
+
+              exit 1
+            fi
 
 
 
