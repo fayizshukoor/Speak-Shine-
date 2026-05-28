@@ -46,6 +46,17 @@ jobs:
             cp docker-compose.yml docker-compose.backup.yml
 
             echo "================================="
+            echo "Save rollback image"
+            echo "================================="
+            PREVIOUS_APP_IMAGE="$(docker inspect --format='{{.Image}}' speak-shine-app 2>/dev/null || true)"
+            if [ -n "$PREVIOUS_APP_IMAGE" ]; then
+              docker tag "$PREVIOUS_APP_IMAGE" speak-shine-app:rollback
+              echo "Rollback image saved: $PREVIOUS_APP_IMAGE"
+            else
+              echo "No previous app container found; rollback image unavailable"
+            fi
+
+            echo "================================="
             echo "Build fresh app image"
             echo "================================="
             docker compose build --no-cache app
@@ -73,6 +84,14 @@ jobs:
                 echo "Rolling back compose file"
                 echo "================================="
                 cp docker-compose.backup.yml docker-compose.yml
+
+                if docker image inspect speak-shine-app:rollback >/dev/null 2>&1; then
+                  echo "Restoring previous app image"
+                  docker tag speak-shine-app:rollback speak-shine-app:latest
+                else
+                  echo "No rollback image available"
+                fi
+
                 docker compose up -d --force-recreate app nginx
                 exit 1
               fi
@@ -89,6 +108,8 @@ jobs:
             echo "================================="
             echo "Cleanup unused images only"
             echo "================================="
+            docker image rm speak-shine-app:rollback >/dev/null 2>&1 || true
             docker image prune -f || true
+            docker builder prune -af --filter "until=24h" || true
 
             echo "Deployment completed"

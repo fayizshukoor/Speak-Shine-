@@ -3,6 +3,7 @@ services:
 
   app:
     build: .
+    image: speak-shine-app:latest
     container_name: speak-shine-app
 
     restart: always
