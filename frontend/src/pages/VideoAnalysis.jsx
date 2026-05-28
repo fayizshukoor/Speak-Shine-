@@ -1202,6 +1202,7 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
   const [micId, setMicId]           = useState("");
   const [countdown, setCountdown]   = useState(3);
   const [elapsed, setElapsed]       = useState(0);
+  const elapsedRef = useRef(0); // always holds the latest elapsed value — avoids stale closure in onstop
   const [recordedBlob, setRecordedBlob] = useState(null);
   const [error, setError]           = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -1228,6 +1229,9 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
   const mimeTypeRef     = useRef("video/webm"); // store the actual MIME type used
   const uploadStartRef  = useRef(null);
 
+  // Keep elapsedRef in sync with elapsed state so callbacks always read the latest value
+  useEffect(() => { elapsedRef.current = elapsed; }, [elapsed]);
+
   // Dynamic time limits based on question type
   const MAX_SECONDS = isMonthlyReflection || isMonthlyGoals 
     ? 600  // 10 minutes for monthly reflection/goals
@@ -1245,10 +1249,28 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
           mimeTypeRef.current = draft.mimeType || "video/webm";
           pendingBlobRef.current = draft.blob;
           setRecordedBlob(draft.blob);
-          setElapsed(draft.elapsed || 0);
+
+          // If saved elapsed is 0 or missing (stale-closure bug), read actual duration from blob
+          let restoredElapsed = draft.elapsed || 0;
+          if (restoredElapsed <= 0) {
+            try {
+              restoredElapsed = await new Promise((resolve) => {
+                const v = document.createElement("video");
+                v.preload = "metadata";
+                const url = URL.createObjectURL(draft.blob);
+                v.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(isFinite(v.duration) && v.duration > 0 ? Math.round(v.duration) : 0); };
+                v.onerror = () => { URL.revokeObjectURL(url); resolve(0); };
+                v.src = url;
+              });
+              console.log(`[VideoDraft] Measured blob duration: ${restoredElapsed}s`);
+            } catch { restoredElapsed = 0; }
+          }
+
+          elapsedRef.current = restoredElapsed;
+          setElapsed(restoredElapsed);
           setStep("preview");
           setDraftRestored(true);
-          console.log(`[VideoDraft] Restored draft — ${(draft.blob.size / 1024 / 1024).toFixed(1)} MB, ${draft.elapsed}s`);
+          console.log(`[VideoDraft] Restored draft — ${(draft.blob.size / 1024 / 1024).toFixed(1)} MB, ${restoredElapsed}s`);
         }
       } catch (draftErr) {
         console.warn("[VideoDraft] Could not restore draft:", draftErr);
@@ -1421,20 +1443,21 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
         return;
       }
       
-      // More aggressive size validation
-      const expectedMinSize = elapsed * 3000; // ~3KB per second (very conservative)
-      const expectedMaxSize = elapsed * 500000; // ~500KB per second (generous)
+      // More aggressive size validation — use elapsedRef.current (not stale closure `elapsed`)
+      const finalElapsed = elapsedRef.current;
+      const expectedMinSize = finalElapsed * 3000; // ~3KB per second (very conservative)
+      const expectedMaxSize = finalElapsed * 500000; // ~500KB per second (generous)
       
       if (totalSize < expectedMinSize) {
-        console.error(`[Recording] File too small: ${totalSize} bytes for ${elapsed}s (expected min: ${expectedMinSize})`);
-        setError(`Recording corrupted - file too small (${Math.round(totalSize/1024)}KB for ${elapsed}s). Try a different browser.`);
+        console.error(`[Recording] File too small: ${totalSize} bytes for ${finalElapsed}s (expected min: ${expectedMinSize})`);
+        setError(`Recording corrupted - file too small (${Math.round(totalSize/1024)}KB for ${finalElapsed}s). Try a different browser.`);
         setStep("setup");
         cleanup();
         return;
       }
       
       if (totalSize > expectedMaxSize) {
-        console.warn(`[Recording] File very large: ${totalSize} bytes for ${elapsed}s (expected max: ${expectedMaxSize})`);
+        console.warn(`[Recording] File very large: ${totalSize} bytes for ${finalElapsed}s (expected max: ${expectedMaxSize})`);
       }
       
       console.log(`[Recording] Creating blob with MIME type: ${mimeTypeRef.current}`);
@@ -1455,8 +1478,10 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
       }
 
       // ── Persist to IndexedDB so a refresh doesn't lose the recording ──
-      saveDraft({ blob, mimeType: mimeTypeRef.current, elapsed })
-        .then(() => console.log("[VideoDraft] Draft saved to IndexedDB"))
+      // Use elapsedRef.current — `elapsed` state is a stale closure and would be 0 here
+      const elapsedSnapshot = elapsedRef.current;
+      saveDraft({ blob, mimeType: mimeTypeRef.current, elapsed: elapsedSnapshot })
+        .then(() => console.log(`[VideoDraft] Draft saved — ${elapsedSnapshot}s`))
         .catch(err => console.warn("[VideoDraft] Could not save draft:", err));
       
       pendingBlobRef.current = blob;
@@ -1490,12 +1515,15 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
     }
     
     setStep("recording");
+    elapsedRef.current = 0;
     setElapsed(0);
     setIsPaused(false);
     timerRef.current = setInterval(() => {
       setElapsed(prev => {
-        if (prev + 1 >= MAX_SECONDS) { stopRecording(); return prev + 1; }
-        return prev + 1;
+        const next = prev + 1;
+        elapsedRef.current = next;
+        if (next >= MAX_SECONDS) { stopRecording(); return next; }
+        return next;
       });
     }, 1000);
   };
@@ -1525,8 +1553,10 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
       recorderRef.current.resume();
       timerRef.current = setInterval(() => {
         setElapsed(prev => {
-          if (prev + 1 >= MAX_SECONDS) { stopRecording(); return prev + 1; }
-          return prev + 1;
+          const next = prev + 1;
+          elapsedRef.current = next;
+          if (next >= MAX_SECONDS) { stopRecording(); return next; }
+          return next;
         });
       }, 1000);
       setIsPaused(false);
