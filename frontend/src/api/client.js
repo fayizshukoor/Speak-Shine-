@@ -132,6 +132,56 @@ api.interceptors.response.use(
   }
 );
 
+// Refresh proactively if the access token expires within this window
+const EXP_SKEW_MS = 60_000;
+
+// Decode the `exp` claim (ms) from a JWT without verifying the signature
+function getTokenExpMs(token) {
+  try {
+    const payload = token.split(".")[1];
+    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof json.exp === "number" ? json.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Proactively ensure a valid access token before firing app requests.
+ * Refreshes when the stored token is expired or about to expire, so we
+ * avoid the 401 burst + socket-with-dead-token churn on boot.
+ * Coordinates with the response interceptor via the shared isRefreshing lock.
+ * Returns the usable token, or null if no session.
+ */
+export async function ensureFreshToken() {
+  const token = localStorage.getItem("token");
+  if (!token) return null;
+
+  const expMs = getTokenExpMs(token);
+  // No exp claim — can't judge; let the interceptor handle any 401
+  if (expMs == null) return token;
+  // Still comfortably valid
+  if (expMs - Date.now() > EXP_SKEW_MS) return token;
+
+  // Expired / near expiry — refresh now
+  if (isRefreshing) {
+    return new Promise((resolve) => subscribeTokenRefresh(resolve));
+  }
+  if (!localStorage.getItem("refreshToken")) return token;
+
+  isRefreshing = true;
+  try {
+    const newToken = await refreshAccessToken();
+    isRefreshing = false;
+    onTokenRefreshed(newToken);
+    return newToken;
+  } catch {
+    isRefreshing = false;
+    // refreshAccessToken already cleared session + redirected to /login
+    return null;
+  }
+}
+
 // Call this after any mutation to bust stale cache entries
 export function bustCache(urlPrefix) {
   for (const key of cache.keys()) {

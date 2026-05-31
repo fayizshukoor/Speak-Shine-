@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
-import api from "../api/client";
+import api, { ensureFreshToken } from "../api/client";
 import { getSharedSocket } from "../hooks/useSocket";
 
 const AuthContext = createContext(null);
@@ -9,6 +9,25 @@ export function AuthProvider({ children }) {
     try { return JSON.parse(localStorage.getItem("user")); } catch { return null; }
   });
   const [token, setToken] = useState(() => localStorage.getItem("token") || null);
+  // true while we proactively refresh an expiring token on boot, so we
+  // don't fire protected requests / connect the socket with a dead token
+  const [booting, setBooting] = useState(() => !!localStorage.getItem("token"));
+
+  // Proactive boot refresh — runs once before protected UI renders
+  useEffect(() => {
+    let cancelled = false;
+    if (!localStorage.getItem("token")) {
+      setBooting(false);
+      return;
+    }
+    (async () => {
+      const fresh = await ensureFreshToken();
+      if (cancelled) return;
+      if (fresh) setToken(fresh);
+      setBooting(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const clearSession = useCallback(() => {
     localStorage.removeItem("token");
@@ -37,7 +56,7 @@ export function AuthProvider({ children }) {
 
   // Listen for server-pushed force:logout (e.g. admin disables account)
   useEffect(() => {
-    if (!token) return;
+    if (!token || booting) return;
 
     const socket = getSharedSocket(token);
 
@@ -52,10 +71,10 @@ export function AuthProvider({ children }) {
 
     socket.on("force:logout", onForceLogout);
     return () => socket.off("force:logout", onForceLogout);
-  }, [token, clearSession]);
+  }, [token, booting, clearSession]);
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout }}>
+    <AuthContext.Provider value={{ user, token, booting, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

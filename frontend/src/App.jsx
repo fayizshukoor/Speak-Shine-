@@ -98,6 +98,20 @@ export default function App() {
     <AuthProvider>
       <ToastProvider>
         <ConfirmProvider>
+          <AppRoutes />
+        </ConfirmProvider>
+      </ToastProvider>
+    </AuthProvider>
+  );
+}
+
+// Wait for the proactive boot token refresh before rendering protected UI,
+// so requests + socket never fire with an expired token.
+function AppRoutes() {
+  const { booting } = useAuth();
+  if (booting) return <PageLoader />;
+
+  return (
           <BrowserRouter>
             <Suspense fallback={<PageLoader />}>
               <Routes>
@@ -169,8 +183,5 @@ export default function App() {
             <Suspense fallback={null}><ChatLauncherConditional /></Suspense>
             <Suspense fallback={null}><InstallPrompt /></Suspense>
           </BrowserRouter>
-        </ConfirmProvider>
-      </ToastProvider>
-    </AuthProvider>
   );
 }
