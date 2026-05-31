@@ -512,11 +512,19 @@ export async function confirmDirectUpload(key, publicUrl, mimeType, isPublic, us
       contentLength = parseInt(headRes.headers.get("content-length") || "0", 10);
     } catch { /* non-fatal */ }
 
+    // Derive duration limits from question type (server-side, not client-trusted)
+    const status = await Status.findOne().lean();
+    const gateFlags = {
+      isMonthlyReflection: status?.isMonthlyReflectionDay || false,
+      isMonthlyGoals: status?.isMonthlyGoalsDay || false,
+      isWeeklyReflection: status?.isWeeklyReflectionDay || false,
+    };
+
     const gate = evaluateSubmitGate({
       durationSeconds: recordedDuration ?? null,
       fileSizeBytes: contentLength > 0 ? contentLength : null,
       frameCount: Array.isArray(frames) ? frames.length : null,
-      flags: {},
+      flags: gateFlags,
     });
     if (!gate.passed) {
       try { await deleteFromR2(key); } catch {}
