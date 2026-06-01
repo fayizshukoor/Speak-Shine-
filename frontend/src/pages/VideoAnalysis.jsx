@@ -701,6 +701,12 @@ function ProcessingProgress({ stage, stageKey, completedSteps = [], percent = 0,
 // ── Client-side video compression ────────────────────────────────────────────
 const COMPRESS_THRESHOLD = 50 * 1024 * 1024; // 50 MB
 
+// True when the browser can re-encode large files before upload (canvas + MediaRecorder).
+const CAN_COMPRESS =
+  typeof MediaRecorder !== "undefined" &&
+  typeof HTMLCanvasElement !== "undefined" &&
+  typeof HTMLCanvasElement.prototype.captureStream === "function";
+
 function readVideoBlobDuration(blob) {
   return new Promise((resolve) => {
     if (!blob || blob.size <= 0) {
@@ -1030,12 +1036,12 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
   };
 
   const uploadGate = file
-    ? evaluateSubmitGate({ durationSeconds: fileDuration, fileSizeBytes: file.size, flags: gateFlags })
+    ? evaluateSubmitGate({ durationSeconds: fileDuration, fileSizeBytes: file.size, flags: gateFlags, canCompress: CAN_COMPRESS })
     : null;
 
   const handleUpload = async () => {
     if (!file) { setError("Please select a video file"); return; }
-    const gate = evaluateSubmitGate({ durationSeconds: fileDuration, fileSizeBytes: file.size, flags: gateFlags });
+    const gate = evaluateSubmitGate({ durationSeconds: fileDuration, fileSizeBytes: file.size, flags: gateFlags, canCompress: CAN_COMPRESS });
     if (!gate.passed) {
       setError(gate.checks.find((c) => c.status === "fail")?.message || "Video does not meet requirements.");
       return;
@@ -1058,6 +1064,15 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
           console.warn("[Upload] Compression failed, uploading original:", compErr.message);
           fileToUpload = file;
         }
+      }
+
+      // Server hard-rejects anything over 110 MB. Abort with a clear message
+      // rather than letting the upload fail with a 413.
+      if (fileToUpload.size > 110 * 1024 * 1024) {
+        setUploading(false);
+        setStage("");
+        setError(`File is ${(fileToUpload.size / 1024 / 1024).toFixed(1)} MB even after compression (max 110 MB). Please use a shorter or lower-resolution video.`);
+        return;
       }
 
       // ── Kick off frame extraction + presigned URL fetch in parallel ──
@@ -1527,18 +1542,27 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
   const startRecording = (stream) => {
     chunksRef.current = [];
 
-    // Use the most basic MediaRecorder configuration possible for maximum compatibility
+    // Cap the bitrate so even a 10-min recording stays under the 110 MB upload
+    // limit. ~1.1 Mbps video + 96 kbps audio ≈ 90 MB at 10 min, ~45 MB at 5 min.
+    // Without this, the browser default (~2.5 Mbps) produced 130 MB+ files.
     let recorder;
+    const recorderOptions = { videoBitsPerSecond: 1_100_000, audioBitsPerSecond: 96_000 };
     try {
-      // Try the most basic configuration first - no codec specification
-      recorder = new MediaRecorder(stream);
-      console.log(`[Recording] Using basic MediaRecorder (no codec specified)`);
+      recorder = new MediaRecorder(stream, recorderOptions);
+      console.log(`[Recording] MediaRecorder with capped bitrate (1.1 Mbps video / 96 kbps audio)`);
     } catch (err) {
-      console.error(`[Recording] Basic MediaRecorder failed:`, err);
-      setError("Your browser doesn't support video recording. Please use a different browser.");
-      setStep("setup");
-      cleanup();
-      return;
+      // Some browsers reject the options object — fall back to the most basic config.
+      console.warn(`[Recording] Bitrate options unsupported, falling back to basic:`, err);
+      try {
+        recorder = new MediaRecorder(stream);
+        console.log(`[Recording] Using basic MediaRecorder (no options)`);
+      } catch (err2) {
+        console.error(`[Recording] Basic MediaRecorder failed:`, err2);
+        setError("Your browser doesn't support video recording. Please use a different browser.");
+        setStep("setup");
+        cleanup();
+        return;
+      }
     }
 
     // Store the actual MIME type the browser chose
@@ -1755,6 +1779,7 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
       durationSeconds: elapsed,
       fileSizeBytes: recordedBlob.size,
       flags: gateFlags,
+      canCompress: CAN_COMPRESS,
     });
     if (!gate.passed) {
       setError(gate.checks.find((c) => c.status === "fail")?.message || "Recording does not meet requirements.");
@@ -1795,6 +1820,14 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
         } catch (compErr) {
           console.warn("[Upload] Compression failed, uploading original:", compErr.message);
         }
+      }
+
+      // Server hard-rejects anything over 110 MB. If we still can't fit, stop here
+      // with a clear message rather than letting the upload fail with a 413.
+      if (fileToUpload.size > 110 * 1024 * 1024) {
+        setStep("preview");
+        setError(`Recording is ${(fileToUpload.size / 1024 / 1024).toFixed(1)} MB even after compression (max 110 MB). Please record a shorter clip.`);
+        return;
       }
 
       // ── Frame extraction + presigned URL in parallel ──
@@ -1952,6 +1985,7 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
         durationSeconds: elapsed,
         fileSizeBytes: recordedBlob.size,
         flags: gateFlags,
+        canCompress: CAN_COMPRESS,
       })
     : null;
 
