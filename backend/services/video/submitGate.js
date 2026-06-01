@@ -190,9 +190,19 @@ export function calculateCompositeScore({
   const isSpecialDay = topicRelevance == null;
 
   // ── Part 1: Video length ─────────────────────────────────────────────────
+  // Score is proportional within the valid range [minSeconds, maxSeconds].
+  // Meeting the minimum (60s) earns a base score; full marks at maxSeconds.
+  // This keeps scoring fair across day types (regular 5-min vs monthly 10-min).
   const maxDur = maxDurationSeconds || 300;
+  const minDur = 60; // always 1 minute minimum
   const actualDur = Math.min(durationSeconds || 0, maxDur); // cap at max
-  const lengthScore = (actualDur / maxDur) * 33.33;
+  const rangeScore = maxDur > minDur
+    ? Math.max(0, (actualDur - minDur) / (maxDur - minDur))
+    : 1;
+  // Base 50% for meeting minimum + up to 50% for going toward max
+  const lengthScore = actualDur >= minDur
+    ? (0.5 + 0.5 * rangeScore) * 33.33
+    : (actualDur / minDur) * 0.5 * 33.33; // below min: partial credit only
 
   // ── Part 2: Vocabulary used ──────────────────────────────────────────────
   const usedCount = Array.isArray(vocabularyUsed) ? vocabularyUsed.length : 0;
