@@ -542,8 +542,8 @@ const tt = { background: "#16162a", border: "1px solid #252545", borderRadius: 1
 const avg = (arr, k) => { const v = arr.filter(s => s[k] != null).map(s => s[k]); return v.length ? (v.reduce((a,b)=>a+b,0)/v.length).toFixed(1) : "—"; };
 const scoreColor = v => v >= 7 ? "var(--success)" : v >= 5 ? "var(--warning)" : "var(--danger)";
 
-const CACHE_KEY = "dashboard_cache";
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_KEY = "dashboard_cache_v2"; // bump version to bust stale sort order
+const CACHE_TTL = 60 * 1000; // 1 minute — leaderboard should feel live
 
 function getCachedDashboard() {
   try {
