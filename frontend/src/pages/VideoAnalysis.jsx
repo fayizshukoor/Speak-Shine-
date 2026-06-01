@@ -30,6 +30,7 @@ export default function VideoAnalysis() {
   }, [location.pathname]);
 
   const [todayQuestion, setTodayQuestion] = useState(null);
+  const [todayVocabulary, setTodayVocabulary] = useState([]);
   const [isMonthlyReflection, setIsMonthlyReflection] = useState(false);
   const [isMonthlyGoals, setIsMonthlyGoals] = useState(false);
   const [isWeeklyReflection, setIsWeeklyReflection] = useState(false);
@@ -54,6 +55,7 @@ export default function VideoAnalysis() {
       if (t?.isMonthlyReflection) setIsMonthlyReflection(true);
       if (t?.isMonthlyGoals) setIsMonthlyGoals(true);
       if (t?.isWeeklyReflection) setIsWeeklyReflection(true);
+      if (Array.isArray(t?.vocabulary) && t.vocabulary.length > 0) setTodayVocabulary(t.vocabulary);
     }).catch(() => {});
   }, []);
 
@@ -408,6 +410,11 @@ export default function VideoAnalysis() {
               <div className="daily-poster-section-label">❓ QUESTION</div>
               <div className="daily-poster-question">{todayQuestion.question}</div>
             </div>
+
+            {/* Vocabulary words */}
+            {todayVocabulary.length > 0 && (
+              <VocabularyWords words={todayVocabulary} />
+            )}
           </div>
         )}
 
@@ -430,8 +437,8 @@ export default function VideoAnalysis() {
         </div>
 
         {mode === "upload"
-          ? <UploadCard onAnalysisStarted={onAnalysisStarted} isMonthlyReflection={isMonthlyReflection} isMonthlyGoals={isMonthlyGoals} isWeeklyReflection={isWeeklyReflection} />
-          : <RecordCard  onAnalysisStarted={onAnalysisStarted} question={todayQuestion} isMonthlyReflection={isMonthlyReflection} isMonthlyGoals={isMonthlyGoals} isWeeklyReflection={isWeeklyReflection} />
+          ? <UploadCard onAnalysisStarted={onAnalysisStarted} isMonthlyReflection={isMonthlyReflection} isMonthlyGoals={isMonthlyGoals} isWeeklyReflection={isWeeklyReflection} vocabulary={todayVocabulary} />
+          : <RecordCard  onAnalysisStarted={onAnalysisStarted} question={todayQuestion} isMonthlyReflection={isMonthlyReflection} isMonthlyGoals={isMonthlyGoals} isWeeklyReflection={isWeeklyReflection} vocabulary={todayVocabulary} />
         }
 
         {/* Report Section */}
@@ -911,8 +918,94 @@ function SubmitGatePanel({ gate }) {
   );
 }
 
+// ── Vocabulary Words Component ───────────────────────────────────────────────
+// compact=true → chips only (used during active recording)
+// compact=false (default) → full card with word + meaning + example
+function VocabularyWords({ words, compact = false }) {
+  if (!words || words.length === 0) return null;
+
+  if (compact) {
+    return (
+      <div style={{
+        marginTop: "1rem",
+        marginBottom: "0.5rem",
+        background: "rgba(124,111,255,0.07)",
+        border: "1px solid rgba(124,111,255,0.25)",
+        borderRadius: 14,
+        padding: "0.85rem 1rem",
+      }}>
+        <div style={{
+          fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase",
+          letterSpacing: "0.1em", color: "rgba(124,111,255,0.9)", marginBottom: "0.65rem",
+        }}>
+          📚 TODAY'S VOCABULARY CHALLENGE
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+          {words.map((w, i) => (
+            <span key={i} style={{
+              background: "rgba(124,111,255,0.18)",
+              border: "1px solid rgba(124,111,255,0.35)",
+              borderRadius: 20,
+              padding: "0.3rem 0.85rem",
+              fontSize: "0.88rem",
+              fontWeight: 700,
+              color: "#c4b5fd",
+              letterSpacing: "0.02em",
+            }}>
+              {w.word}
+            </span>
+          ))}
+        </div>
+        <div style={{ marginTop: "0.6rem", fontSize: "0.72rem", color: "rgba(255,255,255,0.35)" }}>
+          ✨ Try to use these words in your video today!
+        </div>
+      </div>
+    );
+  }
+
+  // Full card — word + meaning + example
+  return (
+    <div style={{
+      marginTop: "1rem",
+      marginBottom: "0.5rem",
+      background: "rgba(124,111,255,0.07)",
+      border: "1px solid rgba(124,111,255,0.25)",
+      borderRadius: 14,
+      padding: "1rem",
+    }}>
+      <div style={{
+        fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase",
+        letterSpacing: "0.1em", color: "rgba(124,111,255,0.9)", marginBottom: "0.75rem",
+      }}>
+        📚 TODAY'S VOCABULARY CHALLENGE
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
+        {words.map((w, i) => (
+          <div key={i} style={{
+            background: "rgba(255,255,255,0.04)",
+            border: "1px solid rgba(124,111,255,0.15)",
+            borderRadius: 10,
+            padding: "0.65rem 0.85rem",
+          }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem", marginBottom: "0.2rem" }}>
+              <span style={{ fontSize: "0.88rem", fontWeight: 700, color: "#a78bfa" }}>{w.word}</span>
+              <span style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.45)", fontStyle: "italic" }}>— {w.meaning}</span>
+            </div>
+            <div style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.6)", lineHeight: 1.4 }}>
+              💬 <em>"{w.example}"</em>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: "0.75rem", fontSize: "0.75rem", color: "rgba(255,255,255,0.4)", lineHeight: 1.4 }}>
+        ✨ Try to use these words naturally in your speaking video today!
+      </div>
+    </div>
+  );
+}
+
 // ── Upload Card (direct-to-R2 flow) ─────────────────────────────────────────
-function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, isWeeklyReflection }) {
+function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, isWeeklyReflection, vocabulary = [] }) {
   const [file, setFile]           = useState(null);
   const [fileDuration, setFileDuration] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -1194,6 +1287,10 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
           </div>
         )}
         {uploadGate && <SubmitGatePanel gate={uploadGate} />}
+        {/* Vocabulary challenge */}
+        {vocabulary.length > 0 && (
+          <VocabularyWords words={vocabulary} />
+        )}
         <button className="btn-primary" onClick={handleUpload} disabled={!file || uploading || (uploadGate && !uploadGate.passed)} style={{ width: "100%" }}>
           {uploading ?
             (stage === "hashing" ? `Analyzing ${hashProgress}%…` :
@@ -1212,7 +1309,7 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
 // ── Record Card ──────────────────────────────────────────────────────────────
 // States: "setup" → "countdown" → "recording" → "preview" → "uploading"
 
-function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthlyGoals, isWeeklyReflection }) {
+function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthlyGoals, isWeeklyReflection, vocabulary = [] }) {
   const [step, setStep]             = useState("setup");
   const [cameras, setCameras]       = useState([]);
   const { generateHashAndFrames, cacheResult, isHashing, hashProgress } = useVideoFrameHash();
@@ -1977,6 +2074,11 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
             </button>
           </div>
 
+          {/* Vocabulary challenge */}
+          {vocabulary.length > 0 && (
+            <VocabularyWords words={vocabulary} />
+          )}
+
           <button className="btn-primary" onClick={startCountdown} style={{ width: "100%" }}>
             🎬 Start Recording
           </button>
@@ -2098,6 +2200,30 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
             {elapsed < 60 && (
               <div style={{ fontSize: "0.78rem", color: "var(--muted)", textAlign: "center" }}>
                 ⏱️ Keep going — minimum 1 minute required ({60 - elapsed}s left)
+              </div>
+            )}
+
+            {/* Vocabulary chips — visible during recording */}
+            {vocabulary.length > 0 && (
+              <div style={{ borderTop: "1px solid var(--border2)", paddingTop: "0.75rem" }}>
+                <div style={{ fontSize: "0.65rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(124,111,255,0.8)", marginBottom: "0.5rem" }}>
+                  📚 Use these words
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
+                  {vocabulary.map((w, i) => (
+                    <span key={i} style={{
+                      background: "rgba(124,111,255,0.18)",
+                      border: "1px solid rgba(124,111,255,0.35)",
+                      borderRadius: 20,
+                      padding: "0.25rem 0.7rem",
+                      fontSize: "0.82rem",
+                      fontWeight: 700,
+                      color: "#c4b5fd",
+                    }}>
+                      {w.word}
+                    </span>
+                  ))}
+                </div>
               </div>
             )}
           </div>

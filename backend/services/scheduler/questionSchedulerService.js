@@ -7,6 +7,7 @@ import Status from "../../../models/statusSchema.js";
 import Question from "../../../models/questionSchema.js";
 import { generateAndInsertQuestions } from "../ai/questionGenerator.js";
 import { getManualQuestionForDate } from "../questions/questionsService.js";
+import { ensureTodayVocabulary } from "../ai/vocabularyGenerator.js";
 
 // Monthly reflection questions — shown on the last day of every month
 export const MONTHLY_REFLECTION_QUESTIONS = [
@@ -315,6 +316,11 @@ export async function publishDailyQuestion() {
 
     await Question.findByIdAndDelete(question._id);
     
+    // Generate vocabulary words for today's question (fire-and-forget, non-blocking)
+    ensureTodayVocabulary().catch(err =>
+      console.warn("[QuestionScheduler] Vocabulary generation failed (non-fatal):", err.message)
+    );
+
     return { 
       published: true, 
       type: "regular",

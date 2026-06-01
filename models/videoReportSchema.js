@@ -74,6 +74,10 @@ const videoReportSchema = new mongoose.Schema({
     rhythmNote: String,
     topicFeedback: String,
     qualityWarning: String,
+    
+    // Vocabulary challenge
+    vocabularyScore: { type: Number, min: 0, max: 10, default: null }, // out of 10
+    vocabularyUsed:  { type: [String], default: [] }, // which of today's 5 words were used correctly
   },
   
   // Processing status

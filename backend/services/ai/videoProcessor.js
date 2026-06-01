@@ -170,7 +170,7 @@ export async function processWebVideo(videoPath, displayName = "User", onProgres
 
     // Stage 4: Structured analysis + calibrated overall score / tier
     const analysis = buildAnalysisSummary(
-      buildStructuredAnalysis(speechResult, visual, qualityWarning)
+      buildStructuredAnalysis(speechResult, visual, qualityWarning, transcription?.text || "")
     );
 
     return { analysis, duration };
@@ -186,10 +186,12 @@ export async function processWebVideo(videoPath, displayName = "User", onProgres
  * Build structured analysis object directly from pipeline results.
  * No regex parsing needed — we have the raw objects.
  */
-function buildStructuredAnalysis(speechResult, visual, qualityWarning) {
+function buildStructuredAnalysis(speechResult, visual, qualityWarning, transcriptText = "") {
   const s = speechResult._stats || {};
 
   return {
+    // Transcript text (needed for vocabulary matching)
+    transcription: transcriptText || null,
     // Speech scores
     fluency:        speechResult.fluency,
     grammar:        speechResult.grammar,

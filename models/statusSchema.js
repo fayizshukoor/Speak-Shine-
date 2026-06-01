@@ -11,6 +11,15 @@ const statusSchema = new mongoose.Schema({
   todayPosterImage: { type: String, default: null },
   posterExpiresAt: { type: Date, default: null },
   recentCategories: { type: [String], default: [] },
+  // Daily vocabulary words (5 words related to today's question)
+  todayVocabulary: {
+    type: [{
+      word:    { type: String, required: true },
+      meaning: { type: String, required: true },
+      example: { type: String, required: true },
+    }],
+    default: [],
+  },
   // Monthly reflection
   isMonthlyReflectionDay: { type: Boolean, default: false },
   isMonthlyGoalsDay: { type: Boolean, default: false },

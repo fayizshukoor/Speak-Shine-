@@ -9,6 +9,7 @@ import DailyReport from "../../../models/dailyReportSchema.js";
 import StreakRecord from "../../../models/streakRecordSchema.js";
 import { generateSVGPoster } from "../../../api/posterGenerator.js";
 import env from "../../config/env.js";
+import { getTodayVocabulary } from "../ai/vocabularyGenerator.js";
 
 /**
  * Get poster image - use bot's stored PNG if available, else generate SVG fallback
@@ -129,29 +130,48 @@ export async function getUserProfile(phone) {
   // Only sum positive fines — negative values are streak reward credits, not outstanding debt
   const totalFines = allUsers.reduce((s, u) => s + Math.max(0, u.fine || 0), 0);
   const sortedByStreak = [...allUsers].sort((a, b) => (b.streak || 0) - (a.streak || 0));
-  const topStreak = sortedByStreak
+
+  // Lazy-generate vocabulary if missing (non-blocking — resolves in parallel)
+  const vocabularyPromise = (status?.questionSentToday && status?.todayQuestion)
+    ? getTodayVocabulary().catch(() => [])
+    : Promise.resolve(status?.todayVocabulary || []);
+
+  // ── Leaderboard sort ─────────────────────────────────────────────────────
+  // Submitted today → sorted by todayScore desc (top of table)
+  // Not submitted   → sorted by streak desc (below submitted group)
+  const submitted = [...allUsers]
+    .filter(u => u.completed)
+    .sort((a, b) => (b.todayScore ?? -1) - (a.todayScore ?? -1));
+  const notSubmitted = [...allUsers]
+    .filter(u => !u.completed)
+    .sort((a, b) => (b.streak || 0) - (a.streak || 0));
+  const leaderboardSorted = [...submitted, ...notSubmitted];
+
+  const topStreak = leaderboardSorted
     .slice(0, 5)
-    .map(u => ({ 
-      name: u.name, 
-      userId: u.userId, 
-      streak: u.streak || 0, 
-      weeklySubmissions: u.weeklySubmissions || 0, 
-      completed: u.completed || false 
+    .map(u => ({
+      name: u.name,
+      userId: u.userId,
+      streak: u.streak || 0,
+      weeklySubmissions: u.weeklySubmissions || 0,
+      completed: u.completed || false,
+      todayScore: u.todayScore ?? null,
     }));
 
   // Find the current user's rank in the full leaderboard
-  const myRankIdx = sortedByStreak.findIndex(u =>
+  const myRankIdx = leaderboardSorted.findIndex(u =>
     u.phone === phone ||
     u.phone === phone.replace(/^91/, "") ||
     u.phone === `91${phone}`
   );
   const myStreakEntry = myRankIdx >= 0 ? {
     rank: myRankIdx + 1,
-    name: sortedByStreak[myRankIdx].name,
-    userId: sortedByStreak[myRankIdx].userId,
-    streak: sortedByStreak[myRankIdx].streak || 0,
-    weeklySubmissions: sortedByStreak[myRankIdx].weeklySubmissions || 0,
-    completed: sortedByStreak[myRankIdx].completed || false,
+    name: leaderboardSorted[myRankIdx].name,
+    userId: leaderboardSorted[myRankIdx].userId,
+    streak: leaderboardSorted[myRankIdx].streak || 0,
+    weeklySubmissions: leaderboardSorted[myRankIdx].weeklySubmissions || 0,
+    completed: leaderboardSorted[myRankIdx].completed || false,
+    todayScore: leaderboardSorted[myRankIdx].todayScore ?? null,
     inTop5: myRankIdx < 5,
   } : null;
 
@@ -198,6 +218,7 @@ export async function getUserProfile(phone) {
       isMonthlyReflection: status?.isMonthlyReflectionDay || false,
       isMonthlyGoals: status?.isMonthlyGoalsDay || false,
       isWeeklyReflection: status?.isWeeklyReflectionDay || false,
+      vocabulary: await vocabularyPromise,
     },
     dailyReport: showReport ? dailyReport : null,
     showReport,

@@ -495,6 +495,49 @@ function getGreeting() {
   if (h < 17) return "afternoon";
   return "evening";
 }
+
+// ── Vocabulary Words Card ────────────────────────────────────────────────────
+function VocabularyWords({ words }) {
+  if (!words || words.length === 0) return null;
+  return (
+    <div style={{
+      marginTop: "1.25rem",
+      background: "rgba(124,111,255,0.07)",
+      border: "1px solid rgba(124,111,255,0.25)",
+      borderRadius: 14,
+      padding: "1rem",
+    }}>
+      <div style={{
+        fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase",
+        letterSpacing: "0.1em", color: "rgba(124,111,255,0.9)", marginBottom: "0.75rem",
+      }}>
+        📚 TODAY'S VOCABULARY CHALLENGE
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
+        {words.map((w, i) => (
+          <div key={i} style={{
+            background: "rgba(255,255,255,0.04)",
+            border: "1px solid rgba(124,111,255,0.15)",
+            borderRadius: 10,
+            padding: "0.65rem 0.85rem",
+          }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem", marginBottom: "0.2rem" }}>
+              <span style={{ fontSize: "0.88rem", fontWeight: 700, color: "#a78bfa" }}>{w.word}</span>
+              <span style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.45)", fontStyle: "italic" }}>— {w.meaning}</span>
+            </div>
+            <div style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.6)", lineHeight: 1.4 }}>
+              💬 <em>"{w.example}"</em>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: "0.75rem", fontSize: "0.75rem", color: "rgba(255,255,255,0.4)", lineHeight: 1.4 }}>
+        ✨ Try to use these words naturally in your speaking video today!
+      </div>
+    </div>
+  );
+}
+
 const tt = { background: "#16162a", border: "1px solid #252545", borderRadius: 10, fontSize: 12 };
 const avg = (arr, k) => { const v = arr.filter(s => s[k] != null).map(s => s[k]); return v.length ? (v.reduce((a,b)=>a+b,0)/v.length).toFixed(1) : "—"; };
 const scoreColor = v => v >= 7 ? "var(--success)" : v >= 5 ? "var(--warning)" : "var(--danger)";
@@ -528,19 +571,29 @@ export default function UserDashboard() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    Promise.all([
-      api.get("/dashboard/me"),
-      api.get("/live-sessions").catch(() => ({ data: [] })),
-    ]).then(([d, ls]) => {
+    const fetchData = () => {
+      Promise.all([
+        api.get("/dashboard/me"),
+        api.get("/live-sessions").catch(() => ({ data: [] })),
+      ]).then(([d, ls]) => {
+        setData(d.data);
+        setCachedDashboard(d.data); // save fresh data for next visit
+        setLiveSessions((ls.data || []).filter(s => s.status === "live" || s.status === "scheduled"));
+      })
+      .catch(err => {
+        // Only show error if we have no cached data to fall back on
+        if (!getCachedDashboard()) setError(err.response?.data?.error || "Failed to load data");
+      })
+      .finally(() => setLoading(false));
+    };
+
+    fetchData();
+    // Poll every 30s so the leaderboard updates when others submit
+    const interval = setInterval(() => api.get("/dashboard/me").then(d => {
       setData(d.data);
-      setCachedDashboard(d.data); // save fresh data for next visit
-      setLiveSessions((ls.data || []).filter(s => s.status === "live" || s.status === "scheduled"));
-    })
-    .catch(err => {
-      // Only show error if we have no cached data to fall back on
-      if (!getCachedDashboard()) setError(err.response?.data?.error || "Failed to load data");
-    })
-    .finally(() => setLoading(false));
+      setCachedDashboard(d.data);
+    }).catch(() => {}), 30_000);
+    return () => clearInterval(interval);
   }, []);
 
   if (loading) return <Layout title="My Dashboard"><div className="spinner-wrap"><div className="spinner"/><p style={{color:"var(--muted)"}}>Loading…</p></div></Layout>;
@@ -787,6 +840,11 @@ export default function UserDashboard() {
             </>
           )}
 
+          {/* Vocabulary words — all day types */}
+          {Array.isArray(data.today.vocabulary) && data.today.vocabulary.length > 0 && (
+            <VocabularyWords words={data.today.vocabulary} />
+          )}
+
           {/* CTA Button */}
           <button
             className="daily-poster-cta"
@@ -983,7 +1041,7 @@ export default function UserDashboard() {
       {/* ── Top Streaks leaderboard — always visible ── */}
       {data?.topStreak?.length > 0 && (
         <div className="card" style={{ marginBottom: "1rem" }}>
-          <div className="section-title">🏆 Top Streaks</div>
+          <div className="section-title">🏆 Today's Leaderboard</div>
           <div className="streak-list">
             {data.topStreak.map((u, i) => {
               const isMe = data?.myStreakEntry?.inTop5 && data.myStreakEntry.rank === i + 1;
@@ -1006,8 +1064,22 @@ export default function UserDashboard() {
                   </span>
                   <span className="streak-val">🔥 {u.streak} days</span>
                   <span className="streak-sub">{u.weeklySubmissions}/7</span>
+                  {/* Today's score — shown if submitted */}
+                  {u.completed && u.todayScore != null ? (
+                    <span style={{
+                      fontSize: "0.78rem", fontWeight: 700,
+                      padding: "0.2rem 0.55rem", borderRadius: 20,
+                      background: "rgba(124,111,255,0.18)",
+                      color: "#c4b5fd",
+                      whiteSpace: "nowrap",
+                    }}>
+                      {u.todayScore.toFixed(1)}/100
+                    </span>
+                  ) : (
+                    <span style={{ width: "4rem" }} />
+                  )}
                   <span style={{
-                    marginLeft: "auto", fontSize: "0.75rem", fontWeight: 600,
+                    marginLeft: "0.4rem", fontSize: "0.75rem", fontWeight: 600,
                     padding: "0.2rem 0.6rem", borderRadius: 20,
                     background: u.completed ? "rgba(74,222,128,0.15)" : "rgba(248,113,113,0.12)",
                     color: u.completed ? "#4ade80" : "#f87171",
@@ -1043,8 +1115,21 @@ export default function UserDashboard() {
                 </span>
                 <span className="streak-val">🔥 {data.myStreakEntry.streak} days</span>
                 <span className="streak-sub">{data.myStreakEntry.weeklySubmissions}/7</span>
+                {data.myStreakEntry.completed && data.myStreakEntry.todayScore != null ? (
+                  <span style={{
+                    fontSize: "0.78rem", fontWeight: 700,
+                    padding: "0.2rem 0.55rem", borderRadius: 20,
+                    background: "rgba(124,111,255,0.18)",
+                    color: "#c4b5fd",
+                    whiteSpace: "nowrap",
+                  }}>
+                    {data.myStreakEntry.todayScore.toFixed(1)}/100
+                  </span>
+                ) : (
+                  <span style={{ width: "4rem" }} />
+                )}
                 <span style={{
-                  marginLeft: "auto", fontSize: "0.75rem", fontWeight: 600,
+                  marginLeft: "0.4rem", fontSize: "0.75rem", fontWeight: 600,
                   padding: "0.2rem 0.6rem", borderRadius: 20,
                   background: data.myStreakEntry.completed ? "rgba(74,222,128,0.15)" : "rgba(248,113,113,0.12)",
                   color: data.myStreakEntry.completed ? "#4ade80" : "#f87171",

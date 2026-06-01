@@ -216,7 +216,9 @@ export function startScheduler() {
       const sendTime = s.posterSendTime || "08:00";
       if (nowTime === sendTime && !s.questionSentToday) {
         console.log(`[Scheduler] ⏰ Time matched: ${nowTime} — publishing question`);
-        await publishDailyQuestion();
+        // Delegate to questionSchedulerService which checks manual questions first
+        const { publishDailyQuestion: publishFromService } = await import("../backend/services/scheduler/questionSchedulerService.js");
+        await publishFromService();
       }
 
       // ── 2. Auto-generate questions at questionGenerateTime ───────────────
@@ -258,7 +260,8 @@ export function startScheduler() {
         // If within 4-hour window after scheduled time
         if (nowMins >= sendMins && nowMins <= sendMins + 240) {
           console.log(`[Scheduler] Catch-up: ${sendTime} already passed, publishing now...`);
-          await publishDailyQuestion();
+          const { publishDailyQuestion: publishFromService } = await import("../backend/services/scheduler/questionSchedulerService.js");
+          await publishFromService();
         }
       }
 
@@ -448,6 +451,7 @@ async function cleanExpiredVideos() {
 
       // Delete all notifications related to this video
       try {
+        const Notification = (await import("../models/notificationSchema.js")).default;
         await Notification.deleteMany({ reportId: report._id });
       } catch (notifErr) {
         console.error(`[Scheduler] Failed to delete notifications for report ${report._id}:`, notifErr.message);
@@ -489,8 +493,18 @@ export function startDailyReset() {
   // Clean up expired R2 videos every hour
   cron.schedule("0 * * * *", cleanExpiredVideos, { timezone: TIMEZONE });
 
+  // ── 11:00 AM: reset todayScore for all users ─────────────────────────────
+  cron.schedule("0 11 * * *", async () => {
+    try {
+      const result = await User.updateMany({}, { $set: { todayScore: null } });
+      console.log(`[Scheduler] ✅ 11am todayScore reset — cleared ${result.modifiedCount} user(s)`);
+    } catch (err) {
+      console.error("[Scheduler] ❌ 11am todayScore reset error:", err.message);
+    }
+  }, { timezone: TIMEZONE });
+
   // Run once on startup to catch any orphaned videos from previous sessions
   setTimeout(cleanExpiredVideos, 5000);
   
-  console.log("[Scheduler] ✅ Daily reset scheduler running (00:00 midnight + 00:05 safety fallback)");
+  console.log("[Scheduler] ✅ Daily reset scheduler running (00:00 midnight + 00:05 safety fallback + 11:00 score reset)");
 }

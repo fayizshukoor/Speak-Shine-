@@ -157,6 +157,108 @@ export function evaluateSubmitGate(input) {
 }
 
 /**
+ * Calculate the 100-point composite score for a video submission.
+ *
+ * Regular days (4 parts):
+ *   Part 1 — Video length      : (duration / maxDuration) × 33.33   → max 33.33
+ *   Part 2 — Vocabulary used   : (wordsUsed / totalWords) × 33.33   → max 33.33
+ *   Part 3 — Topic relevance   : (topicRelevance / 10) × 16.67      → max 16.67
+ *   Part 4 — Communication     : (commAvg / 10) × 16.67             → max 16.67
+ *
+ * Special days (weekly/monthly — no topicRelevance, 3 parts):
+ *   Part 1 — Video length      : (duration / maxDuration) × 33.33   → max 33.33
+ *   Part 2 — Vocabulary used   : (wordsUsed / totalWords) × 33.33   → max 33.33
+ *   Part 3 — Communication     : (commAvg / 10) × 33.34             → max 33.34
+ *
+ * @param {object} params
+ * @param {number}   params.durationSeconds   - actual video duration
+ * @param {number}   params.maxDurationSeconds - max allowed duration for this day type
+ * @param {string[]} params.vocabularyUsed     - words from today's list found in transcript
+ * @param {number}   params.totalVocabWords    - total words in today's list (usually 5)
+ * @param {number|null} params.topicRelevance  - AI score 0–10, null on special days
+ * @param {object}   params.analysis           - full analysis object for comm scores
+ * @returns {{ score: number, breakdown: object }}
+ */
+export function calculateCompositeScore({
+  durationSeconds,
+  maxDurationSeconds,
+  vocabularyUsed = [],
+  totalVocabWords = 5,
+  topicRelevance = null,
+  analysis = {},
+}) {
+  const isSpecialDay = topicRelevance == null;
+
+  // ── Part 1: Video length ─────────────────────────────────────────────────
+  const maxDur = maxDurationSeconds || 300;
+  const actualDur = Math.min(durationSeconds || 0, maxDur); // cap at max
+  const lengthScore = (actualDur / maxDur) * 33.33;
+
+  // ── Part 2: Vocabulary used ──────────────────────────────────────────────
+  const usedCount = Array.isArray(vocabularyUsed) ? vocabularyUsed.length : 0;
+  const total = totalVocabWords > 0 ? totalVocabWords : 5;
+  const vocabUsedScore = (usedCount / total) * 33.33;
+
+  // ── Communication scores (fluency, grammar, confidence, vocabulary AI,
+  //    eyeContact, bodyLanguage, facialExpression, overallPresence) ─────────
+  const commFields = [
+    analysis.fluency, analysis.grammar, analysis.confidence, analysis.vocabulary,
+    analysis.eyeContact, analysis.bodyLanguage, analysis.facialExpression, analysis.overallPresence,
+  ].filter(n => typeof n === "number" && !Number.isNaN(n));
+  const commAvg = commFields.length
+    ? commFields.reduce((a, b) => a + b, 0) / commFields.length
+    : 0;
+
+  let topicScore = 0;
+  let commScore = 0;
+
+  if (isSpecialDay) {
+    // 3-part: comm gets the remaining 33.34
+    commScore = (commAvg / 10) * 33.34;
+  } else {
+    // 4-part
+    topicScore = (Math.max(0, Math.min(10, topicRelevance)) / 10) * 16.67;
+    commScore  = (commAvg / 10) * 16.67;
+  }
+
+  const total100 = Math.min(100, Math.round((lengthScore + vocabUsedScore + topicScore + commScore) * 100) / 100);
+
+  return {
+    score: total100,
+    breakdown: {
+      length:    Math.round(lengthScore    * 100) / 100,
+      vocabUsed: Math.round(vocabUsedScore * 100) / 100,
+      topic:     Math.round(topicScore     * 100) / 100,
+      comm:      Math.round(commScore      * 100) / 100,
+      isSpecialDay,
+    },
+  };
+}
+
+/**
+ * Match vocabulary words against a transcript (case-insensitive whole-word).
+ * Returns array of matched word strings.
+ *
+ * @param {string}   transcript  - full spoken text
+ * @param {Array<{word: string}>} vocabWords - today's vocabulary list
+ * @returns {string[]}
+ */
+export function matchVocabularyInTranscript(transcript, vocabWords) {
+  if (!transcript || !Array.isArray(vocabWords) || vocabWords.length === 0) return [];
+  const lower = transcript.toLowerCase();
+  const matched = [];
+  for (const item of vocabWords) {
+    const w = (item.word || "").trim().toLowerCase();
+    if (!w) continue;
+    // Whole-word match — handles multi-word phrases too
+    const escaped = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`\\b${escaped}\\b`);
+    if (regex.test(lower)) matched.push(item.word.trim());
+  }
+  return matched;
+}
+
+/**
  * Build calibrated summary fields stored on analysis for consistent report UI.
  */
 export function buildAnalysisSummary(analysis) {

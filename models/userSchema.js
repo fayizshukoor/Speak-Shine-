@@ -22,6 +22,8 @@ const userSchema = new mongoose.Schema({
     }],
     default: [],
   },
+  // Today's composite score (0–100). Overwritten on each submission; reset to null at 11am daily.
+  todayScore: { type: Number, default: null, min: 0, max: 100 },
 });
 
 userSchema.index({ phone: 1 });

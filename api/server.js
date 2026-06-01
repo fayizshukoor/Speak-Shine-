@@ -62,10 +62,9 @@ console.log("[Routes] Chat routes loaded:", !!chatRoutes);
 console.log("[Routes] Live sessions routes loaded:", !!liveSessionRoutes);
 console.log("[Routes] Submissions routes loaded:", !!submissionsRoutes);
 console.log("[Routes] Notification routes loaded:", !!notificationRoutes);
-import { recoverStuckJobs } from "./videoQueue.js";
 import { startScheduler } from "./scheduler.js";
 import { startDailyReset } from "./scheduler.js";
-import { setSocketIO } from "../backend/services/video/videoQueue.js";
+import { setSocketIO, recoverStuckJobs } from "../backend/services/video/videoQueue.js";
 
 // (env already loaded at top of file — see dotenv block above)
 const __filename_server = fileURLToPath(import.meta.url);

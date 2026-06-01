@@ -7,8 +7,10 @@
 
 import VideoReport from "../../../models/videoReportSchema.js";
 import User from "../../../models/userSchema.js";
+import Status from "../../../models/statusSchema.js";
 import { processWebVideo } from "../ai/videoProcessor.js";
 import { phoneVariants } from "../../utils/phoneVariants.js";
+import { calculateCompositeScore, matchVocabularyInTranscript, getDurationLimits } from "./submitGate.js";
 import fs from "fs";
 
 // ── Concurrency limit ────────────────────────────────────────────────────────
@@ -284,9 +286,55 @@ async function processJob(job) {
 
     // Persist the actual duration so retries can skip detection
     const durationToSave = result.duration;
+
+    // ── Vocabulary matching ──────────────────────────────────────────────────
+    // Check which of today's vocabulary words appear in the transcript
+    let vocabularyUsed = [];
+    let vocabularyScore = null;
+    try {
+      const status = await Status.findOne().lean();
+      const todayVocab = status?.todayVocabulary || [];
+      const transcript = result.analysis?.transcription || "";
+      if (todayVocab.length > 0 && transcript) {
+        vocabularyUsed = matchVocabularyInTranscript(transcript, todayVocab);
+        vocabularyScore = Math.round((vocabularyUsed.length / todayVocab.length) * 10 * 10) / 10; // 0–10
+      }
+    } catch (vocabErr) {
+      console.warn("[Queue] Vocabulary matching failed (non-fatal):", vocabErr.message);
+    }
+
+    // ── Composite 100-point score ────────────────────────────────────────────
+    let compositeScore = null;
+    try {
+      const status = await Status.findOne().lean();
+      const gateFlags = {
+        isMonthlyReflection: status?.isMonthlyReflectionDay || false,
+        isMonthlyGoals:      status?.isMonthlyGoalsDay      || false,
+        isWeeklyReflection:  status?.isWeeklyReflectionDay  || false,
+      };
+      const { maxSeconds } = getDurationLimits(gateFlags);
+      const todayVocab = status?.todayVocabulary || [];
+
+      const { score } = calculateCompositeScore({
+        durationSeconds:    durationToSave || 0,
+        maxDurationSeconds: maxSeconds,
+        vocabularyUsed,
+        totalVocabWords:    todayVocab.length || 5,
+        topicRelevance:     result.analysis?.topicRelevance ?? null,
+        analysis:           result.analysis,
+      });
+      compositeScore = score;
+    } catch (scoreErr) {
+      console.warn("[Queue] Composite score calculation failed (non-fatal):", scoreErr.message);
+    }
+
     await VideoReport.findByIdAndUpdate(reportId, {
       status: "completed",
-      analysis: result.analysis,
+      analysis: {
+        ...result.analysis,
+        vocabularyUsed,
+        vocabularyScore,
+      },
       ...(durationToSave ? { videoDuration: durationToSave } : {}),
     });
 
@@ -301,8 +349,12 @@ async function processJob(job) {
               $slice: -30,
             },
           },
+          // Always overwrite todayScore with the latest submission's score
+          ...(compositeScore != null ? { $set: { todayScore: compositeScore } } : {}),
         }
       );
+    } else if (compositeScore != null) {
+      await User.findOneAndUpdate({ phone }, { $set: { todayScore: compositeScore } });
     }
 
     pushProgress(reportId, { status: "completed", percent: 100, stage: "Analysis complete" });
