@@ -1347,6 +1347,13 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
   const [previewAspect, setPreviewAspect] = useState(null);
   const [draftRestored, setDraftRestored] = useState(false); // true when draft loaded from IndexedDB
 
+  // ── Background compression state ─────────────────────────────────────────
+  // Compression starts automatically as soon as the preview step loads (if blob > threshold).
+  // By the time the user clicks Submit, it's already done.
+  const [bgCompressState, setBgCompressState] = useState("idle"); // "idle"|"compressing"|"done"|"failed"
+  const [bgCompressProgress, setBgCompressProgress] = useState(0);
+  const bgCompressedBlobRef = useRef(null); // holds the compressed File once ready
+
   const { applyNoiseCancellation, cleanupNC } = useNoiseCancellation();
 
   const liveVideoRef    = useRef(null);
@@ -1494,6 +1501,43 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
       pendingBlobRef.current = null;
     }
   }, [step]);
+
+  // ── Background compression — starts as soon as preview loads ─────────────
+  // If the blob is large enough, kick off compression immediately so it's
+  // ready before the user clicks Submit (parallel, not sequential).
+  useEffect(() => {
+    if (step !== "preview" || !recordedBlob) return;
+    if (recordedBlob.size <= COMPRESS_THRESHOLD) return; // small enough, no need
+    if (!CAN_COMPRESS) return; // browser doesn't support canvas compression
+    if (bgCompressState !== "idle") return; // already running or done
+
+    let cancelled = false;
+    setBgCompressState("compressing");
+    setBgCompressProgress(0);
+    bgCompressedBlobRef.current = null;
+
+    const mimeType = mimeTypeRef.current || recordedBlob.type || "video/webm";
+    const ext = mimeType.includes("mp4") ? "mp4" : "webm";
+    const fileToCompress = new File([recordedBlob], `recording.${ext}`, { type: mimeType });
+
+    console.log(`[BgCompress] Starting background compression of ${(recordedBlob.size/1024/1024).toFixed(1)} MB`);
+
+    compressVideo(fileToCompress, (p) => {
+      if (!cancelled) setBgCompressProgress(Math.round(p * 100));
+    }).then((compressed) => {
+      if (cancelled) return;
+      const compressedFile = new File([compressed], "recording.webm", { type: "video/webm" });
+      bgCompressedBlobRef.current = compressedFile;
+      setBgCompressState("done");
+      console.log(`[BgCompress] Done: ${(recordedBlob.size/1024/1024).toFixed(1)} MB → ${(compressedFile.size/1024/1024).toFixed(1)} MB`);
+    }).catch((err) => {
+      if (cancelled) return;
+      setBgCompressState("failed");
+      console.warn("[BgCompress] Failed (will compress on submit):", err.message);
+    });
+
+    return () => { cancelled = true; };
+  }, [step, recordedBlob, bgCompressState]);
 
   const cleanup = useCallback(() => {
     clearInterval(timerRef.current);
@@ -1767,6 +1811,9 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
     recordingStartedAtRef.current = null;
     accumulatedRecordingMsRef.current = 0;
     setDraftRestored(false);
+    setBgCompressState("idle");
+    setBgCompressProgress(0);
+    bgCompressedBlobRef.current = null;
     setStep("setup");
     cleanup();
   };
@@ -1810,15 +1857,23 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
       console.log(`[Upload] Created file - name: ${fileToUpload.name}, size: ${fileToUpload.size}, type: ${fileToUpload.type}`);
 
       // ── Compress large recordings ──
+      // Use background-compressed result if already ready; otherwise compress now.
       if (fileToUpload.size > COMPRESS_THRESHOLD && typeof MediaRecorder !== "undefined" && typeof HTMLCanvasElement.prototype.captureStream === "function") {
-        setUploadStage("compressing");
-        setCompressProgress(0);
-        try {
-          const compressed = await compressVideo(fileToUpload, (p) => setCompressProgress(Math.round(p * 100)));
-          fileToUpload = new File([compressed], "recording.webm", { type: "video/webm" });
-          console.log(`[Upload] Compressed ${(recordedBlob.size/1024/1024).toFixed(1)}MB → ${(fileToUpload.size/1024/1024).toFixed(1)}MB`);
-        } catch (compErr) {
-          console.warn("[Upload] Compression failed, uploading original:", compErr.message);
+        if (bgCompressedBlobRef.current) {
+          // ✅ Already compressed in background during preview — use it instantly
+          console.log(`[Upload] Using pre-compressed blob (${(bgCompressedBlobRef.current.size/1024/1024).toFixed(1)} MB)`);
+          fileToUpload = bgCompressedBlobRef.current;
+        } else {
+          // Fallback: compress now (background compression failed or wasn't supported)
+          setUploadStage("compressing");
+          setCompressProgress(0);
+          try {
+            const compressed = await compressVideo(fileToUpload, (p) => setCompressProgress(Math.round(p * 100)));
+            fileToUpload = new File([compressed], "recording.webm", { type: "video/webm" });
+            console.log(`[Upload] Compressed ${(recordedBlob.size/1024/1024).toFixed(1)}MB → ${(fileToUpload.size/1024/1024).toFixed(1)}MB`);
+          } catch (compErr) {
+            console.warn("[Upload] Compression failed, uploading original:", compErr.message);
+          }
         }
       }
 
@@ -2374,10 +2429,48 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
           <video ref={previewVideoRef} controls playsInline
             style={{ width: "100%", borderRadius: "12px", background: "#000", aspectRatio: "16/9", marginBottom: "1rem" }} />
           {recordGate && <SubmitGatePanel gate={recordGate} />}
+
+          {/* Background compression progress — shown while compressing during preview */}
+          {bgCompressState === "compressing" && (
+            <div style={{
+              background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)",
+              borderRadius: 10, padding: "0.75rem 1rem", marginBottom: "0.5rem",
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", marginBottom: "0.4rem" }}>
+                <span style={{ color: "#fbbf24", fontWeight: 600 }}>🗜️ Compressing video in background…</span>
+                <span style={{ color: "#fbbf24", fontWeight: 700 }}>{bgCompressProgress}%</span>
+              </div>
+              <div style={{ background: "rgba(255,255,255,0.1)", borderRadius: 99, height: 5, overflow: "hidden" }}>
+                <div style={{
+                  height: "100%", width: `${bgCompressProgress}%`,
+                  background: "linear-gradient(90deg, #f59e0b, #ef4444)",
+                  borderRadius: 99, transition: "width 0.4s ease",
+                }} />
+              </div>
+              <div style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.5)", marginTop: "0.35rem" }}>
+                Submit will be instant once done
+              </div>
+            </div>
+          )}
+          {bgCompressState === "done" && recordedBlob && recordedBlob.size > COMPRESS_THRESHOLD && (
+            <div style={{
+              background: "rgba(34,197,94,0.08)", border: "1px solid rgba(74,222,128,0.3)",
+              borderRadius: 10, padding: "0.6rem 1rem", marginBottom: "0.5rem",
+              fontSize: "0.82rem", color: "#4ade80", display: "flex", alignItems: "center", gap: "0.5rem",
+            }}>
+              ✅ Compressed: {(recordedBlob.size/1024/1024).toFixed(1)} MB → {(bgCompressedBlobRef.current?.size/1024/1024).toFixed(1)} MB — ready to submit instantly
+            </div>
+          )}
+
           <div style={{ display: "flex", gap: "0.75rem" }}>
             <button className="btn-secondary" onClick={retake} style={{ flex: 1 }}>🔄 Retake</button>
-            <button className="btn-primary" onClick={submitRecording} disabled={!recordGate?.passed} style={{ flex: 2 }}>
-              🚀 Submit for Analysis
+            <button
+              className="btn-primary"
+              onClick={submitRecording}
+              disabled={!recordGate?.passed || bgCompressState === "compressing"}
+              style={{ flex: 2, opacity: bgCompressState === "compressing" ? 0.6 : 1 }}
+            >
+              {bgCompressState === "compressing" ? `🗜️ Compressing… ${bgCompressProgress}%` : "🚀 Submit for Analysis"}
             </button>
           </div>
           
