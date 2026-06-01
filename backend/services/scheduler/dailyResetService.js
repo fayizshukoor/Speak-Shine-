@@ -257,13 +257,28 @@ export async function resetStatusFlags() {
 }
 
 /**
- * Track consecutive missed days and auto-disable accounts at threshold
+ * Track consecutive missed days and auto-disable accounts at threshold.
+ * Only increments consecutiveSkips for users who were actually fined today
+ * (not buffer-absorbed). Resets to 0 for users who submitted.
  */
 export async function trackConsecutiveSkipsAndAutoDisable() {
   const AUTO_DISABLE_SKIPS = Number(process.env.AUTO_DISABLE_SKIPS) || 3;
 
+  // Reset for submitters
   await User.updateMany({ completed: true }, { $set: { consecutiveSkips: 0 } });
-  await User.updateMany({ completed: false }, { $inc: { consecutiveSkips: 1 } });
+
+  // Only increment for users who were actually fined today (not buffer-absorbed)
+  // fineChargedToday is set by applyDailyFinesAndStreaks
+  await User.updateMany(
+    { completed: false, fineChargedToday: true },
+    { $inc: { consecutiveSkips: 1 } }
+  );
+
+  // Reset consecutiveSkips for users whose fine was absorbed by buffer (streak kept)
+  await User.updateMany(
+    { completed: false, fineChargedToday: false },
+    { $set: { consecutiveSkips: 0 } }
+  );
 
   const toDisable = await User.find({
     consecutiveSkips: { $gte: AUTO_DISABLE_SKIPS },

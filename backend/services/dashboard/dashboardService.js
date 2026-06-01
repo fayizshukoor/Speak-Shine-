@@ -137,15 +137,16 @@ export async function getUserProfile(phone) {
     : Promise.resolve(status?.todayVocabulary || []);
 
   // ── Leaderboard sort ─────────────────────────────────────────────────────
-  // Submitted today → sorted by monthlyScore desc (top of table)
-  // Not submitted   → sorted by streak desc (below submitted group)
-  const submitted = [...allUsers]
-    .filter(u => u.completed)
-    .sort((a, b) => (b.monthlyScore ?? 0) - (a.monthlyScore ?? 0));
-  const notSubmitted = [...allUsers]
-    .filter(u => !u.completed)
-    .sort((a, b) => (b.streak || 0) - (a.streak || 0));
-  const leaderboardSorted = [...submitted, ...notSubmitted];
+  // Primary sort: monthlyScore desc (highest pts first, always)
+  // Secondary sort: streak desc (tiebreaker when scores are equal)
+  // Submitted today floats above non-submitted at equal score
+  const leaderboardSorted = [...allUsers].sort((a, b) => {
+    const scoreA = a.monthlyScore ?? 0;
+    const scoreB = b.monthlyScore ?? 0;
+    if (scoreB !== scoreA) return scoreB - scoreA;          // higher pts first
+    if (b.completed !== a.completed) return b.completed ? 1 : -1; // submitted floats up
+    return (b.streak || 0) - (a.streak || 0);               // streak tiebreaker
+  });
 
   const topStreak = leaderboardSorted
     .slice(0, 5)
