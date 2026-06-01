@@ -205,9 +205,26 @@ export function calculateCompositeScore({
     : (actualDur / minDur) * 0.5 * 33.33; // below min: partial credit only
 
   // ── Part 2: Vocabulary used ──────────────────────────────────────────────
+  // Same fair formula as duration:
+  //   0 words used  → 0 pts
+  //   1 word used   → base 50% (16.67) — rewarded for trying
+  //   all words used → full 33.33
+  // If no vocab words exist today (special days), award full marks automatically.
   const usedCount = Array.isArray(vocabularyUsed) ? vocabularyUsed.length : 0;
-  const total = totalVocabWords > 0 ? totalVocabWords : 5;
-  const vocabUsedScore = (usedCount / total) * 33.33;
+  const total = totalVocabWords > 0 ? totalVocabWords : 0;
+  let vocabUsedScore;
+  if (total === 0) {
+    // No vocab challenge today (special day) — full marks, not penalised
+    vocabUsedScore = 33.33;
+  } else if (usedCount === 0) {
+    vocabUsedScore = 0;
+  } else {
+    // base 50% for using at least 1 word + proportional bonus up to all words
+    const rangeScore = total > 1
+      ? (usedCount - 1) / (total - 1)
+      : 1;
+    vocabUsedScore = (0.5 + 0.5 * rangeScore) * 33.33;
+  }
 
   // ── Communication scores (fluency, grammar, confidence, vocabulary AI,
   //    eyeContact, bodyLanguage, facialExpression, overallPresence) ─────────
