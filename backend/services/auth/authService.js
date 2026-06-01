@@ -218,14 +218,16 @@ export async function loginUser(phone, password, ipAddress) {
   await autoLinkPhone(auth.phone);
 
   // Generate tokens
+  // Keep the JWT payload minimal: id + role only. PII (phone/name) is resolved
+  // server-side from the DB so it never travels inside the token.
   const accessToken = jwt.sign(
-    { id: auth._id, phone: auth.phone, role: auth.role, name: auth.name, type: 'access' },
+    { id: auth._id, role: auth.role, type: 'access' },
     getJwtSecret(),
     { expiresIn: "15m" }
   );
 
   const refreshToken = jwt.sign(
-    { id: auth._id, phone: auth.phone, type: 'refresh' },
+    { id: auth._id, type: 'refresh' },
     getJwtSecret(),
     { expiresIn: "7d" }
   );
@@ -314,13 +316,13 @@ export async function refreshAccessToken(refreshToken, ipAddress) {
 
   // Issue new tokens
   const newAccessToken = jwt.sign(
-    { id: auth._id, phone: auth.phone, role: auth.role, name: auth.name, type: 'access' },
+    { id: auth._id, role: auth.role, type: 'access' },
     getJwtSecret(),
     { expiresIn: "15m" }
   );
 
   const newRefreshToken = jwt.sign(
-    { id: auth._id, phone: auth.phone, type: 'refresh' },
+    { id: auth._id, type: 'refresh' },
     getJwtSecret(),
     { expiresIn: "7d" }
   );

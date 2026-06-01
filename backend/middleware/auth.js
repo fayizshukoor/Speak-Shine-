@@ -13,26 +13,33 @@ function getJwtSecret() {
 }
 
 /**
- * Check whether a user account is still active.
- * Uses Redis as a short-lived cache to avoid a DB hit on every request.
- * Falls back to a direct DB query when Redis is unavailable.
+ * Resolve the request-scoped account context (isActive + PII) from the DB.
+ * The JWT now carries only { id, role }, so phone/name are looked up here and
+ * never travel inside the token. Uses Redis as a short-lived cache to avoid a
+ * DB hit on every request; falls back to a direct DB query when Redis is down.
  */
-async function isAccountActive(authId) {
-  const cacheKey = `auth:active:${authId}`;
+async function resolveAccount(authId) {
+  const cacheKey = `auth:ctx:${authId}`;
 
   if (isRedisAvailable()) {
     const cached = await getRedisClient().get(cacheKey);
-    if (cached !== null) return cached === "1";
+    if (cached) {
+      try { return JSON.parse(cached); } catch { /* fall through to DB */ }
+    }
   }
 
-  const auth = await Auth.findById(authId).select("isActive").lean();
-  const active = auth?.isActive !== false; // treat missing as active (safety)
+  const auth = await Auth.findById(authId).select("isActive phone name").lean();
+  const ctx = {
+    isActive: auth?.isActive !== false, // treat missing as active (safety)
+    phone: auth?.phone ?? null,
+    name: auth?.name ?? null,
+  };
 
   if (isRedisAvailable()) {
-    await getRedisClient().set(cacheKey, active ? "1" : "0", "EX", ACTIVE_CACHE_TTL);
+    await getRedisClient().set(cacheKey, JSON.stringify(ctx), "EX", ACTIVE_CACHE_TTL);
   }
 
-  return active;
+  return ctx;
 }
 
 export function authMiddleware(req, res, next) {
@@ -57,20 +64,24 @@ export function authMiddleware(req, res, next) {
     return res.status(401).json({ error: "Invalid token type" });
   }
 
+  // decoded carries { id, role, type }. phone/name are added from the DB below.
   req.user = decoded;
 
-  // Check isActive asynchronously — block disabled accounts immediately
-  isAccountActive(decoded.id)
-    .then((active) => {
-      if (!active) {
+  // Resolve account context (isActive + phone/name) and block disabled accounts.
+  resolveAccount(decoded.id)
+    .then((ctx) => {
+      if (!ctx.isActive) {
         return res.status(403).json({ error: "Account disabled", code: "ACCOUNT_DISABLED" });
       }
+      req.user.phone = ctx.phone;
+      req.user.name = ctx.name;
       next();
     })
     .catch((err) => {
-      // If the DB check fails, allow the request through (fail open) to avoid
-      // locking out users due to a transient DB error.
-      console.error("[Auth] isActive check failed:", err.message);
+      // If the DB lookup fails, allow the request through (fail open) to avoid
+      // locking out users on a transient DB error. req.user keeps id + role from
+      // the token; phone/name are unavailable for this one request.
+      console.error("[Auth] account resolve failed:", err.message);
       next();
     });
 }

@@ -13,7 +13,7 @@ function fmtDuration(sec) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-export function evaluateSubmitGate({ durationSeconds, fileSizeBytes, frameCount, flags }) {
+export function evaluateSubmitGate({ durationSeconds, fileSizeBytes, frameCount, flags, canCompress = false }) {
   const { minSeconds, maxSeconds, minLabel, maxLabel } = getDurationLimits(flags);
   const checks = [];
   const hasDuration = !!durationSeconds && durationSeconds > 0;
@@ -30,8 +30,18 @@ export function evaluateSubmitGate({ durationSeconds, fileSizeBytes, frameCount,
 
   if (fileSizeBytes > 0) {
     const mb = (fileSizeBytes / 1024 / 1024).toFixed(1);
-    if (fileSizeBytes > 110 * 1024 * 1024) {
-      checks.push({ id: "size", label: "File size", status: "fail", message: `${mb} MB — max 110 MB.` });
+    const UPLOAD_MAX = 110 * 1024 * 1024;
+    const HARD_MAX = 500 * 1024 * 1024;
+    if (fileSizeBytes > HARD_MAX) {
+      checks.push({ id: "size", label: "File size", status: "fail", message: `${mb} MB — too large (max 500 MB).` });
+    } else if (fileSizeBytes > UPLOAD_MAX) {
+      // Over the upload limit, but the client re-encodes it down before sending,
+      // so this is a warning (non-blocking) rather than a hard failure.
+      if (canCompress) {
+        checks.push({ id: "size", label: "File size", status: "warn", message: `${mb} MB — will be compressed before upload.` });
+      } else {
+        checks.push({ id: "size", label: "File size", status: "fail", message: `${mb} MB — max 110 MB.` });
+      }
     } else {
       checks.push({ id: "size", label: "File size", status: "pass", message: `${mb} MB — OK.` });
     }

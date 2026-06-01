@@ -4,6 +4,7 @@
  */
 
 import jwt from "jsonwebtoken";
+import Auth from "../../models/authSchema.js";
 import { roomKey, liveSessionRoom, getMessages, saveMessages, MAX_MESSAGES, GROUP_ROOM, COMMUNITY_ROOM } from "../services/chat/chatService.js";
 import { isRedisAvailable, getRedisClient } from "../config/redis.js";
 import { sanitizeText, isValidPhone, SanitizeError, LIMITS } from "../utils/textSanitizer.js";
@@ -94,14 +95,20 @@ export function initializeChatSocket(io, onlineUsers) {
   _io = io;
   _onlineUsers = onlineUsers;
   // ── Auth middleware ──────────────────────────────────────────────────────────
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     const token = socket.handshake.auth?.token || socket.handshake.query?.token;
     if (!token) {
       console.log("[Chat] Socket connection rejected: No token provided");
       return next(new Error("No token"));
     }
     try {
-      socket.user = jwt.verify(token, getJwtSecret());
+      const decoded = jwt.verify(token, getJwtSecret());
+      // JWT carries only { id, role }; resolve phone/name from the DB.
+      const auth = await Auth.findById(decoded.id).select("phone name role isActive").lean();
+      if (!auth || auth.isActive === false) {
+        return next(new Error("Invalid token"));
+      }
+      socket.user = { id: decoded.id, role: decoded.role || auth.role, phone: auth.phone, name: auth.name };
       console.log(`[Chat] Socket authenticated: ${socket.user.name} (${socket.user.phone})`);
       next();
     } catch (err) {
