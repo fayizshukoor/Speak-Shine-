@@ -542,7 +542,7 @@ const tt = { background: "#16162a", border: "1px solid #252545", borderRadius: 1
 const avg = (arr, k) => { const v = arr.filter(s => s[k] != null).map(s => s[k]); return v.length ? (v.reduce((a,b)=>a+b,0)/v.length).toFixed(1) : "—"; };
 const scoreColor = v => v >= 7 ? "var(--success)" : v >= 5 ? "var(--warning)" : "var(--danger)";
 
-const CACHE_KEY = "dashboard_cache_v2"; // bump version to bust stale sort order
+const CACHE_KEY = "dashboard_cache_v3"; // bump version to bust stale sort order
 const CACHE_TTL = 60 * 1000; // 1 minute — leaderboard should feel live
 
 function getCachedDashboard() {
@@ -677,27 +677,19 @@ export default function UserDashboard() {
                 </div>
               </div>
 
-              {/* Fine Information */}
+              {/* Points & Freeze Information */}
               <div className="grid-cols-2" style={{ marginTop: "1.5rem" }}>
-                <div style={{ background: "rgba(248, 113, 113, 0.1)", padding: "0.75rem", borderRadius: "8px", textAlign: "center", border: "1px solid rgba(248, 113, 113, 0.2)" }}>
-                  <div style={{ fontSize: "1.5rem", marginBottom: "0.25rem" }}>💸</div>
-                  <div style={{ fontSize: "0.75rem", color: "#8888aa", marginBottom: "0.25rem" }}>Total Fine</div>
-                  <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#f87171" }}>₹{data.dailyReport.fine || 0}</div>
+                <div style={{ background: "rgba(56, 189, 248, 0.1)", padding: "0.75rem", borderRadius: "8px", textAlign: "center", border: "1px solid rgba(56, 189, 248, 0.2)" }}>
+                  <div style={{ fontSize: "1.5rem", marginBottom: "0.25rem" }}>🧊</div>
+                  <div style={{ fontSize: "0.75rem", color: "#8888aa", marginBottom: "0.25rem" }}>Streak Freeze</div>
+                  <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#38bdf8" }}>{data.dailyReport.streakFreeze || 0}</div>
                 </div>
-                <div style={{ background: "rgba(251, 191, 36, 0.1)", padding: "0.75rem", borderRadius: "8px", textAlign: "center", border: "1px solid rgba(251, 191, 36, 0.2)" }}>
-                  <div style={{ fontSize: "1.5rem", marginBottom: "0.25rem" }}>📊</div>
-                  <div style={{ fontSize: "0.75rem", color: "#8888aa", marginBottom: "0.25rem" }}>Weekly Fine</div>
-                  <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#fbbf24" }}>₹{data.dailyReport.weeklyFine || 0}</div>
+                <div style={{ background: "rgba(167, 139, 250, 0.1)", padding: "0.75rem", borderRadius: "8px", textAlign: "center", border: "1px solid rgba(167, 139, 250, 0.2)" }}>
+                  <div style={{ fontSize: "1.5rem", marginBottom: "0.25rem" }}>⭐</div>
+                  <div style={{ fontSize: "0.75rem", color: "#8888aa", marginBottom: "0.25rem" }}>Monthly Score</div>
+                  <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#a78bfa" }}>{data.dailyReport.monthlyScore || 0}</div>
                 </div>
               </div>
-
-              {/* Fine Added Warning */}
-              {data.dailyReport.fineAdded && (
-                <div style={{ marginTop: "1rem", background: "rgba(248, 113, 113, 0.1)", padding: "1rem", borderRadius: "8px", border: "1px solid rgba(248, 113, 113, 0.2)", textAlign: "center" }}>
-                  <div style={{ fontSize: "1.2rem", marginBottom: "0.5rem" }}>⚠️</div>
-                  <div style={{ fontSize: "0.9rem", color: "#f87171", fontWeight: "bold" }}>Fine was added yesterday for missing submission</div>
-                </div>
-              )}
             </>
           ) : (
             <div style={{ marginTop: "1.5rem", textAlign: "center", padding: "2rem" }}>
@@ -705,25 +697,19 @@ export default function UserDashboard() {
               <div style={{ fontSize: "1.1rem", fontWeight: "bold", marginBottom: "0.5rem" }}>You missed yesterday's challenge</div>
               <div style={{ fontSize: "0.9rem", color: "#8888aa", marginBottom: "1rem" }}>Don't worry! Today is a new opportunity to shine.</div>
               
-              {/* Fine Information for Missed Day */}
+              {/* Points & Freeze for Missed Day */}
               <div className="grid-cols-2" style={{ maxWidth: "300px", margin: "1.5rem auto 0" }}>
-                <div style={{ background: "rgba(248, 113, 113, 0.1)", padding: "0.75rem", borderRadius: "8px", textAlign: "center", border: "1px solid rgba(248, 113, 113, 0.2)" }}>
-                  <div style={{ fontSize: "1.5rem", marginBottom: "0.25rem" }}>💸</div>
-                  <div style={{ fontSize: "0.75rem", color: "#8888aa", marginBottom: "0.25rem" }}>Total Fine</div>
-                  <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#f87171" }}>₹{data.dailyReport.fine || 0}</div>
+                <div style={{ background: "rgba(56, 189, 248, 0.1)", padding: "0.75rem", borderRadius: "8px", textAlign: "center", border: "1px solid rgba(56, 189, 248, 0.2)" }}>
+                  <div style={{ fontSize: "1.5rem", marginBottom: "0.25rem" }}>🧊</div>
+                  <div style={{ fontSize: "0.75rem", color: "#8888aa", marginBottom: "0.25rem" }}>Streak Freeze</div>
+                  <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#38bdf8" }}>{data.dailyReport.streakFreeze || 0}</div>
                 </div>
-                <div style={{ background: "rgba(251, 191, 36, 0.1)", padding: "0.75rem", borderRadius: "8px", textAlign: "center", border: "1px solid rgba(251, 191, 36, 0.2)" }}>
-                  <div style={{ fontSize: "1.5rem", marginBottom: "0.25rem" }}>📊</div>
-                  <div style={{ fontSize: "0.75rem", color: "#8888aa", marginBottom: "0.25rem" }}>Weekly Fine</div>
-                  <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#fbbf24" }}>₹{data.dailyReport.weeklyFine || 0}</div>
+                <div style={{ background: "rgba(167, 139, 250, 0.1)", padding: "0.75rem", borderRadius: "8px", textAlign: "center", border: "1px solid rgba(167, 139, 250, 0.2)" }}>
+                  <div style={{ fontSize: "1.5rem", marginBottom: "0.25rem" }}>⭐</div>
+                  <div style={{ fontSize: "0.75rem", color: "#8888aa", marginBottom: "0.25rem" }}>Monthly Score</div>
+                  <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#a78bfa" }}>{Math.round(data.dailyReport.monthlyScore || 0)}</div>
                 </div>
               </div>
-              
-              {data.dailyReport.fineAdded && (
-                <div style={{ marginTop: "1rem", background: "rgba(248, 113, 113, 0.1)", padding: "1rem", borderRadius: "8px", border: "1px solid rgba(248, 113, 113, 0.2)" }}>
-                  <div style={{ fontSize: "0.9rem", color: "#f87171", fontWeight: "bold" }}>⚠️ Fine was added for missing submission</div>
-                </div>
-              )}
             </div>
           )}
 
@@ -916,88 +902,57 @@ export default function UserDashboard() {
         <StatCard icon="📆" label="Monthly"            value={profile?.monthlySubmissions || 0}      color="#fbbf24" />
       </div>
 
-      {/* Fine breakdown card */}
-      <div className="card" style={{
-        marginBottom: "1rem",
-        background: (profile?.fine || 0) > 0
-          ? "linear-gradient(135deg, rgba(239,68,68,0.08) 0%, rgba(15,15,34,0) 100%)"
-          : "var(--card)",
-        border: (profile?.fine || 0) > 0
-          ? "1px solid rgba(239,68,68,0.25)"
-          : "1px solid var(--border)",
-      }}>
+      {/* Points & Freeze Summary */}
+      <div className="card" style={{ marginBottom: "1rem" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
-          <div className="section-title" style={{ margin: 0 }}>💸 Fine Summary</div>
-          {(profile?.fine || 0) === 0 && (
-            <span style={{ fontSize: "0.72rem", fontWeight: 700, padding: "0.2rem 0.65rem", borderRadius: "99px", background: "rgba(74,222,128,0.12)", color: "#4ade80", border: "1px solid rgba(74,222,128,0.25)" }}>
-              ✅ No fines
-            </span>
-          )}
+          <div className="section-title" style={{ margin: 0 }}>🎯 Progress & Rewards</div>
         </div>
         <div className="grid-cols-2">
-          {/* Total fine — handles negative (streak credit) */}
-          {(() => {
-            const fine = profile?.fine ?? 0;
-            const isCredit = fine < 0;
-            const isZero = fine === 0;
-            return (
-              <div style={{
-                background: isCredit ? "rgba(74,222,128,0.08)" : fine > 0 ? "rgba(239,68,68,0.1)" : "var(--bg2)",
-                border: `1px solid ${isCredit ? "rgba(74,222,128,0.35)" : fine > 0 ? "rgba(239,68,68,0.3)" : "var(--border)"}`,
-                borderRadius: "12px", padding: "1rem", textAlign: "center",
-              }}>
-                <div style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>{isCredit ? "🛡️" : "💸"}</div>
-                <div style={{ fontSize: "0.7rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "0.3rem" }}>
-                  {isCredit ? "Streak Credit" : "Total Fine"}
-                </div>
-                <div style={{ fontSize: "1.6rem", fontWeight: 800, color: isCredit ? "#4ade80" : fine > 0 ? "#f87171" : "#4ade80" }}>
-                  {isCredit ? `+₹${Math.abs(fine)}` : `₹${fine}`}
-                </div>
-                <div style={{ fontSize: "0.68rem", color: "var(--muted)", marginTop: "0.25rem" }}>
-                  {isCredit ? (() => {
-                    const fineAmount = profile?.fineAmount || 5;
-                    const bufferedDays = Math.floor(Math.abs(fine) / fineAmount);
-                    return `${bufferedDays} free day${bufferedDays !== 1 ? "s" : ""} buffered`;
-                  })() : fine > 0 ? "accumulated total" : "no fines 🎉"}
-                </div>
-              </div>
-            );
-          })()}
-          {/* Weekly fine */}
+          {/* Streak Freeze */}
           <div style={{
-            background: (profile?.weeklyFine || 0) > 0 ? "rgba(251,191,36,0.08)" : "var(--bg2)",
-            border: `1px solid ${(profile?.weeklyFine || 0) > 0 ? "rgba(251,191,36,0.3)" : "var(--border)"}`,
+            background: "rgba(56,189,248,0.08)",
+            border: "1px solid rgba(56,189,248,0.25)",
+            borderRadius: "12px", padding: "1rem", textAlign: "center",
+          }}>
+            <div style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>🧊</div>
+            <div style={{ fontSize: "0.7rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "0.3rem" }}>
+              Streak Freeze
+            </div>
+            <div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#38bdf8" }}>
+              {profile?.streakFreeze || 0}
+            </div>
+            <div style={{ fontSize: "0.68rem", color: "var(--muted)", marginTop: "0.25rem" }}>
+              {(profile?.streakFreeze || 0) > 0 ? "protection available" : "earn via streaks"}
+            </div>
+          </div>
+          {/* Monthly Score */}
+          <div style={{
+            background: "rgba(167,139,250,0.08)",
+            border: "1px solid rgba(167,139,250,0.25)",
             borderRadius: "12px",
             padding: "1rem",
             textAlign: "center",
           }}>
-            <div style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>📊</div>
-            <div style={{ fontSize: "0.7rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "0.3rem" }}>This Week</div>
-            <div style={{ fontSize: "1.6rem", fontWeight: 800, color: (profile?.weeklyFine || 0) > 0 ? "#fbbf24" : "#4ade80" }}>
-              ₹{profile?.weeklyFine || 0}
+            <div style={{ fontSize: "1.5rem", marginBottom: "0.3rem" }}>⭐</div>
+            <div style={{ fontSize: "0.7rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "0.3rem" }}>Monthly Score</div>
+            <div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#a78bfa" }}>
+              {profile?.monthlyScore || 0}
             </div>
-            {(profile?.weeklyFine || 0) > 0 && (
-              <div style={{ fontSize: "0.68rem", color: "var(--muted)", marginTop: "0.25rem" }}>resets every Sunday</div>
-            )}
+            <div style={{ fontSize: "0.68rem", color: "var(--muted)", marginTop: "0.25rem" }}>
+              {(profile?.monthlyScore || 0) > 0 ? "points this month" : "earn via submissions"}
+            </div>
           </div>
         </div>
-        {(profile?.fine ?? 0) > 0 && (
-          <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.75rem", textAlign: "center", lineHeight: 1.5 }}>
-            💡 Submit your video every day to avoid fines. Fines are added at midnight for missed days.
-          </p>
-        )}
-        {(profile?.fine ?? 0) < 0 && (
-          <p style={{ fontSize: "0.75rem", color: "#4ade80", marginTop: "0.75rem", textAlign: "center", lineHeight: 1.5 }}>
-            🛡️ Your 7-day streak reward gives you a fine buffer — missed days are absorbed before any fine is charged, and your streak is kept until the buffer runs out.
-          </p>
-        )}
+        <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.75rem", textAlign: "center", lineHeight: 1.5 }}>
+          💡 Submit daily to earn points and build streak freezes for protection!
+        </p>
       </div>
 
       <div className="stat-grid">
         <StatCard icon="👥" label="Group Members"      value={data?.stats?.total || 0}               color="#7c6fff" />
         <StatCard icon="✅" label="Submitted Today"    value={data?.stats?.completed || 0}           color="#4ade80" />
         <StatCard icon="⏳" label="Pending Today"      value={data?.stats?.pending || 0}             color="#f87171" />
-        <StatCard icon="💰" label="All Members Fines"  value={`₹${data?.stats?.totalFines || 0}`}   color="#a78bfa" />
+        <StatCard icon="🧊" label="Total Freezes"      value={data?.stats?.totalFreeze || 0}         color="#38bdf8" />
       </div>
 
       {/* ── Hall of Fame — always visible ── */}
