@@ -401,15 +401,15 @@ export async function generateDailyReports() {
 // ── Midnight job: reports → fines/streaks → reset ───────────────────────────
 // Runs at exactly 12:00 AM IST. Order matters:
 //   1. Generate daily reports (reads completed flag before it's reset)
-//   2. Apply fines to missed users
-//   3. Update streaks
-//   4. Apply 7-day streak reward
-//   5. Increment weekly/monthly counters
-//   6. Reset completed flag
+//   2. Update streaks + freeze logic
+//   3. Increment weekly/monthly counters
+//   4. Reset completed flag + status flags
 async function midnightJob() {
   // Step 1: generate reports first (needs current completed state)
-  await generateDailyReports();
-  // Step 2-6: fines, streaks, resets
+  // Use the service version which includes streakFreeze + monthlyScore in report
+  const { generateDailyReports: generateReports } = await import("../backend/services/scheduler/dailyReportService.js");
+  await generateReports();
+  // Step 2-4: streaks, counters, resets
   await dailyReset();
 }
 

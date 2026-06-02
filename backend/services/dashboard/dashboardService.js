@@ -384,7 +384,7 @@ export async function getDebugReport() {
  * Manually trigger report generation (admin only, for testing)
  */
 export async function generateReportNow() {
-  const { generateDailyReports } = await import("../../../api/scheduler.js");
+  const { generateDailyReports } = await import("../../../backend/services/scheduler/dailyReportService.js");
   await generateDailyReports();
   return { success: true, message: "Daily reports generated successfully" };
 }
