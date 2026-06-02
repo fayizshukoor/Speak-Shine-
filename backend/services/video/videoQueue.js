@@ -315,7 +315,7 @@ async function processJob(job) {
       const { maxSeconds } = getDurationLimits(gateFlags);
       const todayVocab = status?.todayVocabulary || [];
 
-      const { score } = calculateCompositeScore({
+      const { score, breakdown } = calculateCompositeScore({
         durationSeconds:    durationToSave || 0,
         maxDurationSeconds: maxSeconds,
         vocabularyUsed,
@@ -324,6 +324,15 @@ async function processJob(job) {
         analysis:           result.analysis,
       });
       compositeScore = score;
+      // Attach breakdown + maxes to analysis so the report UI can show it
+      result.analysis._compositeScore = score;
+      result.analysis._scoreBreakdown = {
+        ...breakdown,
+        maxLength:    33.33,
+        maxVocab:     33.33,
+        maxTopic:     breakdown.isSpecialDay ? 0    : 16.67,
+        maxComm:      breakdown.isSpecialDay ? 33.34 : 16.67,
+      };
     } catch (scoreErr) {
       console.warn("[Queue] Composite score calculation failed (non-fatal):", scoreErr.message);
     }
@@ -334,6 +343,8 @@ async function processJob(job) {
         ...result.analysis,
         vocabularyUsed,
         vocabularyScore,
+        compositeScore: result.analysis._compositeScore ?? null,
+        scoreBreakdown: result.analysis._scoreBreakdown ?? null,
       },
       ...(durationToSave ? { videoDuration: durationToSave } : {}),
     });

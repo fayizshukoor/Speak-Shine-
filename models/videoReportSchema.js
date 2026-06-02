@@ -78,6 +78,20 @@ const videoReportSchema = new mongoose.Schema({
     // Vocabulary challenge
     vocabularyScore: { type: Number, min: 0, max: 10, default: null }, // out of 10
     vocabularyUsed:  { type: [String], default: [] }, // which of today's 5 words were used correctly
+
+    // Composite 100-point score (added to monthlyScore)
+    compositeScore: { type: Number, default: null },  // today's earned pts (0–100)
+    scoreBreakdown: {
+      length:    { type: Number, default: null }, // duration part (0–33.33)
+      vocabUsed: { type: Number, default: null }, // vocabulary used part (0–33.33)
+      topic:     { type: Number, default: null }, // topic relevance part (0–16.67)
+      comm:      { type: Number, default: null }, // communication part (0–16.67/33.34)
+      isSpecialDay: { type: Boolean, default: false },
+      maxLength:    { type: Number, default: 33.33 },
+      maxVocab:     { type: Number, default: 33.33 },
+      maxTopic:     { type: Number, default: 16.67 },
+      maxComm:      { type: Number, default: 16.67 },
+    },
   },
   
   // Processing status

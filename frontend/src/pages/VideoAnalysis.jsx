@@ -2603,8 +2603,106 @@ function ReportView({ analysis: a, expiresAt, formatTimeRemaining }) {
     developing: "#fbbf24",
     needs_work: "#f87171",
   };
+
+  // ── Today's composite score breakdown ────────────────────────────────────
+  const bd = a.scoreBreakdown || a._scoreBreakdown || null;
+  const cs = a.compositeScore ?? a._compositeScore ?? null;
+
+  // Generate improvement tips based on what's missing from full score
+  const improvementTips = [];
+  if (bd) {
+    const lenGap  = (bd.maxLength  || 33.33) - (bd.length   || 0);
+    const vocGap  = (bd.maxVocab   || 33.33) - (bd.vocabUsed || 0);
+    const topGap  = (bd.maxTopic   || 16.67) - (bd.topic     || 0);
+    const comGap  = (bd.maxComm    || 16.67) - (bd.comm      || 0);
+    if (lenGap > 2)  improvementTips.push({ icon: "⏱️", label: "Record longer", detail: `+${lenGap.toFixed(1)} pts possible — speak closer to the max time limit`, gap: lenGap });
+    if (vocGap > 2)  improvementTips.push({ icon: "📚", label: "Use more vocab words", detail: `+${vocGap.toFixed(1)} pts possible — try using all 5 daily vocabulary words`, gap: vocGap });
+    if (!bd.isSpecialDay && topGap > 1) improvementTips.push({ icon: "🎯", label: "Stay on topic", detail: `+${topGap.toFixed(1)} pts possible — answer the question more directly`, gap: topGap });
+    if (comGap > 2)  improvementTips.push({ icon: "🗣️", label: "Improve communication", detail: `+${comGap.toFixed(1)} pts possible — work on fluency, grammar, confidence & eye contact`, gap: comGap });
+    improvementTips.sort((x, y) => y.gap - x.gap); // biggest gap first
+  }
+
   return (
     <div className="report-content">
+
+      {/* ── Today's Score Card ── */}
+      {cs != null && (
+        <div style={{
+          marginBottom: "1.25rem",
+          borderRadius: 16,
+          border: "1px solid rgba(124,111,255,0.35)",
+          background: "linear-gradient(135deg, rgba(124,111,255,0.13) 0%, rgba(79,70,229,0.07) 100%)",
+          overflow: "hidden",
+        }}>
+          {/* Header row */}
+          <div style={{ padding: "1rem 1.25rem 0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
+            <div>
+              <div style={{ fontSize: "0.68rem", color: "rgba(167,139,250,0.8)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "0.2rem" }}>
+                🏆 Today's Score
+              </div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: "0.4rem" }}>
+                <span style={{ fontSize: "2.4rem", fontWeight: 900, color: cs >= 80 ? "#4ade80" : cs >= 60 ? "#a78bfa" : cs >= 40 ? "#fbbf24" : "#f87171", lineHeight: 1 }}>{Math.round(cs)}</span>
+                <span style={{ fontSize: "1rem", color: "var(--muted)", fontWeight: 600 }}>/100 pts</span>
+              </div>
+            </div>
+            <div style={{
+              background: cs >= 80 ? "rgba(74,222,128,0.15)" : cs >= 60 ? "rgba(124,111,255,0.15)" : cs >= 40 ? "rgba(251,191,36,0.15)" : "rgba(248,113,113,0.15)",
+              border: `1px solid ${cs >= 80 ? "rgba(74,222,128,0.4)" : cs >= 60 ? "rgba(124,111,255,0.4)" : cs >= 40 ? "rgba(251,191,36,0.4)" : "rgba(248,113,113,0.4)"}`,
+              borderRadius: 12, padding: "0.5rem 1rem", textAlign: "center",
+            }}>
+              <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "var(--text)" }}>
+                {cs >= 90 ? "🏆 Elite" : cs >= 80 ? "⭐ Excellent" : cs >= 65 ? "✅ Good" : cs >= 50 ? "📈 Developing" : "💪 Keep going"}
+              </div>
+              <div style={{ fontSize: "0.68rem", color: "var(--muted)", marginTop: "0.15rem" }}>Added to monthly total</div>
+            </div>
+          </div>
+
+          {/* Breakdown bars */}
+          {bd && (
+            <div style={{ padding: "0 1.25rem 1rem", display: "flex", flexDirection: "column", gap: "0.55rem" }}>
+              {[
+                { label: "⏱️ Duration",      earned: bd.length   || 0, max: bd.maxLength  || 33.33, color: "#60a5fa" },
+                { label: "📚 Vocab used",    earned: bd.vocabUsed || 0, max: bd.maxVocab   || 33.33, color: "#a78bfa" },
+                ...(!bd.isSpecialDay ? [{ label: "🎯 Topic relevance", earned: bd.topic || 0, max: bd.maxTopic || 16.67, color: "#34d399" }] : []),
+                { label: "🗣️ Communication", earned: bd.comm     || 0, max: bd.maxComm    || 16.67, color: "#fbbf24" },
+              ].map(({ label, earned, max, color }) => (
+                <div key={label}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", marginBottom: "0.2rem" }}>
+                    <span style={{ color: "var(--muted)" }}>{label}</span>
+                    <span style={{ color: "var(--text)", fontWeight: 600 }}>{earned.toFixed(1)} / {max.toFixed(1)}</span>
+                  </div>
+                  <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 99, height: 6, overflow: "hidden" }}>
+                    <div style={{
+                      height: "100%", width: `${Math.min(100, (earned / max) * 100)}%`,
+                      background: color, borderRadius: 99, transition: "width 0.6s ease",
+                    }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Improvement tips */}
+          {improvementTips.length > 0 && (
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", padding: "0.85rem 1.25rem" }}>
+              <div style={{ fontSize: "0.7rem", color: "rgba(167,139,250,0.8)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "0.6rem" }}>
+                🚀 What to improve for a higher score
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.45rem" }}>
+                {improvementTips.map((tip, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "0.6rem", fontSize: "0.82rem" }}>
+                    <span style={{ fontSize: "1rem", flexShrink: 0 }}>{tip.icon}</span>
+                    <div>
+                      <span style={{ color: "var(--text)", fontWeight: 600 }}>{tip.label}</span>
+                      <span style={{ color: "var(--muted)", marginLeft: "0.35rem" }}>{tip.detail}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       {a.overallScore != null && (
         <div style={{
           marginBottom: "1rem",
