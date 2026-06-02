@@ -68,6 +68,8 @@ export async function generateDailyReports() {
         streak: user.streak || 0,
         weeklySubmissions: user.weeklySubmissions || 0,
         monthlySubmissions: user.monthlySubmissions || 0,
+        streakFreeze: user.streakFreeze || 0,
+        monthlyScore: user.monthlyScore || 0,
         
         // Fine information
         fine: user.fine || 0,

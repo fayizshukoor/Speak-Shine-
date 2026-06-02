@@ -276,8 +276,8 @@ export async function adjustUserFine(phone, amount) {
  * Reset weekly submissions for all users
  */
 export async function resetWeeklySubmissions() {
-  await User.updateMany({}, { $set: { weeklySubmissions: 0, weeklyFine: 0 } });
-  return { success: true, message: "Weekly submissions and fines reset for all users" };
+  await User.updateMany({}, { $set: { weeklySubmissions: 0 } });
+  return { success: true, message: "Weekly submissions reset for all users" };
 }
 
 /**

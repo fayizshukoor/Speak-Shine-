@@ -13,7 +13,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 const CATS = ["Daily Life","Opinion","Personal Experience","English Growth","Future Goals","Fun Topic","Free Talk"];
 const PIE_COLORS = ["#7c6fff","#4ade80","#fbbf24","#ff6b9d","#38bdf8","#fb923c","#a78bfa"];
 const tt = { background:"#16162a", border:"1px solid #252545", borderRadius:10, fontSize:12 };
-const TABS = [{id:"overview",l:"📊 Overview"},{id:"today",l:"📅 Today"},{id:"users",l:"👥 Users"},{id:"registrations",l:"📋 Registrations"},{id:"reports",l:"📈 Reports"},{id:"fines",l:"💸 Fines"},{id:"submissions",l:"📝 Submissions"},{id:"questions",l:"❓ Questions"},{id:"manual-questions",l:"📝 Manual Questions"},{id:"live",l:"🎥 Live Sessions"},{id:"monitoring",l:"🖥️ Monitor"},{id:"settings",l:"⚙️ Settings"}];
+const TABS = [{id:"overview",l:"📊 Overview"},{id:"today",l:"📅 Today"},{id:"users",l:"👥 Users"},{id:"registrations",l:"📋 Registrations"},{id:"reports",l:"📈 Reports"},{id:"points",l:"⭐ Points"},{id:"submissions",l:"📝 Submissions"},{id:"questions",l:"❓ Questions"},{id:"manual-questions",l:"📝 Manual Questions"},{id:"live",l:"🎥 Live Sessions"},{id:"monitoring",l:"🖥️ Monitor"},{id:"settings",l:"⚙️ Settings"}];
 
 export default function AdminDashboard() {
   const [tab, setTab] = useState("overview");
@@ -184,7 +184,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (tab === "overview") {
       // Overview needs dashboard data (already loaded)
-    } else if (tab === "today" || tab === "users" || tab === "submissions" || tab === "fines") {
+    } else if (tab === "today" || tab === "users" || tab === "submissions" || tab === "points") {
       loadUsers();
     } else if (tab === "questions" || tab === "manual-questions") {
       loadQuestions();
@@ -339,14 +339,14 @@ export default function AdminDashboard() {
   const resetWeekly = () => {
     setModal({
       type: "danger", title: "Reset Weekly Submissions",
-      message: "This will reset ALL users' weekly submission count and weekly fines to 0. Are you sure?",
+      message: "This will reset ALL users' weekly submission count to 0. Continue?",
       confirmText: "Reset Weekly",
       onConfirm: async () => {
         setModal(null);
         setResetting("weekly");
         try {
           await api.post("/users/reset/weekly");
-          msg("Weekly submissions + fines reset for all users");
+          msg("Weekly submissions reset for all users");
           reload(['users', 'dashboard', 'reports']); // Reload affected data
         } catch (err) {
           msg(err?.response?.data?.error || "Reset failed", "danger");
@@ -422,7 +422,7 @@ export default function AdminDashboard() {
         <StatCard icon="👥" label="Total Users"     value={dash?.stats?.total||0}     color="#7c6fff"/>
         <StatCard icon="✅" label="Submitted Today" value={dash?.stats?.completed||0} color="#4ade80"/>
         <StatCard icon="❌" label="Pending Today"   value={dash?.stats?.pending||0}   color="#f87171"/>
-        <StatCard icon="💸" label="Total Fines"     value={`₹${dash?.stats?.totalFines||0}`} color="#fbbf24"/>
+        <StatCard icon="🧊" label="Streak Freezes"  value={users.reduce((s,u)=>s+(u.streakFreeze||0),0)} color="#38bdf8"/>
       </div>
 
       <div className="tab-bar">
@@ -742,14 +742,15 @@ export default function AdminDashboard() {
             <div className="section-title">Submission Status</div>
             <div className="table-wrap">
               <table className="data-table">
-                <thead><tr><th>Name</th><th>Phone</th><th>Streak</th><th>Status</th><th>Fine</th></tr></thead>
+                <thead><tr><th>Name</th><th>Phone</th><th>Streak</th><th>Status</th><th>🧊 Freeze</th><th>⭐ Score</th></tr></thead>
                 <tbody>{users.map(u=>(
                   <tr key={u.userId}>
                     <td style={{fontWeight:500}}>{u.registeredName||u.name||"—"}</td>
                     <td style={{color:"var(--muted)"}}>{u.phone}</td>
                     <td>🔥 {u.streak||0}</td>
                     <td><span style={{color:u.completed?"var(--success)":"var(--danger)",fontWeight:600}}>{u.completed?"✅ Submitted":"⏳ Pending"}</span></td>
-                    <td style={{color:u.fine>0?"var(--danger)":"var(--muted)"}}>₹{u.fine||0}</td>
+                    <td style={{color:"#38bdf8",fontWeight:600}}>🧊 {u.streakFreeze||0}</td>
+                    <td style={{color:"#a78bfa",fontWeight:600}}>⭐ {u.monthlyScore||0}</td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -901,7 +902,7 @@ export default function AdminDashboard() {
           </div>
           <div className="table-wrap">
             <table className="data-table">
-              <thead><tr><th>Name</th><th>Phone</th><th>Role</th><th>Streak</th><th>Weekly</th><th>Monthly</th><th>Fine</th><th>Status</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Name</th><th>Phone</th><th>Role</th><th>Streak</th><th>🧊 Freeze</th><th>Weekly</th><th>Monthly</th><th>⭐ Score</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody>{filteredUsers.map(u=>(
                 <tr key={u.userId}>
                   <td style={{fontWeight:500,whiteSpace:"nowrap"}}>{u.registeredName||u.name||"—"}</td>
@@ -914,14 +915,13 @@ export default function AdminDashboard() {
                     />
                   </td>
                   <td>🔥 {u.streak||0}</td>
+                  <td style={{color:"#38bdf8",fontWeight:600}}>🧊 {u.streakFreeze||0}</td>
                   <td>{u.weeklySubmissions||0}/7</td>
                   <td>{u.monthlySubmissions||0}</td>
-                  <td style={{color:u.fine>0?"var(--danger)":"var(--muted)",fontWeight:u.fine>0?600:400}}>₹{u.fine||0}</td>
+                  <td style={{color:"#a78bfa",fontWeight:600}}>⭐ {u.monthlyScore||0}</td>
                   <td><span style={{color:u.isActive?"var(--success)":"var(--danger)",fontSize:"0.8rem"}}>{u.isActive?"Active":"Disabled"}</span></td>
                   <td style={{whiteSpace:"nowrap"}}>
                     <button className="btn-ghost" style={{marginRight:3}} onClick={()=>viewStudentDetail(u)}>View</button>
-                    <button className="btn-ghost" style={{marginRight:3}} onClick={()=>adjustFine(u.phone,u.fine)}>±Fine</button>
-                    <button className="btn-ghost" style={{marginRight:3}} onClick={()=>resetFine(u.phone)}>Reset</button>
                     <button className="btn-ghost" style={{marginRight:3}} onClick={()=>toggleUser(u.phone)}>{u.isActive?"Disable":"Enable"}</button>
                     <button className="btn-ghost" style={{marginRight:3}} onClick={async()=>{
                       try {
@@ -964,14 +964,15 @@ export default function AdminDashboard() {
             </ResponsiveContainer>
             <div className="table-wrap" style={{marginTop:"1rem"}}>
               <table className="data-table">
-                <thead><tr><th>#</th><th>Name</th><th>Days</th><th>Streak</th><th>Weekly Fine</th></tr></thead>
+                <thead><tr><th>#</th><th>Name</th><th>Days</th><th>Streak</th><th>🧊 Freeze</th><th>⭐ Score</th></tr></thead>
                 <tbody>{weekly.map((u,i)=>(
                   <tr key={i}>
                     <td style={{color:"var(--muted)"}}>{i+1}</td>
                     <td style={{fontWeight:500}}>{u.name||u.userId?.split("@")[0]}</td>
                     <td style={{color:(u.weeklySubmissions||0)>=7?"var(--success)":(u.weeklySubmissions||0)>=4?"var(--warning)":"var(--danger)",fontWeight:600}}>{u.weeklySubmissions||0}/7</td>
                     <td>🔥 {u.streak||0}</td>
-                    <td style={{color:"var(--danger)"}}>₹{u.weeklyFine||0}</td>
+                    <td style={{color:"#38bdf8",fontWeight:600}}>🧊 {u.streakFreeze||0}</td>
+                    <td style={{color:"#a78bfa",fontWeight:600}}>⭐ {u.monthlyScore||0}</td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -981,14 +982,15 @@ export default function AdminDashboard() {
             <div className="section-title">📆 Monthly Report</div>
             <div className="table-wrap">
               <table className="data-table">
-                <thead><tr><th>#</th><th>Name</th><th>Monthly</th><th>Streak</th><th>Total Fine</th></tr></thead>
+                <thead><tr><th>#</th><th>Name</th><th>Monthly</th><th>Streak</th><th>🧊 Freeze</th><th>⭐ Score</th></tr></thead>
                 <tbody>{monthly.map((u,i)=>(
                   <tr key={i}>
                     <td style={{color:"var(--muted)"}}>{i+1}</td>
                     <td style={{fontWeight:500}}>{u.name||u.userId?.split("@")[0]}</td>
                     <td>{u.monthlySubmissions||0}</td>
                     <td>🔥 {u.streak||0}</td>
-                    <td style={{color:u.fine>0?"var(--danger)":"var(--muted)"}}>₹{u.fine||0}</td>
+                    <td style={{color:"#38bdf8",fontWeight:600}}>🧊 {u.streakFreeze||0}</td>
+                    <td style={{color:"#a78bfa",fontWeight:600}}>⭐ {u.monthlyScore||0}</td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -997,46 +999,58 @@ export default function AdminDashboard() {
         </>
       )}
 
-      {/* FINES */}
-      {tab==="fines" && (
+      {/* POINTS & FREEZE */}
+      {tab==="points" && (
         <>
           <div className="stat-grid" style={{marginBottom:"1rem"}}>
-            <StatCard icon="💸" label="Total Outstanding" value={"\u20B9" + users.reduce((s,u)=>s+Math.max(0,u.fine||0),0)} color="#f87171"/>
-            <StatCard icon="⚠️" label="Users with Fines"  value={users.filter(u=>(u.fine||0)>0).length}      color="#fbbf24"/>
-            <StatCard icon="✅" label="Fine-Free Users"   value={users.filter(u=>(u.fine||0)<=0).length}    color="#4ade80"/>
-            <StatCard icon="📊" label="Avg Fine"          value={"\u20B9" + (()=>{const pos=users.filter(u=>(u.fine||0)>0);return pos.length?Math.round(pos.reduce((s,u)=>s+(u.fine||0),0)/pos.length):0})()} color="#7c6fff"/>
+            <StatCard icon="⭐" label="Top Monthly Score"  value={users.length ? Math.max(...users.map(u=>u.monthlyScore||0)) : 0}                        color="#a78bfa"/>
+            <StatCard icon="🧊" label="Total Freezes Held" value={users.reduce((s,u)=>s+(u.streakFreeze||0),0)}                                           color="#38bdf8"/>
+            <StatCard icon="🔥" label="Longest Streak"     value={users.length ? Math.max(...users.map(u=>u.streak||0)) : 0}                               color="#f97316"/>
+            <StatCard icon="🏆" label="Scored This Month"  value={users.filter(u=>(u.monthlyScore||0)>0).length}                                           color="#4ade80"/>
           </div>
-          {fineBar.length>0 && (
+
+          {/* Top scores bar chart */}
+          {users.filter(u=>(u.monthlyScore||0)>0).length > 0 && (
             <div className="card" style={{marginBottom:"1rem"}}>
-              <div className="section-title">Top Fine Holders</div>
+              <div className="section-title">⭐ Top Monthly Scores</div>
               <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={fineBar}>
+                <BarChart data={[...users].sort((a,b)=>(b.monthlyScore||0)-(a.monthlyScore||0)).slice(0,10).map(u=>({name:(u.registeredName||u.name||"?").slice(0,10),score:u.monthlyScore||0,freeze:u.streakFreeze||0}))}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#252545"/>
                   <XAxis dataKey="name" stroke="#8888aa" fontSize={11}/>
                   <YAxis stroke="#8888aa" fontSize={11}/>
                   <Tooltip contentStyle={tt}/>
-                  <Bar dataKey="fine" fill="#f87171" radius={[4,4,0,0]}/>
+                  <Legend/>
+                  <Bar dataKey="score" name="Monthly Score" fill="#a78bfa" radius={[4,4,0,0]}/>
+                  <Bar dataKey="freeze" name="Streak Freeze" fill="#38bdf8" radius={[4,4,0,0]}/>
                 </BarChart>
               </ResponsiveContainer>
             </div>
           )}
+
           <div className="card">
-            <div className="section-title">Fine Management</div>
+            <div className="section-title">⭐ Points & Streak Freeze Ledger</div>
             <div className="table-wrap">
               <table className="data-table">
-                <thead><tr><th>Name</th><th>Phone</th><th>Total Fine</th><th>Weekly Fine</th><th>Actions</th></tr></thead>
-                <tbody>{[...users].sort((a,b)=>(b.fine||0)-(a.fine||0)).map(u=>(
-                  <tr key={u.userId}>
+                <thead><tr><th>#</th><th>Name</th><th>Phone</th><th>🔥 Streak</th><th>🧊 Freeze</th><th>⭐ Monthly Score</th><th>📅 Submissions</th></tr></thead>
+                <tbody>{[...users].sort((a,b)=>(b.monthlyScore||0)-(a.monthlyScore||0)).map((u,i)=>(
+                  <tr key={u.userId||i}>
+                    <td style={{color:"var(--muted)",fontWeight:600}}>{i+1}</td>
                     <td style={{fontWeight:500}}>{u.registeredName||u.name||"—"}</td>
-                    <td style={{color:"var(--muted)"}}>{u.phone}</td>
-                    <td style={{color:u.fine>0?"var(--danger)":u.fine<0?"#4ade80":"var(--success)",fontWeight:600}}>
-                      {u.fine < 0 ? "-\u20B9" + Math.abs(u.fine) + " credit" : "\u20B9" + (u.fine ?? 0)}
+                    <td style={{color:"var(--muted)",fontSize:"0.82rem"}}>{u.phone}</td>
+                    <td style={{color:"#f97316",fontWeight:600}}>🔥 {u.streak||0}</td>
+                    <td style={{color:"#38bdf8",fontWeight:700,fontSize:"1rem"}}>
+                      {(u.streakFreeze||0) > 0
+                        ? <span>🧊 {u.streakFreeze}</span>
+                        : <span style={{color:"var(--muted)"}}>—</span>}
                     </td>
-                    <td style={{color:"var(--muted)"}}>₹{u.weeklyFine||0}</td>
-                    <td>
-                      <button className="btn-ghost" style={{marginRight:3}} onClick={()=>adjustFine(u.phone,u.fine)}>±Adjust</button>
-                      <button className="btn-ghost danger" onClick={()=>resetFine(u.phone)}>Reset</button>
+                    <td style={{fontWeight:700}}>
+                      <span style={{
+                        color: (u.monthlyScore||0)>=80?"#4ade80":(u.monthlyScore||0)>=50?"#a78bfa":"var(--text)",
+                        background: (u.monthlyScore||0)>=80?"rgba(74,222,128,0.1)":(u.monthlyScore||0)>=50?"rgba(167,139,250,0.1)":"transparent",
+                        padding:"0.15rem 0.5rem",borderRadius:6,
+                      }}>⭐ {u.monthlyScore||0}</span>
                     </td>
+                    <td style={{color:"var(--muted)",fontSize:"0.85rem"}}>{u.monthlySubmissions||0} this month</td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -1514,9 +1528,8 @@ export default function AdminDashboard() {
           <div style={{display:"flex",flexDirection:"column",gap:"0.75rem"}}>
             {[
               { label:"🌅 Reset Day", desc:"Clears today's submissions & question status", key:"day", endpoint:"/users/reset/day", role:"both" },
-              { label:"📅 Reset Weekly", desc:"Resets weekly submissions & weekly fines to 0", key:"weekly", endpoint:"/users/reset/weekly", role:"both" },
+              { label:"📅 Reset Weekly", desc:"Resets weekly submission counts to 0", key:"weekly", endpoint:"/users/reset/weekly", role:"both" },
               { label:"📆 Reset Monthly", desc:"Resets monthly submission counts to 0", key:"monthly", endpoint:"/users/reset/monthly", role:"both" },
-              { label:"💸 Reset All Fines", desc:"Clears ALL users' fines to ₹0", key:"fines", endpoint:"/users/reset/fines", role:"admin" },
             ].map(({label,desc,key,endpoint})=>(
               <div key={key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0.75rem 1rem",background:"var(--bg-secondary)",borderRadius:10,border:"1px solid var(--border)"}}>
                 <div>
@@ -1559,7 +1572,8 @@ export default function AdminDashboard() {
         <>
           <div className="stat-grid" style={{marginBottom:"1rem"}}>
             <StatCard icon="🔥" label="Streak" value={`${selectedStudent.streak||0} days`} color="#f97316"/>
-            <StatCard icon="💸" label="Fine" value={`₹${selectedStudent.fine||0}`} color="#f87171"/>
+            <StatCard icon="🧊" label="Freeze" value={selectedStudent.streakFreeze||0} color="#38bdf8"/>
+            <StatCard icon="⭐" label="Monthly Score" value={selectedStudent.monthlyScore||0} color="#a78bfa"/>
             <StatCard icon="📅" label="Weekly" value={`${selectedStudent.weeklySubmissions||0}/7`} color="#4ade80"/>
             <StatCard icon="📆" label="Monthly" value={selectedStudent.monthlySubmissions||0} color="#7c6fff"/>
           </div>

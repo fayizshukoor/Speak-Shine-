@@ -3,15 +3,26 @@ import mongoose from "mongoose";
 const userSchema = new mongoose.Schema({
   userId: { type: String, unique: true },
   name: { type: String, default: null },
-  phone: { type: String, default: null },   // e.g. "8848096746" — auto-saved on first login
-  fine: { type: Number, default: 0 },
+  phone: { type: String, default: null },
   completed: { type: Boolean, default: false },
   streak: { type: Number, default: 0 },
-  consecutiveSkips: { type: Number, default: 0 }, // days missed in a row — auto-disable at 3
+  consecutiveSkips: { type: Number, default: 0 },
   weeklySubmissions: { type: Number, default: 0 },
-  weeklyFine: { type: Number, default: 0 },
   monthlySubmissions: { type: Number, default: 0 },
-  fineChargedToday: { type: Boolean, default: false }, // set by daily reset; used by report generator
+  fineChargedToday: { type: Boolean, default: false },
+
+  // ── Streak Freeze ────────────────────────────────────────────────────────
+  // Earned at every 7-day streak milestone (+1 per 7 days).
+  // Consumed automatically on a missed day to protect the streak.
+  streakFreeze: { type: Number, default: 0 },
+
+  // ── Monthly cumulative score ─────────────────────────────────────────────
+  // Each day's composite score (0–100) is added once per day.
+  // Resets to 0 on the 1st of every month.
+  // lastScoreDate (YYYY-MM-DD IST) prevents double-counting on re-submissions.
+  monthlyScore: { type: Number, default: 0, min: 0 },
+  lastScoreDate: { type: String, default: null },
+
   feedbackScores: {
     type: [{
       fluency: Number,
@@ -22,11 +33,10 @@ const userSchema = new mongoose.Schema({
     }],
     default: [],
   },
-  // Monthly cumulative score — each day's composite score (0–100) is ADDED once per day.
-  // Resets to 0 on the 1st of every month. Never resets daily.
-  // lastScoreDate (YYYY-MM-DD IST) prevents double-counting on re-submissions.
-  monthlyScore: { type: Number, default: 0, min: 0 },
-  lastScoreDate: { type: String, default: null }, // "YYYY-MM-DD" in IST
+
+  // Legacy fields — kept for DB compatibility, no longer used in business logic
+  fine: { type: Number, default: 0 },
+  weeklyFine: { type: Number, default: 0 },
 });
 
 userSchema.index({ phone: 1 });

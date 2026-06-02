@@ -10,24 +10,57 @@ import StreakRecord from "../../../models/streakRecordSchema.js";
 const TIMEZONE = "Asia/Kolkata";
 
 /**
- * Update streaks at midnight — missed users reset to 0, submitters increment.
- * Fines and auto-disable have been removed.
+ * Update streaks at midnight.
+ * - Submitted today  → streak +1; award +1 streakFreeze at every 7-day milestone
+ * - Missed today     → consume 1 streakFreeze (streak kept) OR reset streak to 0
  */
 export async function applyStreakUpdates() {
   try {
-    // 1. Missed today → reset streak to 0
-    const missedResult = await User.updateMany(
-      { completed: false },
-      { $set: { streak: 0, fineChargedToday: false } }
-    );
+    const FREEZE_AWARD_DAYS = 7; // earn 1 freeze every 7-day streak
 
-    // 2. Submitted today → increment streak
+    // ── 1. Submitted today → increment streak ─────────────────────────────
+    const submittedUsers = await User.find({ completed: true }).lean();
     await User.updateMany(
       { completed: true },
       { $inc: { streak: 1 }, $set: { fineChargedToday: false } }
     );
 
-    // 3. Update all-time streak record (Hall of Fame)
+    // Award +1 streakFreeze at every 7-day milestone
+    let freezesAwarded = 0;
+    for (const u of submittedUsers) {
+      const newStreak = (u.streak || 0) + 1;
+      if (newStreak > 0 && newStreak % FREEZE_AWARD_DAYS === 0) {
+        await User.updateOne({ _id: u._id }, { $inc: { streakFreeze: 1 } });
+        freezesAwarded++;
+        console.log(`[DailyReset] 🧊 StreakFreeze awarded to ${u.name} (streak=${newStreak})`);
+      }
+    }
+
+    // ── 2. Missed today → use freeze or reset streak ───────────────────────
+    const missedUsers = await User.find({ completed: false }).lean();
+    let freezesUsed = 0;
+    let streaksReset = 0;
+
+    for (const u of missedUsers) {
+      if ((u.streakFreeze || 0) > 0) {
+        // Consume one freeze — streak survives
+        await User.updateOne(
+          { _id: u._id },
+          { $inc: { streakFreeze: -1 }, $set: { fineChargedToday: false } }
+        );
+        freezesUsed++;
+        console.log(`[DailyReset] 🧊 StreakFreeze used for ${u.name} (streak=${u.streak} preserved)`);
+      } else {
+        // No freeze — reset streak
+        await User.updateOne(
+          { _id: u._id },
+          { $set: { streak: 0, fineChargedToday: false } }
+        );
+        streaksReset++;
+      }
+    }
+
+    // ── 3. Update all-time streak record (Hall of Fame) ───────────────────
     try {
       const updatedUsers = await User.find({}).lean();
       const topUser = updatedUsers.reduce((best, u) =>
@@ -53,7 +86,7 @@ export async function applyStreakUpdates() {
       console.error("[DailyReset] Streak record update failed:", recErr);
     }
 
-    return { streaksReset: missedResult.modifiedCount };
+    return { streaksReset, freezesAwarded, freezesUsed };
   } catch (err) {
     console.error("[DailyReset] Streak update error:", err);
     throw err;
@@ -109,7 +142,7 @@ export async function resetWeeklyCounters() {
 
     const result = await User.updateMany(
       {},
-      { $set: { weeklySubmissions: 0, weeklyFine: 0 } }
+      { $set: { weeklySubmissions: 0 } }
     );
 
     return {
@@ -184,7 +217,13 @@ export async function performDailyReset() {
     // 1. Update streaks only (no fines, no auto-disable)
     const streakResult = await applyStreakUpdates();
     if (streakResult.streaksReset > 0) {
-      console.log(`[DailyReset] ✅ Streak reset for ${streakResult.streaksReset} user(s) who missed`);
+      console.log(`[DailyReset] ✅ Streak reset for ${streakResult.streaksReset} user(s) who missed (no freeze)`);
+    }
+    if (streakResult.freezesUsed > 0) {
+      console.log(`[DailyReset] 🧊 ${streakResult.freezesUsed} streak freeze(s) consumed — streaks protected`);
+    }
+    if (streakResult.freezesAwarded > 0) {
+      console.log(`[DailyReset] 🧊 ${streakResult.freezesAwarded} streak freeze(s) awarded (7-day milestone)`);
     }
     console.log("[DailyReset] ✅ Streaks incremented for submitters");
 
@@ -231,12 +270,6 @@ export async function performDailyReset() {
       }
     }, { upsert: true });
     console.log("[DailyReset] ✅ Status flags + vocabulary reset");
-
-    // 7. Reset monthlyScore + lastScoreDate on 1st of month only
-    if (monthlyResult.isFirstDay) {
-      await User.updateMany({}, { $set: { monthlyScore: 0, lastScoreDate: null } });
-      console.log("[DailyReset] ✅ monthlyScore reset to 0 for all users (1st of month)");
-    }
 
     console.log("[DailyReset] 🔄 Daily reset complete");
 

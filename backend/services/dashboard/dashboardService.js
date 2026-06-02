@@ -37,8 +37,6 @@ export async function getTodayOverview() {
 
   const completed = users.filter(u => u.completed);
   const pending = users.filter(u => !u.completed);
-  // Only sum positive fines — negative values are streak reward credits, not outstanding debt
-  const totalFines = users.reduce((s, u) => s + Math.max(0, u.fine || 0), 0);
   const topStreak = [...users]
     .sort((a, b) => (b.streak || 0) - (a.streak || 0))
     .slice(0, 5)
@@ -62,7 +60,6 @@ export async function getTodayOverview() {
       total: users.length,
       completed: completed.length,
       pending: pending.length,
-      totalFines,
     },
     topStreak,
   };
@@ -79,8 +76,9 @@ export async function getWeeklyReport() {
     name: u.name,
     userId: u.userId,
     weeklySubmissions: u.weeklySubmissions || 0,
-    weeklyFine: u.weeklyFine || 0,
     streak: u.streak || 0,
+    streakFreeze: u.streakFreeze || 0,
+    monthlyScore: u.monthlyScore || 0,
   }));
 }
 
@@ -89,14 +87,15 @@ export async function getWeeklyReport() {
  */
 export async function getMonthlyReport() {
   const users = await User.find().lean();
-  const sorted = [...users].sort((a, b) => (b.monthlySubmissions || 0) - (a.monthlySubmissions || 0));
+  const sorted = [...users].sort((a, b) => (b.monthlyScore ?? 0) - (a.monthlyScore ?? 0));
   
   return sorted.map(u => ({
     name: u.name,
     userId: u.userId,
     monthlySubmissions: u.monthlySubmissions || 0,
-    fine: u.fine || 0,
+    monthlyScore: u.monthlyScore || 0,
     streak: u.streak || 0,
+    streakFreeze: u.streakFreeze || 0,
   }));
 }
 
@@ -104,11 +103,14 @@ export async function getMonthlyReport() {
  * Get full profile for logged-in user
  */
 export async function getUserProfile(phone) {
-  // Match by phone field only (most reliable)
-  // Try with and without country code prefix
-  let user = await User.findOne({ 
-    phone: { $in: [phone, phone.replace(/^91/, ""), `91${phone}`] } 
-  }).lean();
+  // phone may be null when the auth account has no linked WhatsApp number yet
+  let user = null;
+  if (phone) {
+    // Match by phone field — try with and without country code prefix
+    user = await User.findOne({ 
+      phone: { $in: [phone, phone.replace(/^91/, ""), `91${phone}`] } 
+    }).lean();
+  }
 
   // If no WhatsApp user found, create a basic profile from auth data
   if (!user) {
@@ -121,14 +123,14 @@ export async function getUserProfile(phone) {
       completed: false,
       weeklySubmissions: 0,
       monthlySubmissions: 0,
+      monthlyScore: 0,
+      streakFreeze: 0,
     };
   }
 
   const status = await Status.findOne().lean();
   const allUsers = await User.find().lean();
   const completed = allUsers.filter(u => u.completed).length;
-  // Only sum positive fines — negative values are streak reward credits, not outstanding debt
-  const totalFines = allUsers.reduce((s, u) => s + Math.max(0, u.fine || 0), 0);
   const sortedByStreak = [...allUsers].sort((a, b) => (b.streak || 0) - (a.streak || 0));
 
   // Lazy-generate vocabulary if missing (non-blocking — resolves in parallel)
@@ -202,9 +204,8 @@ export async function getUserProfile(phone) {
       name: user.name,
       feedbackScores: user.feedbackScores || [],
       streak: user.streak || 0,
-      fine: user.fine || 0,
-      weeklyFine: user.weeklyFine || 0,
-      fineAmount: env.FINE_AMOUNT,
+      streakFreeze: user.streakFreeze || 0,
+      monthlyScore: user.monthlyScore || 0,
       completed: user.completed || false,
       weeklySubmissions: user.weeklySubmissions || 0,
       monthlySubmissions: user.monthlySubmissions || 0,
@@ -229,7 +230,7 @@ export async function getUserProfile(phone) {
       total: allUsers.length,
       completed,
       pending: allUsers.length - completed,
-      totalFines,
+      totalFreeze: allUsers.reduce((sum, u) => sum + (u.streakFreeze || 0), 0),
     },
     topStreak,
     myStreakEntry,
@@ -276,7 +277,8 @@ export async function getUserScores(phone) {
     name: user.name,
     feedbackScores: user.feedbackScores || [],
     streak: user.streak || 0,
-    fine: user.fine || 0,
+    streakFreeze: user.streakFreeze || 0,
+    monthlyScore: user.monthlyScore || 0,
   };
 }
 

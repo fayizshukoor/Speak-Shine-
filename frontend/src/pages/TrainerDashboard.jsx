@@ -34,11 +34,11 @@ export default function TrainerDashboard() {
   const resetWeekly = () => {
     setModal({
       type:"danger", title:"Reset Weekly Submissions",
-      message:"This will reset ALL users' weekly submission count and weekly fines to 0. Are you sure?",
+      message:"This will reset ALL users' weekly submission count to 0. Are you sure?",
       confirmText:"Reset Weekly",
       onConfirm: async () => {
         setModal(null); setResetting("weekly");
-        try { await api.post("/users/reset/weekly"); msg("Weekly submissions + fines reset"); const [d,u]=await Promise.all([api.get("/dashboard"),api.get("/users")]); setDash(d.data); setUsers(u.data); }
+        try { await api.post("/users/reset/weekly"); msg("Weekly submissions reset"); const [d,u]=await Promise.all([api.get("/dashboard"),api.get("/users")]); setDash(d.data); setUsers(u.data); }
         catch(err){ msg(err?.response?.data?.error||"Reset failed","danger"); }
         finally { setResetting(""); }
       },
@@ -107,7 +107,7 @@ export default function TrainerDashboard() {
     if(search){const s=search.toLowerCase();list=list.filter(u=>(u.registeredName||u.name||"").toLowerCase().includes(s)||(u.phone||"").includes(s));}
     if(sortBy==="streak")list.sort((a,b)=>(b.streak||0)-(a.streak||0));
     else if(sortBy==="weekly")list.sort((a,b)=>(b.weeklySubmissions||0)-(a.weeklySubmissions||0));
-    else if(sortBy==="fine")list.sort((a,b)=>(b.fine||0)-(a.fine||0));
+    else if(sortBy==="score")list.sort((a,b)=>(b.monthlyScore||0)-(a.monthlyScore||0));
     else list.sort((a,b)=>(a.registeredName||a.name||"").localeCompare(b.registeredName||b.name||""));
     return list;
   },[users,search,sortBy]);
@@ -149,7 +149,7 @@ export default function TrainerDashboard() {
         <StatCard icon="👥" label="Total Students"  value={dash?.stats?.total||0}     color="#7c6fff"/>
         <StatCard icon="✅" label="Submitted Today" value={dash?.stats?.completed||0} color="#4ade80"/>
         <StatCard icon="❌" label="Pending Today"   value={dash?.stats?.pending||0}   color="#f87171"/>
-        <StatCard icon="💸" label="Total Fines"     value={`₹${dash?.stats?.totalFines||0}`} color="#fbbf24"/>
+        <StatCard icon="🧊" label="Streak Freezes"  value={users.reduce((s,u)=>s+(u.streakFreeze||0),0)} color="#38bdf8"/>
       </div>
 
       <div className="tab-bar">
@@ -197,7 +197,7 @@ export default function TrainerDashboard() {
           <div style={{display:"flex",gap:"0.5rem",marginBottom:"1rem",flexWrap:"wrap",alignItems:"center"}}>
             <input className="form-input" style={{width:200}} placeholder="Search students…" value={search} onChange={e=>setSearch(e.target.value)}/>
             <select className="form-input" style={{width:"auto"}} value={sortBy} onChange={e=>setSortBy(e.target.value)}>
-              {[["streak","Streak"],["weekly","Weekly"],["fine","Fine"],["name","Name"]].map(([v,l])=><option key={v} value={v}>Sort: {l}</option>)}
+              {[["streak","Streak"],["weekly","Weekly"],["score","Score"],["name","Name"]].map(([v,l])=><option key={v} value={v}>Sort: {l}</option>)}
             </select>
             <div style={{marginLeft:"auto",display:"flex",gap:"0.5rem"}}>
               <button className="btn-ghost danger" onClick={resetWeekly} disabled={resetting==="weekly"} style={{fontSize:"0.82rem"}}>
@@ -214,7 +214,7 @@ export default function TrainerDashboard() {
                 <div className="avatar">{(u.registeredName||u.name||"?")[0].toUpperCase()}</div>
                 <div style={{flex:1,minWidth:0}}>
                   <div className="user-name">{u.registeredName||u.name||u.phone}</div>
-                  <div className="user-meta">🔥 {u.streak||0} · {u.weeklySubmissions||0}/7 · ₹{u.fine||0}</div>
+                  <div className="user-meta">🔥 {u.streak||0} · {u.weeklySubmissions||0}/7 · 🧊 {u.streakFreeze||0} · ⭐ {u.monthlyScore||0}</div>
                 </div>
                 <span style={{color:u.completed?"var(--success)":"var(--danger)",fontSize:"1.1rem"}}>{u.completed?"✅":"⏳"}</span>
               </div>
@@ -444,7 +444,7 @@ export default function TrainerDashboard() {
           <div style={{display:"flex",flexDirection:"column",gap:"0.75rem"}}>
             {[
               { label:"🌅 Reset Day", desc:"Clears today's submissions & question status", key:"day", endpoint:"/users/reset/day" },
-              { label:"📅 Reset Weekly", desc:"Resets weekly submissions & weekly fines to 0", key:"weekly", endpoint:"/users/reset/weekly" },
+              { label:"📅 Reset Weekly", desc:"Resets weekly submissions to 0", key:"weekly", endpoint:"/users/reset/weekly" },
               { label:"📆 Reset Monthly", desc:"Resets monthly submission counts to 0", key:"monthly", endpoint:"/users/reset/monthly" },
             ].map(({label,desc,key,endpoint})=>(
               <div key={key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0.75rem 1rem",background:"var(--bg-secondary)",borderRadius:10,border:"1px solid var(--border)"}}>
@@ -562,10 +562,11 @@ export default function TrainerDashboard() {
       {tab==="detail"&&selected&&(
         <>
           <div className="stat-grid">
-            <StatCard icon="🔥" label="Streak"    value={`${selected.streak||0} days`}         color="#f97316"/>
-            <StatCard icon="💸" label="Fine"       value={`₹${selected.fine||0}`}              color="#f87171"/>
-            <StatCard icon="📹" label="Sessions"   value={selScores.length}                     color="#7c6fff"/>
-            <StatCard icon="📅" label="This Week"  value={`${selected.weeklySubmissions||0}/7`} color="#4ade80"/>
+            <StatCard icon="🔥" label="Streak"       value={`${selected.streak||0} days`}         color="#f97316"/>
+            <StatCard icon="🧊" label="Freeze"        value={selected.streakFreeze||0}               color="#38bdf8"/>
+            <StatCard icon="⭐" label="Monthly Score" value={selected.monthlyScore||0}               color="#a78bfa"/>
+            <StatCard icon="📹" label="Sessions"      value={selScores.length}                       color="#7c6fff"/>
+            <StatCard icon="📅" label="This Week"     value={`${selected.weeklySubmissions||0}/7`}   color="#4ade80"/>
           </div>
 
           {/* Submission Controls */}

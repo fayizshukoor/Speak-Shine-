@@ -24,6 +24,8 @@ const dailyReportSchema = new mongoose.Schema({
   streak: { type: Number, default: 0 },
   weeklySubmissions: { type: Number, default: 0 },
   monthlySubmissions: { type: Number, default: 0 },
+  streakFreeze: { type: Number, default: 0 },
+  monthlyScore: { type: Number, default: 0 },
   
   // Fine information
   fine: { type: Number, default: 0 },
