@@ -197,8 +197,10 @@ export function calculateCompositeScore({
   // speechRatio: % of video time actually speaking (0–100), from Whisper timestamps.
   // If not available, estimate from wpm (words per minute from transcription).
   // A silent or mostly-silent video gets near-zero duration pts even if long.
-  const rawSpeechRatio = analysis._stats?.rhythm?.speechRatio; // 0–100 or null
-  const wpm = analysis._stats?.wpm; // words per minute or null
+  // Note: analyzeSpeech stores stats under analysis.stats (not analysis._stats)
+  const statsObj = analysis._stats || analysis.stats || {};
+  const rawSpeechRatio = statsObj?.rhythm?.speechRatio; // 0–100 or null
+  const wpm = statsObj?.wpm; // words per minute or null
 
   let speechMultiplier;
   if (typeof rawSpeechRatio === "number" && rawSpeechRatio >= 0) {
