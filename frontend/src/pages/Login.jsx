@@ -188,7 +188,7 @@ export default function Login({ loginFor = "user" }) {
         setServerError("Trainer credentials required.");
         return;
       }      // Store both access token and refresh token
-      login(data.accessToken, { phone: data.phone, role: data.role, name: data.name }, data.refreshToken);
+      login({ phone: data.phone, role: data.role, name: data.name });
       if (data.role === "admin")        navigate("/admin",     { replace: true });
       else if (data.role === "trainer") navigate("/trainer",   { replace: true });
       else                              navigate("/dashboard", { replace: true });

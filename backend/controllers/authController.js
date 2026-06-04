@@ -5,6 +5,33 @@
 
 import * as authService from "../services/auth/authService.js";
 
+// ── Cookie helpers ───────────────────────────────────────────────────────────
+const isProd = process.env.NODE_ENV === "production";
+
+function setAuthCookies(res, accessToken, refreshToken) {
+  // Access token cookie — short-lived (15 min), httpOnly, secure in prod
+  res.cookie("access_token", accessToken, {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? "strict" : "lax",
+    maxAge: 15 * 60 * 1000, // 15 minutes
+    path: "/",
+  });
+  // Refresh token cookie — long-lived (7 days), httpOnly, restricted to /api/auth
+  res.cookie("refresh_token", refreshToken, {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? "strict" : "lax",
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    path: "/api/auth",
+  });
+}
+
+function clearAuthCookies(res) {
+  res.clearCookie("access_token", { path: "/" });
+  res.clearCookie("refresh_token", { path: "/api/auth" });
+}
+
 /**
  * POST /api/auth/login
  */
@@ -12,7 +39,16 @@ export async function login(req, res, next) {
   try {
     const { phone, password } = req.body;
     const result = await authService.loginUser(phone, password, req.ip);
-    res.json(result);
+    // Set tokens as httpOnly cookies
+    setAuthCookies(res, result.accessToken, result.refreshToken);
+    // Return user info (no tokens in body — they're in cookies)
+    res.json({
+      success: true,
+      role: result.role,
+      name: result.name,
+      phone: result.phone,
+      expiresIn: result.expiresIn,
+    });
   } catch (error) {
     if (error.statusCode) {
       return res.status(error.statusCode).json({ error: error.message, code: error.code });
@@ -24,13 +60,18 @@ export async function login(req, res, next) {
 
 /**
  * POST /api/auth/refresh
+ * Reads refresh token from cookie, issues new tokens as cookies.
  */
 export async function refresh(req, res, next) {
   try {
-    const { refreshToken } = req.body;
+    // Accept from cookie first, fall back to body (for backward compat during migration)
+    const refreshToken = req.cookies?.refresh_token || req.body?.refreshToken;
     const result = await authService.refreshAccessToken(refreshToken, req.ip);
-    res.json(result);
+    // Rotate both cookies
+    setAuthCookies(res, result.accessToken, result.refreshToken);
+    res.json({ success: true, expiresIn: result.expiresIn });
   } catch (error) {
+    clearAuthCookies(res);
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
     res.status(500).json({ error: "Token refresh failed" });
   }
@@ -41,10 +82,12 @@ export async function refresh(req, res, next) {
  */
 export async function logout(req, res, next) {
   try {
-    const { refreshToken } = req.body;
-    const result = await authService.logoutUser(refreshToken);
-    res.json(result);
+    const refreshToken = req.cookies?.refresh_token || req.body?.refreshToken;
+    await authService.logoutUser(refreshToken);
+    clearAuthCookies(res);
+    res.json({ success: true, message: "Logged out successfully" });
   } catch (error) {
+    clearAuthCookies(res);
     res.json({ success: true, message: "Logged out" });
   }
 }

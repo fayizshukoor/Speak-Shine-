@@ -43,9 +43,13 @@ async function resolveAccount(authId) {
 }
 
 export function authMiddleware(req, res, next) {
+  // Read from httpOnly cookie first (preferred), fall back to Authorization header
+  const cookieToken = req.cookies?.access_token;
   const header = req.headers.authorization;
   const queryToken = req.query?.token;
-  const raw = header?.startsWith("Bearer ") ? header.split(" ")[1] : queryToken;
+  const raw = cookieToken
+    || (header?.startsWith("Bearer ") ? header.split(" ")[1] : null)
+    || queryToken;
 
   if (!raw) return res.status(401).json({ error: "No token provided" });
 

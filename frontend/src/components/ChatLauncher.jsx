@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { getSharedSocket } from "../hooks/useSocket";
+import api from "../api/client";
 import Chat from "./Chat";
 import GroupChat from "./GroupChat";
 
@@ -36,16 +37,14 @@ export default function ChatLauncher() {
 
   // Load peer list from the role-aware /peers endpoint
   useEffect(() => {
-    if (!token || !user) return;
+    if (!user) return;
     setLoadingPeers(true);
-    fetch(`${API_URL}/api/chat/peers`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => r.json())
-      .then((data) => setPeers(Array.isArray(data) ? data : []))
+    // Use the api client (withCredentials) instead of raw fetch to send cookies
+    api.get("/chat/peers")
+      .then(({ data }) => setPeers(Array.isArray(data) ? data : []))
       .catch(() => setPeers([]))
       .finally(() => setLoadingPeers(false));
-  }, [token, user]);
+  }, [user]);
 
   // DM notifications via shared socket (no extra connection)
   useEffect(() => {

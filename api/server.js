@@ -3,6 +3,7 @@ import compression from "compression";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import path from "path";
 import fs from "fs";
@@ -270,6 +271,9 @@ app.use(express.json({
     return req.headers["content-type"]?.includes("json");
   },
 }));
+
+// Parse cookies — needed for httpOnly auth token cookies
+app.use(cookieParser());
 
 // General API rate limit: 200 requests per minute per IP
 const apiLimiter = rateLimit({
