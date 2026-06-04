@@ -1,37 +1,53 @@
 /**
  * vocabularyGenerator.js
- * Generates 5 vocabulary words related to today's question/topic.
- * Words are stored in Status.todayVocabulary and shown to users before they record.
+ * Generates vocabulary words related to today's question/topic.
+ * Word count and CEFR level are configurable via Status.vocabWordCount / Status.vocabLevel.
  */
 
 import fetch from "node-fetch";
 import Status from "../../../models/statusSchema.js";
 import { getTextKey, markKeyExhausted, parseRetryAfter } from "./groqKeyManager.js";
 
+// CEFR level descriptors for the prompt
+const LEVEL_DESCRIPTORS = {
+  A1: "absolute beginner — very simple everyday words (e.g. happy, walk, home). Not too easy though — must be useful for speaking practice.",
+  A2: "elementary — simple but practical words used in daily conversations (e.g. suggest, nervous, improve)",
+  B1: "intermediate — words learners know but may not actively use (e.g. confident, achieve, situation)",
+  B2: "upper-intermediate — richer, more precise words (e.g. articulate, elaborate, perspective, convey)",
+  C1: "advanced — sophisticated words used by fluent speakers (e.g. compelling, nuanced, resilient, inevitably)",
+  C2: "proficient — complex academic or professional vocabulary (e.g. juxtaposition, pragmatic, eloquent)",
+};
+
 /**
- * Generate 5 vocabulary words for a given topic/question via Groq Llama.
- * Returns array of { word, meaning, example } or null on failure.
+ * Generate vocabulary words for a given topic/question via Groq Llama.
+ * @param {string} topic
+ * @param {string} question
+ * @param {number} count - how many words to generate
+ * @param {string} level - CEFR level string e.g. "B2"
+ * @returns {Array<{word, meaning, example}>|null}
  */
-async function generateVocabularyWords(topic, question) {
-  const prompt = `You are an English vocabulary teacher for B1-B2 level learners.
+async function generateVocabularyWords(topic, question, count = 3, level = "B2") {
+  const levelDesc = LEVEL_DESCRIPTORS[level] || LEVEL_DESCRIPTORS["B2"];
+
+  const prompt = `You are an English vocabulary teacher.
 
 Today's speaking topic: "${topic || "General English"}"
 Today's question: "${question || "Talk about your daily life"}"
 
-Generate exactly 5 vocabulary words that:
+Generate exactly ${count} vocabulary words that:
 - Are relevant to this topic/question
-- Are useful for B1-B2 level English learners
+- Are at ${level} level (${levelDesc})
 - Would naturally come up when answering this question
-- Are not too basic (not: good, bad, happy) and not too advanced (not: ephemeral, sycophant)
+- Each word is a single word or common 2-word phrase
 
 For each word provide:
-- word: the vocabulary word (single word or common phrase, max 2 words)
+- word: the vocabulary word (max 2 words)
 - meaning: a simple 1-line definition (max 15 words)
 - example: a short example sentence using the word naturally (max 20 words)
 
 Return ONLY a valid JSON array, no markdown, no extra text:
 [
-  {"word": "resilient", "meaning": "able to recover quickly from difficulties", "example": "She stayed resilient even after failing the exam twice."},
+  {"word": "elaborate", "meaning": "to explain something in more detail", "example": "Can you elaborate on your main point about communication?"},
   ...
 ]`;
 
@@ -54,7 +70,7 @@ Return ONLY a valid JSON array, no markdown, no extra text:
             model: "llama-3.3-70b-versatile",
             messages: [{ role: "user", content: prompt }],
             temperature: 0.5,
-            max_tokens: 600,
+            max_tokens: Math.max(300, count * 120),
           }),
         });
 
@@ -95,14 +111,14 @@ Return ONLY a valid JSON array, no markdown, no extra text:
 
         const valid = parsed
           .filter(w => w.word && w.meaning && w.example)
-          .slice(0, 5)
+          .slice(0, count)
           .map(w => ({
             word:    String(w.word).trim(),
             meaning: String(w.meaning).trim(),
             example: String(w.example).trim(),
           }));
 
-        if (valid.length < 3) {
+        if (valid.length < Math.min(2, count)) {
           lastError = new Error("Too few valid words returned");
           break;
         }
@@ -125,14 +141,19 @@ Return ONLY a valid JSON array, no markdown, no extra text:
 /**
  * Generate and store today's vocabulary words in Status.
  * Safe to call multiple times — skips if already generated.
+ * Reads vocabWordCount and vocabLevel from Status for dynamic configuration.
  * Returns the vocabulary array (may be empty if generation failed).
  */
 export async function ensureTodayVocabulary() {
   try {
     const status = await Status.findOne().lean();
 
-    // Already have words for today — return them
-    if (status?.todayVocabulary && status.todayVocabulary.length >= 3) {
+    // Read dynamic settings (admin-configurable)
+    const wordCount = Math.max(1, Math.min(10, status?.vocabWordCount ?? 3));
+    const level     = status?.vocabLevel || "B2";
+
+    // Already have enough words for today — return them
+    if (status?.todayVocabulary && status.todayVocabulary.length >= Math.min(wordCount, 2)) {
       return status.todayVocabulary;
     }
 
@@ -145,8 +166,8 @@ export async function ensureTodayVocabulary() {
       return [];
     }
 
-    console.log(`[VocabGen] Generating vocabulary for topic: "${topic}"`);
-    const words = await generateVocabularyWords(topic, question);
+    console.log(`[VocabGen] Generating ${wordCount} vocabulary words at ${level} level for topic: "${topic}"`);
+    const words = await generateVocabularyWords(topic, question, wordCount, level);
 
     if (!words || words.length === 0) {
       console.warn("[VocabGen] Generation failed — vocabulary will be empty today");
@@ -155,7 +176,7 @@ export async function ensureTodayVocabulary() {
 
     // Store in Status
     await Status.updateOne({}, { $set: { todayVocabulary: words } }, { upsert: true });
-    console.log(`[VocabGen] ✅ Stored ${words.length} vocabulary words: ${words.map(w => w.word).join(", ")}`);
+    console.log(`[VocabGen] ✅ Stored ${words.length} words (${level}): ${words.map(w => w.word).join(", ")}`);
 
     return words;
   } catch (err) {

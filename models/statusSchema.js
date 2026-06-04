@@ -11,7 +11,7 @@ const statusSchema = new mongoose.Schema({
   todayPosterImage: { type: String, default: null },
   posterExpiresAt: { type: Date, default: null },
   recentCategories: { type: [String], default: [] },
-  // Daily vocabulary words (5 words related to today's question)
+  // Daily vocabulary words (configurable count, related to today's question)
   todayVocabulary: {
     type: [{
       word:    { type: String, required: true },
@@ -20,6 +20,9 @@ const statusSchema = new mongoose.Schema({
     }],
     default: [],
   },
+  // Vocabulary challenge settings (admin-configurable)
+  vocabWordCount: { type: Number, default: 3, min: 1, max: 10 }, // how many words per day
+  vocabLevel: { type: String, default: "B2", enum: ["A1", "A2", "B1", "B2", "C1", "C2"] }, // CEFR level
   // Monthly reflection
   isMonthlyReflectionDay: { type: Boolean, default: false },
   isMonthlyGoalsDay: { type: Boolean, default: false },

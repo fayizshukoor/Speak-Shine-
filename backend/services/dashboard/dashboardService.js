@@ -314,13 +314,15 @@ export async function getSettings() {
   return {
     posterSendTime: status.posterSendTime || "08:00",
     questionGenerateTime: status.questionGenerateTime || "07:00",
+    vocabWordCount: status.vocabWordCount ?? 3,
+    vocabLevel: status.vocabLevel || "B2",
   };
 }
 
 /**
  * Update bot schedule settings (admin only)
  */
-export async function updateSettings(posterSendTime, questionGenerateTime) {
+export async function updateSettings(posterSendTime, questionGenerateTime, vocabWordCount, vocabLevel) {
   const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
   const updates = {};
   
@@ -340,6 +342,30 @@ export async function updateSettings(posterSendTime, questionGenerateTime) {
       throw error;
     }
     updates.questionGenerateTime = questionGenerateTime;
+  }
+
+  if (vocabWordCount !== undefined) {
+    const count = parseInt(vocabWordCount, 10);
+    if (isNaN(count) || count < 1 || count > 10) {
+      const error = new Error("vocabWordCount must be between 1 and 10");
+      error.statusCode = 400;
+      throw error;
+    }
+    updates.vocabWordCount = count;
+    // Clear today's vocab so it regenerates with new count
+    updates.todayVocabulary = [];
+  }
+
+  if (vocabLevel !== undefined) {
+    const VALID_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"];
+    if (!VALID_LEVELS.includes(vocabLevel)) {
+      const error = new Error(`vocabLevel must be one of: ${VALID_LEVELS.join(", ")}`);
+      error.statusCode = 400;
+      throw error;
+    }
+    updates.vocabLevel = vocabLevel;
+    // Clear today's vocab so it regenerates with new level
+    updates.todayVocabulary = [];
   }
   
   await Status.updateOne({}, { $set: updates }, { upsert: true });

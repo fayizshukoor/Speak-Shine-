@@ -33,7 +33,7 @@ export default function AdminDashboard() {
   const [modal, setModal] = useState(null);
   const [fineInput, setFineInput] = useState("");
   const [selectedStudent, setSelectedStudent] = useState(null);
-  const [settings, setSettings] = useState({ posterSendTime: "08:00", questionGenerateTime: "07:00" });
+  const [settings, setSettings] = useState({ posterSendTime: "08:00", questionGenerateTime: "07:00", vocabWordCount: 3, vocabLevel: "B2" });
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [resetting, setResetting] = useState("");
   const [publishQ, setPublishQ] = useState(null); // selected question for webapp publish
@@ -167,6 +167,8 @@ export default function AdminDashboard() {
       setSettings({
         posterSendTime: s.data.posterSendTime || "08:00",
         questionGenerateTime: s.data.questionGenerateTime || "07:00",
+        vocabWordCount: s.data.vocabWordCount ?? 3,
+        vocabLevel: s.data.vocabLevel || "B2",
       });
       setDataLoaded(prev => ({ ...prev, settings: true }));
     } catch (err) {
@@ -328,7 +330,7 @@ export default function AdminDashboard() {
     setSettingsSaving(true);
     try {
       await api.patch("/dashboard/settings", settings);
-      msg("Schedule times saved! Bot will apply changes within 1 minute.");
+      msg("Settings saved! Changes apply within 1 minute.");
     } catch (err) {
       msg(err?.response?.data?.error || "Failed to save settings", "danger");
     } finally {
@@ -1516,6 +1518,70 @@ export default function AdminDashboard() {
           <div style={{marginTop:"1.5rem",padding:"0.75rem 1rem",background:"rgba(124,111,255,0.08)",borderRadius:10,border:"1px solid rgba(124,111,255,0.2)",fontSize:"0.82rem",color:"var(--muted)"}}>
             <strong style={{color:"var(--accent)"}}>ℹ️ How it works:</strong><br/>
             The bot checks for time changes every minute. After saving, the new schedule takes effect automatically — no restart needed.
+          </div>
+        </div>
+
+        {/* Vocabulary Challenge Settings */}
+        <div className="card" style={{maxWidth:480,marginTop:"1rem"}}>
+          <div className="section-title">📚 Vocabulary Challenge Settings</div>
+          <p style={{color:"var(--muted)",fontSize:"0.85rem",marginBottom:"1.5rem"}}>
+            Control the difficulty and number of vocabulary words shown to users each day. Changes clear today's words and regenerate them on next dashboard load.
+          </p>
+          <form onSubmit={saveSettings}>
+            <div className="form-group" style={{marginBottom:"1.25rem"}}>
+              <label className="form-label" style={{display:"flex",alignItems:"center",gap:"0.5rem"}}>
+                🔢 Words Per Day
+                <span style={{color:"var(--muted)",fontWeight:400,fontSize:"0.8rem"}}>(1–10 words)</span>
+              </label>
+              <div style={{display:"flex",alignItems:"center",gap:"0.75rem"}}>
+                <input
+                  className="form-input"
+                  type="number"
+                  min={1} max={10}
+                  value={settings.vocabWordCount}
+                  onChange={e=>setSettings(s=>({...s,vocabWordCount:parseInt(e.target.value)||3}))}
+                  required
+                  style={{width:80,fontSize:"1.1rem",textAlign:"center"}}
+                />
+                <span style={{color:"var(--muted)",fontSize:"0.85rem"}}>words per day (currently <strong style={{color:"var(--accent)"}}>{settings.vocabWordCount}</strong>)</span>
+              </div>
+            </div>
+            <div className="form-group" style={{marginBottom:"1.5rem"}}>
+              <label className="form-label" style={{display:"flex",alignItems:"center",gap:"0.5rem"}}>
+                📊 CEFR Level
+                <span style={{color:"var(--muted)",fontWeight:400,fontSize:"0.8rem"}}>(word difficulty)</span>
+              </label>
+              <select
+                className="form-input"
+                value={settings.vocabLevel}
+                onChange={e=>setSettings(s=>({...s,vocabLevel:e.target.value}))}
+                style={{width:120,fontSize:"1rem"}}
+              >
+                {["A1","A2","B1","B2","C1","C2"].map(l=>(
+                  <option key={l} value={l}>{l}</option>
+                ))}
+              </select>
+              <div style={{marginTop:"0.5rem",display:"flex",flexDirection:"column",gap:"0.2rem"}}>
+                {[
+                  {l:"A1",d:"Beginner — very basic everyday words"},
+                  {l:"A2",d:"Elementary — simple practical words"},
+                  {l:"B1",d:"Intermediate — common useful words"},
+                  {l:"B2",d:"Upper-intermediate — richer, precise words ✓ recommended"},
+                  {l:"C1",d:"Advanced — sophisticated fluent-speaker words"},
+                  {l:"C2",d:"Proficient — complex academic vocabulary"},
+                ].map(({l,d})=>(
+                  <div key={l} style={{fontSize:"0.75rem",color:settings.vocabLevel===l?"var(--accent)":"var(--muted)",fontWeight:settings.vocabLevel===l?600:400}}>
+                    {settings.vocabLevel===l?"▶":""} <strong>{l}</strong> — {d}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <button type="submit" className="btn-primary" disabled={settingsSaving}>
+              {settingsSaving ? "Saving…" : "💾 Save Vocabulary Settings"}
+            </button>
+          </form>
+          <div style={{marginTop:"1rem",padding:"0.75rem 1rem",background:"rgba(124,111,255,0.08)",borderRadius:10,border:"1px solid rgba(124,111,255,0.2)",fontSize:"0.82rem",color:"var(--muted)"}}>
+            ℹ️ Changing level or count clears today's words — they regenerate automatically when any user loads the dashboard.
           </div>
         </div>
 
