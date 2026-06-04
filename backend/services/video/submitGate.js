@@ -160,49 +160,77 @@ export function evaluateSubmitGate(input) {
  * Calculate the 100-point composite score for a video submission.
  *
  * Regular days (4 parts):
- *   Part 1 — Video length      : (duration / maxDuration) × 33.33   → max 33.33
- *   Part 2 — Vocabulary used   : (wordsUsed / totalWords) × 33.33   → max 33.33
- *   Part 3 — Topic relevance   : (topicRelevance / 10) × 16.67      → max 16.67
- *   Part 4 — Communication     : (commAvg / 10) × 16.67             → max 16.67
+ *   Part 1 — Effective speaking time : (duration × speechRatio / maxDuration) × 33.33 → max 33.33
+ *   Part 2 — Vocabulary used         : (wordsUsed / totalWords) × 33.33              → max 33.33
+ *   Part 3 — Topic relevance         : (topicRelevance / 10) × 16.67                 → max 16.67
+ *   Part 4 — Communication           : (commAvg / 10) × 16.67                        → max 16.67
  *
  * Special days (weekly/monthly — no topicRelevance, 3 parts):
- *   Part 1 — Video length      : (duration / maxDuration) × 33.33   → max 33.33
- *   Part 2 — Vocabulary used   : (wordsUsed / totalWords) × 33.33   → max 33.33
- *   Part 3 — Communication     : (commAvg / 10) × 33.34             → max 33.34
+ *   Part 1 — Effective speaking time : same formula                                   → max 33.33
+ *   Part 2 — Vocabulary used         : same formula                                   → max 33.33
+ *   Part 3 — Communication           : (commAvg / 10) × 33.34                        → max 33.34
+ *
+ * speechRatio (0–100): % of video time the person was actually speaking (from Whisper).
+ * A silent video gets ~0 pts on duration even if it's long.
+ * If speechRatio is unavailable, falls back to wpm-based estimate.
  *
  * @param {object} params
- * @param {number}   params.durationSeconds   - actual video duration
- * @param {number}   params.maxDurationSeconds - max allowed duration for this day type
- * @param {string[]} params.vocabularyUsed     - words from today's list found in transcript
- * @param {number}   params.totalVocabWords    - total words in today's list (usually 5)
- * @param {number|null} params.topicRelevance  - AI score 0–10, null on special days
- * @param {object}   params.analysis           - full analysis object for comm scores
+ * @param {number}   params.durationSeconds     - actual video duration
+ * @param {number}   params.maxDurationSeconds  - max allowed duration for this day type
+ * @param {string[]} params.vocabularyUsed      - words from today's list found in transcript
+ * @param {number}   params.totalVocabWords     - total words in today's list
+ * @param {number|null} params.topicRelevance   - AI score 0–10, null on special days
+ * @param {object}   params.analysis            - full analysis object for comm scores + speech stats
  * @returns {{ score: number, breakdown: object }}
  */
 export function calculateCompositeScore({
   durationSeconds,
   maxDurationSeconds,
   vocabularyUsed = [],
-  totalVocabWords = 5,
+  totalVocabWords = 3,
   topicRelevance = null,
   analysis = {},
 }) {
   const isSpecialDay = topicRelevance == null;
 
-  // ── Part 1: Video length ─────────────────────────────────────────────────
-  // Score is proportional within the valid range [minSeconds, maxSeconds].
-  // Meeting the minimum (60s) earns a base score; full marks at maxSeconds.
-  // This keeps scoring fair across day types (regular 5-min vs monthly 10-min).
+  // ── Part 1: Effective speaking time ─────────────────────────────────────
+  // speechRatio: % of video time actually speaking (0–100), from Whisper timestamps.
+  // If not available, estimate from wpm (words per minute from transcription).
+  // A silent or mostly-silent video gets near-zero duration pts even if long.
+  const rawSpeechRatio = analysis._stats?.rhythm?.speechRatio; // 0–100 or null
+  const wpm = analysis._stats?.wpm; // words per minute or null
+
+  let speechMultiplier;
+  if (typeof rawSpeechRatio === "number" && rawSpeechRatio >= 0) {
+    // Direct measurement from Whisper: 0% = total silence, 100% = constant speech
+    // Apply a minimum floor of 20% so partial credit isn't wiped out for natural pauses
+    // Curve: 0%→0, 30%→0.25, 60%→0.7, 75%→0.88, 85%→1.0 (full multiplier)
+    const r = rawSpeechRatio / 100;
+    speechMultiplier = r >= 0.85 ? 1.0
+      : r <= 0     ? 0
+      : Math.min(1, r / 0.85); // linear scale to 85% being "full"
+  } else if (typeof wpm === "number" && wpm > 0) {
+    // Fallback: estimate from wpm — if someone spoke 50+ wpm they were talking
+    // 0 wpm = 0, 50 wpm = 0.5, 100+ wpm = 1.0
+    speechMultiplier = Math.min(1, wpm / 100);
+  } else {
+    // No speech data available (no transcript) — give 0 on duration
+    // This catches truly silent/no-audio videos
+    speechMultiplier = 0;
+  }
+
   const maxDur = maxDurationSeconds || 300;
-  const minDur = 60; // always 1 minute minimum
-  const actualDur = Math.min(durationSeconds || 0, maxDur); // cap at max
+  const minDur = 60;
+  const actualDur = Math.min(durationSeconds || 0, maxDur);
   const rangeScore = maxDur > minDur
     ? Math.max(0, (actualDur - minDur) / (maxDur - minDur))
     : 1;
-  // Base 50% for meeting minimum + up to 50% for going toward max
-  const lengthScore = actualDur >= minDur
+  const baseLengthScore = actualDur >= minDur
     ? (0.5 + 0.5 * rangeScore) * 33.33
-    : (actualDur / minDur) * 0.5 * 33.33; // below min: partial credit only
+    : (actualDur / minDur) * 0.5 * 33.33;
+
+  // Multiply by speech ratio — silent video = 0 pts, fully speaking = full pts
+  const lengthScore = baseLengthScore * speechMultiplier;
 
   // ── Part 2: Vocabulary used ──────────────────────────────────────────────
   // Same fair formula as duration:
@@ -253,10 +281,12 @@ export function calculateCompositeScore({
   return {
     score: total100,
     breakdown: {
-      length:    Math.round(lengthScore    * 100) / 100,
-      vocabUsed: Math.round(vocabUsedScore * 100) / 100,
-      topic:     Math.round(topicScore     * 100) / 100,
-      comm:      Math.round(commScore      * 100) / 100,
+      length:          Math.round(lengthScore    * 100) / 100,
+      vocabUsed:       Math.round(vocabUsedScore * 100) / 100,
+      topic:           Math.round(topicScore     * 100) / 100,
+      comm:            Math.round(commScore      * 100) / 100,
+      speechRatio:     typeof rawSpeechRatio === "number" ? rawSpeechRatio : null,
+      speechMultiplier: Math.round(speechMultiplier * 100), // 0–100 %
       isSpecialDay,
     },
   };

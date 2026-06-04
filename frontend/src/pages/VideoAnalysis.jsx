@@ -2615,11 +2615,16 @@ function ReportView({ analysis: a, expiresAt, formatTimeRemaining }) {
     const vocGap  = (bd.maxVocab   || 33.33) - (bd.vocabUsed || 0);
     const topGap  = (bd.maxTopic   || 16.67) - (bd.topic     || 0);
     const comGap  = (bd.maxComm    || 16.67) - (bd.comm      || 0);
-    if (lenGap > 2)  improvementTips.push({ icon: "⏱️", label: "Record longer", detail: `+${lenGap.toFixed(1)} pts possible — speak closer to the max time limit`, gap: lenGap });
-    if (vocGap > 2)  improvementTips.push({ icon: "📚", label: "Use more vocab words", detail: `+${vocGap.toFixed(1)} pts possible — try using all 5 daily vocabulary words`, gap: vocGap });
+    // Show speech ratio tip if multiplier was low (silent/quiet video)
+    if (bd.speechMultiplier != null && bd.speechMultiplier < 85) {
+      improvementTips.push({ icon: "🎙️", label: "Speak more actively", detail: `Your speech ratio was ${bd.speechRatio ?? "?"}% — keep talking throughout the video for full duration points`, gap: lenGap });
+    } else if (lenGap > 2) {
+      improvementTips.push({ icon: "⏱️", label: "Record longer", detail: `+${lenGap.toFixed(1)} pts possible — speak closer to the max time limit`, gap: lenGap });
+    }
+    if (vocGap > 2)  improvementTips.push({ icon: "📚", label: "Use more vocab words", detail: `+${vocGap.toFixed(1)} pts possible — try using all the daily vocabulary words`, gap: vocGap });
     if (!bd.isSpecialDay && topGap > 1) improvementTips.push({ icon: "🎯", label: "Stay on topic", detail: `+${topGap.toFixed(1)} pts possible — answer the question more directly`, gap: topGap });
     if (comGap > 2)  improvementTips.push({ icon: "🗣️", label: "Improve communication", detail: `+${comGap.toFixed(1)} pts possible — work on fluency, grammar, confidence & eye contact`, gap: comGap });
-    improvementTips.sort((x, y) => y.gap - x.gap); // biggest gap first
+    improvementTips.sort((x, y) => y.gap - x.gap);
   }
 
   return (
@@ -2661,7 +2666,7 @@ function ReportView({ analysis: a, expiresAt, formatTimeRemaining }) {
           {bd && (
             <div style={{ padding: "0 1.25rem 1rem", display: "flex", flexDirection: "column", gap: "0.55rem" }}>
               {[
-                { label: "⏱️ Duration",      earned: bd.length   || 0, max: bd.maxLength  || 33.33, color: "#60a5fa" },
+                { label: bd.speechRatio != null ? `⏱️ Duration (${bd.speechRatio}% speaking)` : "⏱️ Duration", earned: bd.length || 0, max: bd.maxLength || 33.33, color: "#60a5fa" },
                 { label: "📚 Vocab used",    earned: bd.vocabUsed || 0, max: bd.maxVocab   || 33.33, color: "#a78bfa" },
                 ...(!bd.isSpecialDay ? [{ label: "🎯 Topic relevance", earned: bd.topic || 0, max: bd.maxTopic || 16.67, color: "#34d399" }] : []),
                 { label: "🗣️ Communication", earned: bd.comm     || 0, max: bd.maxComm    || 16.67, color: "#fbbf24" },
