@@ -314,12 +314,15 @@ async function processJob(job) {
       };
       const { maxSeconds } = getDurationLimits(gateFlags);
       const todayVocab = status?.todayVocabulary || [];
+      // Use actual word count from status setting as fallback (not hardcoded 5)
+      const configuredWordCount = status?.vocabWordCount ?? 3;
+      const effectiveTotalWords = todayVocab.length > 0 ? todayVocab.length : configuredWordCount;
 
       const { score, breakdown } = calculateCompositeScore({
         durationSeconds:    durationToSave || 0,
         maxDurationSeconds: maxSeconds,
         vocabularyUsed,
-        totalVocabWords:    todayVocab.length || 5,
+        totalVocabWords:    effectiveTotalWords,
         topicRelevance:     result.analysis?.topicRelevance ?? null,
         analysis:           result.analysis,
       });
