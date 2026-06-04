@@ -2630,6 +2630,51 @@ function ReportView({ analysis: a, expiresAt, formatTimeRemaining }) {
   return (
     <div className="report-content">
 
+      {/* ── Score outcome banner for re-submissions ── */}
+      {a.scoreOutcome === "dropped" && (
+        <div style={{
+          marginBottom: "1rem",
+          padding: "0.85rem 1rem",
+          borderRadius: 12,
+          background: "rgba(251,191,36,0.1)",
+          border: "1px solid rgba(251,191,36,0.35)",
+          display: "flex", alignItems: "flex-start", gap: "0.65rem",
+        }}>
+          <span style={{ fontSize: "1.4rem", flexShrink: 0 }}>ℹ️</span>
+          <div>
+            <div style={{ fontWeight: 700, color: "#fbbf24", marginBottom: "0.2rem" }}>
+              Previous score kept — {(a.previousScore ?? 0).toFixed(1)} pts
+            </div>
+            <div style={{ fontSize: "0.82rem", color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>
+              This submission scored <strong>{Math.round(cs ?? 0)} pts</strong>, which is lower than your earlier attempt today.
+              Your best score of <strong>{(a.previousScore ?? 0).toFixed(1)} pts</strong> is still counted in your monthly total.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {a.scoreOutcome === "improved" && (
+        <div style={{
+          marginBottom: "1rem",
+          padding: "0.85rem 1rem",
+          borderRadius: 12,
+          background: "rgba(74,222,128,0.1)",
+          border: "1px solid rgba(74,222,128,0.35)",
+          display: "flex", alignItems: "flex-start", gap: "0.65rem",
+        }}>
+          <span style={{ fontSize: "1.4rem", flexShrink: 0 }}>📈</span>
+          <div>
+            <div style={{ fontWeight: 700, color: "#4ade80", marginBottom: "0.2rem" }}>
+              New best! Score improved to {Math.round(cs ?? 0)} pts
+            </div>
+            <div style={{ fontSize: "0.82rem", color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>
+              Your monthly total has been updated — previous score was <strong>{(a.previousScore ?? 0).toFixed(1)} pts</strong>,
+              now replaced with <strong>{Math.round(cs ?? 0)} pts</strong> (+{((cs ?? 0) - (a.previousScore ?? 0)).toFixed(1)}).
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Today's Score Card ── */}
       {cs != null && (
         <div style={{
@@ -2658,7 +2703,13 @@ function ReportView({ analysis: a, expiresAt, formatTimeRemaining }) {
               <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "var(--text)" }}>
                 {cs >= 90 ? "🏆 Elite" : cs >= 80 ? "⭐ Excellent" : cs >= 65 ? "✅ Good" : cs >= 50 ? "📈 Developing" : "💪 Keep going"}
               </div>
-              <div style={{ fontSize: "0.68rem", color: "var(--muted)", marginTop: "0.15rem" }}>Added to monthly total</div>
+              <div style={{ fontSize: "0.68rem", color: "var(--muted)", marginTop: "0.15rem" }}>
+                {a.scoreOutcome === "improved"
+                  ? `📈 Improved! (was ${(a.previousScore ?? 0).toFixed(1)} pts)`
+                  : a.scoreOutcome === "dropped"
+                  ? `ℹ️ Previous best kept (${(a.previousScore ?? 0).toFixed(1)} pts)`
+                  : "Added to monthly total"}
+              </div>
             </div>
           </div>
 

@@ -170,7 +170,7 @@ export async function resetMonthlyCounters() {
 
     const result = await User.updateMany(
       {},
-      { $set: { monthlySubmissions: 0, monthlyScore: 0, lastScoreDate: null } }
+      { $set: { monthlySubmissions: 0, monthlyScore: 0, lastScoreDate: null, todayScore: null } }
     );
 
     return {

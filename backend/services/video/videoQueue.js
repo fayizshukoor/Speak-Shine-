@@ -367,10 +367,14 @@ async function processJob(job) {
       );
     }
 
-    // ── Add to monthlyScore once per day (first submission wins) ────────────
-    // Build today's date string in IST so the guard is timezone-correct.
-    // Only increments if lastScoreDate !== today — re-submissions are ignored.
-    // monthlyScore accumulates all month; resets to 0 on the 1st by dailyResetService.
+    // ── Add to monthlyScore — best score of the day wins ────────────────────
+    // Three cases:
+    //   1. First submission today      → add score, save as todayScore
+    //   2. Re-submission, better score → replace: monthlyScore += (new - old), update todayScore
+    //   3. Re-submission, worse score  → drop silently, keep today's best
+    let scoreOutcome = null;
+    let previousScore = null;
+
     if (compositeScore != null) {
       const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
       const y  = nowIST.getFullYear();
@@ -378,19 +382,48 @@ async function processJob(job) {
       const d  = String(nowIST.getDate()).padStart(2, "0");
       const todayIST = `${y}-${mo}-${d}`;
 
-      const updated = await User.findOneAndUpdate(
-        { phone, lastScoreDate: { $ne: todayIST } }, // only if not yet scored today
-        {
-          $inc: { monthlyScore: compositeScore },
-          $set: { lastScoreDate: todayIST },
-        }
-      );
-      if (updated) {
-        console.log(`[Queue] 📊 monthlyScore +${compositeScore.toFixed(1)} for ${phone} (${todayIST})`);
+      // Fetch current user state
+      const userDoc = await User.findOne({ phone }).lean();
+      const alreadyScoredToday = userDoc?.lastScoreDate === todayIST;
+      const prevScore = alreadyScoredToday ? (userDoc?.todayScore ?? 0) : null;
+
+      if (!alreadyScoredToday) {
+        // Case 1: first submission today — add score
+        await User.findOneAndUpdate(
+          { phone },
+          {
+            $inc: { monthlyScore: compositeScore },
+            $set: { lastScoreDate: todayIST, todayScore: compositeScore },
+          }
+        );
+        scoreOutcome = "new";
+        console.log(`[Queue] 📊 monthlyScore +${compositeScore.toFixed(1)} for ${phone} (${todayIST}) [first submission]`);
+      } else if (compositeScore > prevScore) {
+        // Case 2: better score — replace today's contribution
+        const improvement = compositeScore - prevScore;
+        await User.findOneAndUpdate(
+          { phone },
+          {
+            $inc: { monthlyScore: improvement },
+            $set: { todayScore: compositeScore },
+          }
+        );
+        scoreOutcome = "improved";
+        previousScore = prevScore;
+        console.log(`[Queue] 📈 monthlyScore improved +${improvement.toFixed(1)} for ${phone} (${todayIST}) [${prevScore.toFixed(1)} → ${compositeScore.toFixed(1)}]`);
       } else {
-        console.log(`[Queue] ℹ️  monthlyScore not updated — already scored today (${todayIST})`);
+        // Case 3: worse or equal score — drop it
+        scoreOutcome = "dropped";
+        previousScore = prevScore;
+        console.log(`[Queue] ℹ️  Re-submission score ${compositeScore.toFixed(1)} ≤ today's best ${prevScore.toFixed(1)} for ${phone} — keeping existing score`);
       }
     }
+
+    // Save scoreOutcome to the report so the UI can show the right message
+    await VideoReport.findByIdAndUpdate(reportId, {
+      "analysis.scoreOutcome": scoreOutcome,
+      "analysis.previousScore": previousScore,
+    });
 
     pushProgress(reportId, { status: "completed", percent: 100, stage: "Analysis complete" });
     closeSse(reportId);

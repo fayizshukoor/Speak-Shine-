@@ -91,7 +91,15 @@ const videoReportSchema = new mongoose.Schema({
       maxVocab:     { type: Number, default: 33.33 },
       maxTopic:     { type: Number, default: 16.67 },
       maxComm:      { type: Number, default: 16.67 },
+      speechRatio:     { type: Number, default: null }, // % of time speaking
+      speechMultiplier: { type: Number, default: null }, // 0–100 effective multiplier
     },
+    // Score outcome for re-submissions
+    // "new"      — first submission today, score added
+    // "improved" — re-submission that beat today's previous score
+    // "dropped"  — re-submission with a lower/equal score, previous kept
+    scoreOutcome: { type: String, enum: ["new", "improved", "dropped", null], default: null },
+    previousScore: { type: Number, default: null }, // previous today's score (for "improved" outcome)
   },
   
   // Processing status

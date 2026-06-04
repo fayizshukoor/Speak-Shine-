@@ -17,11 +17,13 @@ const userSchema = new mongoose.Schema({
   streakFreeze: { type: Number, default: 0 },
 
   // ── Monthly cumulative score ─────────────────────────────────────────────
-  // Each day's composite score (0–100) is added once per day.
+  // Each day's best composite score (0–100) is added once per day.
+  // On re-submission: if new score > todayScore, replace it (monthlyScore adjusted).
   // Resets to 0 on the 1st of every month.
   // lastScoreDate (YYYY-MM-DD IST) prevents double-counting on re-submissions.
   monthlyScore: { type: Number, default: 0, min: 0 },
   lastScoreDate: { type: String, default: null },
+  todayScore: { type: Number, default: null }, // best score achieved today (resets daily via lastScoreDate)
 
   feedbackScores: {
     type: [{
