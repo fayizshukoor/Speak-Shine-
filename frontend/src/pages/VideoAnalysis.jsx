@@ -699,7 +699,10 @@ function ProcessingProgress({ stage, stageKey, completedSteps = [], percent = 0,
 }
 
 // ── Client-side video compression ────────────────────────────────────────────
-const COMPRESS_THRESHOLD = 50 * 1024 * 1024; // 50 MB
+// Only compress when the file exceeds the server's hard 110 MB limit.
+// Compression plays the video in real-time (canvas → MediaRecorder), so
+// a 7-min video takes ~7 min. We only trigger it as a last resort.
+const COMPRESS_THRESHOLD = 110 * 1024 * 1024; // 110 MB — server hard limit
 
 // True when the browser can re-encode large files before upload (canvas + MediaRecorder).
 const CAN_COMPRESS =
@@ -754,10 +757,20 @@ function compressVideo(file, onProgress) {
     const video = document.createElement("video");
     video.preload = "auto";
     video.playsInline = true;
+    video.muted = true; // required for autoplay to work in most browsers
     const blobUrl = URL.createObjectURL(file);
     video.src = blobUrl;
 
-    const cleanup = () => URL.revokeObjectURL(blobUrl);
+    // Hard timeout — if compression doesn't finish in 12 minutes, skip it
+    const hardTimeout = setTimeout(() => {
+      cleanup();
+      reject(new Error("Compression timed out — uploading original"));
+    }, 12 * 60 * 1000);
+
+    const cleanup = () => {
+      clearTimeout(hardTimeout);
+      URL.revokeObjectURL(blobUrl);
+    };
     video.onerror = () => { cleanup(); reject(new Error("Failed to load video for compression")); };
 
     video.onloadedmetadata = () => {
@@ -808,8 +821,15 @@ function compressVideo(file, onProgress) {
       };
       recorder.onerror = () => { cleanup(); reject(new Error("Compression recording failed")); };
 
+      // Start recording + playback
       recorder.start(1000);
-      video.play().catch(e => { cleanup(); reject(new Error("Autoplay blocked: " + e.message)); });
+      video.playbackRate = 4; // 4× speed — compress 7min video in ~1.75min
+      video.play().catch(e => {
+        // Autoplay blocked — skip compression, upload original
+        recorder.stop();
+        cleanup();
+        reject(new Error("Autoplay blocked: " + e.message));
+      });
 
       const draw = () => {
         if (video.ended || video.paused) return;
