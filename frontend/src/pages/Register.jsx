@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { useAuth } from "../context/AuthContext.jsx";
 import api from "../api/client.js";
 
 function validatePhone(raw) {
@@ -27,9 +26,8 @@ const STRENGTH_COLOR = ["", "#f87171", "#fb923c", "#fbbf24", "#4ade80", "#22c55e
 
 // Step 1: Enter phone → Step 2: Enter OTP → Step 3: Enter name + password
 export default function Register() {
-  const { login } = useAuth();
   const navigate = useNavigate();
-  const [step, setStep] = useState(1); // 1 | 2 | 3
+  const [step, setStep] = useState(1); // 1 | 2 | 3 | 4
   const [phone, setPhone] = useState("");
   const [phoneError, setPhoneError] = useState("");
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
@@ -67,9 +65,11 @@ export default function Register() {
     const err = validatePhone(phone);
     if (err) { setPhoneError(err); return; }
     setLoading(true);
+    setStepError(""); // clear any previous error
     try {
       await api.post("/auth/send-otp", { phone });
       setStep(2);
+      setStepError("");
       setResendTimer(60);
       setTimeout(() => otpRefs.current[0]?.focus(), 100);
     } catch (err) {
@@ -101,6 +101,7 @@ export default function Register() {
     const code = otp.join("");
     if (code.length !== 6) return;
     setLoading(true);
+    setStepError(""); // clear any previous error
     try {
       const { data } = await api.post("/auth/verify-otp", { phone, otp: code });
       setVerifyToken(data.verifyToken);
@@ -124,14 +125,24 @@ export default function Register() {
   const register = async (e) => {
     e.preventDefault();
     setFormTouched({ name: true, password: true });
+    
+    // Validate password according to backend rules
+    const passwordErrors = [];
+    if (form.password.length < 8) passwordErrors.push("at least 8 characters");
+    if (!/[A-Z]/.test(form.password)) passwordErrors.push("one uppercase letter");
+    if (!/[a-z]/.test(form.password)) passwordErrors.push("one lowercase letter");
+    if (!/[0-9]/.test(form.password)) passwordErrors.push("one number");
+    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(form.password)) passwordErrors.push("one special character");
+    
     const errs = {
       name: form.name.trim().length < 2 ? "Name must be at least 2 characters" : "",
-      password: form.password.length < 6 ? "Password must be at least 6 characters" : "",
+      password: passwordErrors.length > 0 ? `Password must contain ${passwordErrors.join(", ")}` : "",
     };
     setFormErrors(errs);
     if (errs.name || errs.password) return;
 
     setLoading(true);
+    setStepError(""); // clear any previous error
     try {
       await api.post("/auth/register", { phone, ...form, verifyToken });
       setStep(4); // success / pending approval screen
@@ -146,11 +157,22 @@ export default function Register() {
     const next = { ...form, [field]: val };
     setForm(next);
     if (formTouched[field]) {
-      setFormErrors(p => ({
-        ...p,
-        name: field === "name" ? (val.trim().length < 2 ? "Name must be at least 2 characters" : "") : p.name,
-        password: field === "password" ? (val.length < 6 ? "Password must be at least 6 characters" : "") : p.password,
-      }));
+      let nameError = field === "name" ? (val.trim().length < 2 ? "Name must be at least 2 characters" : "") : formErrors.name;
+      
+      let passwordError = "";
+      if (field === "password") {
+        const passwordErrors = [];
+        if (val.length < 8) passwordErrors.push("at least 8 characters");
+        if (!/[A-Z]/.test(val)) passwordErrors.push("one uppercase letter");
+        if (!/[a-z]/.test(val)) passwordErrors.push("one lowercase letter");
+        if (!/[0-9]/.test(val)) passwordErrors.push("one number");
+        if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(val)) passwordErrors.push("one special character");
+        passwordError = passwordErrors.length > 0 ? `Password must contain ${passwordErrors.join(", ")}` : "";
+      } else {
+        passwordError = formErrors.password;
+      }
+      
+      setFormErrors({ name: nameError, password: passwordError });
     }
   };
 
@@ -281,7 +303,7 @@ export default function Register() {
                 <input
                   className="form-input"
                   type={showPass ? "text" : "password"}
-                  placeholder="Create a password (min 6 chars)"
+                  placeholder="Min 8 chars: A-Z, a-z, 0-9, !@#"
                   value={form.password}
                   onChange={e => handleFormChange("password", e.target.value)}
                   onBlur={() => setFormTouched(p => ({ ...p, password: true }))}
@@ -313,7 +335,9 @@ export default function Register() {
                 <div style={{ color: "var(--danger)", fontSize: "0.78rem", marginTop: "0.3rem" }}>⚠ {formErrors.password}</div>
               )}
               {!formErrors.password && !form.password && (
-                <div style={{ color: "var(--muted)", fontSize: "0.75rem", marginTop: "0.3rem" }}>Use uppercase, numbers & symbols for a stronger password</div>
+                <div style={{ color: "var(--muted)", fontSize: "0.75rem", marginTop: "0.3rem" }}>
+                  Must be 8+ characters with uppercase, lowercase, number & special character
+                </div>
               )}
             </div>
 

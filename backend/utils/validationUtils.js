@@ -15,43 +15,28 @@ export function isValidEmail(email) {
 }
 
 /**
- * Validate password strength
- * Requirements: 8+ chars, uppercase, lowercase, number, special character
- * @param {string} password - Password
- * @returns {Object} - { valid: boolean, errors: string[] }
+ * Validate password strength for registration.
+ * Requirements: 8+ chars, uppercase, lowercase, number, special character.
+ * @param {string} password
+ * @returns {{ valid: boolean, errors: string[] }}
  */
 export function validatePassword(password) {
   const errors = [];
-  
+
   if (!password) {
     errors.push("Password is required");
     return { valid: false, errors };
   }
-  
-  if (password.length < 8) {
-    errors.push("Password must be at least 8 characters");
-  }
-  
-  if (!/[A-Z]/.test(password)) {
-    errors.push("Password must contain at least one uppercase letter");
-  }
-  
-  if (!/[a-z]/.test(password)) {
-    errors.push("Password must contain at least one lowercase letter");
-  }
-  
-  if (!/[0-9]/.test(password)) {
-    errors.push("Password must contain at least one number");
+
+  if (password.length < 8) errors.push("Password must be at least 8 characters");
+  if (!/[A-Z]/.test(password)) errors.push("Password must contain at least one uppercase letter");
+  if (!/[a-z]/.test(password)) errors.push("Password must contain at least one lowercase letter");
+  if (!/[0-9]/.test(password)) errors.push("Password must contain at least one number");
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(password)) {
+    errors.push("Password must contain at least one special character");
   }
 
-  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(password)) {
-    errors.push("Password must contain at least one special character (!@#$%^&* etc.)");
-  }
-  
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
+  return { valid: errors.length === 0, errors };
 }
 
 /**
