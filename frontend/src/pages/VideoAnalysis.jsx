@@ -2319,6 +2319,11 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
               <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "0.15rem" }}>
                 MediaPipe AI — detects you and blurs background
               </div>
+              {blurError && (
+                <div style={{ fontSize: "0.7rem", color: "var(--danger)", marginTop: "0.25rem" }}>
+                  ⚠️ Model loading failed - check internet connection
+                </div>
+              )}
             </div>
             <button onClick={() => setBackgroundBlur(v => !v)} style={{
               width: "44px", height: "24px", borderRadius: "12px", border: "none", cursor: "pointer",

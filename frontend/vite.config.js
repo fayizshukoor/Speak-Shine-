@@ -58,6 +58,10 @@ export default defineConfig({
           if (id.includes("node_modules/@livekit") || id.includes("node_modules/livekit")) {
             return "vendor-livekit";
           }
+          // MediaPipe — only needed for background blur
+          if (id.includes("node_modules/@mediapipe")) {
+            return "vendor-mediapipe";
+          }
         },
       },
     },

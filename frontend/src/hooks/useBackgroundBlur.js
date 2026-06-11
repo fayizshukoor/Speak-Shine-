@@ -87,6 +87,8 @@ export function useBackgroundBlur(blurStrength = 20) {
       setBlurStatus('loading');
       setBlurError(null);
 
+      console.log('[BackgroundBlur] Starting initialization...');
+
       // Check browser support
       if (!HTMLCanvasElement.prototype.captureStream) {
         console.warn('[BackgroundBlur] Canvas.captureStream() not supported');
@@ -95,7 +97,15 @@ export function useBackgroundBlur(blurStrength = 20) {
       }
 
       // Dynamic import to reduce initial bundle size
-      const { SelfieSegmentation } = await import('@mediapipe/selfie_segmentation');
+      let SelfieSegmentation;
+      try {
+        const module = await import('@mediapipe/selfie_segmentation');
+        SelfieSegmentation = module.SelfieSegmentation;
+        console.log('[BackgroundBlur] MediaPipe module loaded successfully');
+      } catch (importErr) {
+        console.error('[BackgroundBlur] Failed to import MediaPipe:', importErr);
+        throw new Error('MediaPipe library not available');
+      }
 
       // Create hidden video element to read frames from original stream
       const video = document.createElement('video');
@@ -110,9 +120,12 @@ export function useBackgroundBlur(blurStrength = 20) {
       // Wait for video to load
       await new Promise((resolve, reject) => {
         video.onloadedmetadata = resolve;
+        video.onerror = (e) => reject(new Error('Video element error: ' + e));
         setTimeout(() => reject(new Error('Video load timeout')), 5000);
       });
       await video.play();
+
+      console.log('[BackgroundBlur] Video element ready:', video.videoWidth, 'x', video.videoHeight);
 
       // Create canvas for drawing blurred output
       const canvas = document.createElement('canvas');
@@ -127,17 +140,29 @@ export function useBackgroundBlur(blurStrength = 20) {
       canvasRef.current = canvas;
       ctxRef.current = ctx;
 
-      // Initialize MediaPipe Selfie Segmentation
-      const segmenter = new SelfieSegmentation({
-        locateFile: (file) => {
-          return `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`;
-        }
-      });
+      console.log('[BackgroundBlur] Canvas created:', canvas.width, 'x', canvas.height);
 
-      segmenter.setOptions({
-        modelSelection: 1, // 0 = general (faster), 1 = landscape (more accurate)
-        selfieMode: true,  // Mirror the output for front-facing camera
-      });
+      // Initialize MediaPipe Selfie Segmentation with fallback CDN
+      let segmenter;
+      try {
+        segmenter = new SelfieSegmentation({
+          locateFile: (file) => {
+            // Try unpkg CDN first (more reliable)
+            const cdnUrl = `https://unpkg.com/@mediapipe/selfie_segmentation@0.1.1675465747/${file}`;
+            console.log('[BackgroundBlur] Loading file from CDN:', cdnUrl);
+            return cdnUrl;
+          }
+        });
+
+        segmenter.setOptions({
+          modelSelection: 1, // 0 = general (faster), 1 = landscape (more accurate)
+        });
+
+        console.log('[BackgroundBlur] Segmenter initialized');
+      } catch (segErr) {
+        console.error('[BackgroundBlur] Segmenter init error:', segErr);
+        throw segErr;
+      }
 
       segmenterRef.current = segmenter;
 
@@ -220,6 +245,11 @@ export function useBackgroundBlur(blurStrength = 20) {
 
       segmenter.onResults(onResults);
 
+      // Error handler for segmenter
+      segmenter.onError = (error) => {
+        console.error('[BackgroundBlur] Segmenter error:', error);
+      };
+
       // Start processing loop
       const processFrame = async () => {
         if (!segmenterRef.current || !inputVideoRef.current || !canvasRef.current) {
@@ -231,7 +261,7 @@ export function useBackgroundBlur(blurStrength = 20) {
           try {
             await segmenter.send({ image: inputVideoRef.current });
           } catch (err) {
-            console.warn('[BackgroundBlur] Frame processing error:', err);
+            console.error('[BackgroundBlur] Frame send error:', err);
             isProcessing = false;
           }
         }
@@ -239,10 +269,12 @@ export function useBackgroundBlur(blurStrength = 20) {
         animationFrameRef.current = requestAnimationFrame(processFrame);
       };
 
-      // Wait for segmenter to initialize
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Wait for segmenter to initialize and load models
+      console.log('[BackgroundBlur] Waiting for model to load...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Start processing
+      console.log('[BackgroundBlur] Starting frame processing...');
       processFrame();
 
       // Create output stream from canvas
