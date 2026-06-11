@@ -5,6 +5,7 @@ import Modal from "../components/Modal.jsx";
 import api from "../api/client.js";
 import { getSharedSocket } from "../hooks/useSocket.js";
 import { useNoiseCancellation } from "../hooks/useNoiseCancellation.js";
+import { useBackgroundBlur } from "../hooks/useBackgroundBlur.js";
 import { useVideoFrameHash } from "../hooks/useVideoFrameHash.js";
 import { evaluateSubmitGate } from "../utils/videoSubmitGate.js";
 import { saveDraft, loadDraft, clearDraft } from "../utils/videoDraftDB.js";
@@ -1447,6 +1448,7 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
   const [isPaused, setIsPaused]     = useState(false);
   const [noiseCancel, setNoiseCancel] = useState(true);
   const [backgroundBlur, setBackgroundBlur] = useState(false); // Background blur toggle
+  const [blurStrength, setBlurStrength] = useState(20); // Blur strength in pixels (10-40)
   const [ncStatus, setNcStatus]     = useState("idle");
   const [previewAspect, setPreviewAspect] = useState(null);
   const [draftRestored, setDraftRestored] = useState(false); // true when draft loaded from IndexedDB
@@ -1459,6 +1461,7 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
   const bgCompressedBlobRef = useRef(null); // holds the compressed File once ready
 
   const { applyNoiseCancellation, cleanupNC } = useNoiseCancellation();
+  const { applyBlur, cleanupBlur, toggleBlur, blurStatus, blurError } = useBackgroundBlur(blurStrength);
 
   const liveVideoRef    = useRef(null);
   const previewVideoRef = useRef(null);
@@ -1648,8 +1651,9 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
     clearInterval(countdownRef.current);
     if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
     cleanupNC();
+    cleanupBlur();
     setNcStatus("idle");
-  }, [cleanupNC]);
+  }, [cleanupNC, cleanupBlur]);
 
   const startCountdown = async () => {
     setError(null);
@@ -1665,11 +1669,22 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
 
       let finalStream = rawStream;
 
-      // ── Option 2: RNNoise WASM AI noise cancellation on top ──
+      // ── Step 1: RNNoise WASM AI noise cancellation on audio ──
       if (noiseCancel) {
         setNcStatus("loading");
         finalStream = await applyNoiseCancellation(rawStream);
         setNcStatus(finalStream !== rawStream ? "active" : "fallback");
+      }
+
+      // ── Step 2: MediaPipe AI background blur on video ──
+      if (backgroundBlur) {
+        try {
+          finalStream = await applyBlur(finalStream);
+          console.log(`[BackgroundBlur] Applied - status: ${blurStatus}`);
+        } catch (blurErr) {
+          console.warn('[BackgroundBlur] Failed, continuing without:', blurErr);
+          // Continue with unblurred stream
+        }
       }
 
       streamRef.current = finalStream;
@@ -1890,6 +1905,15 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
       setIsPaused(false);
     }
   }, [closeActiveRecordingSegment, getWallClockElapsed, MAX_SECONDS]);
+
+  // Toggle blur during recording
+  const handleBlurToggle = useCallback(() => {
+    const newValue = !backgroundBlur;
+    setBackgroundBlur(newValue);
+    if (step === "recording" && toggleBlur) {
+      toggleBlur(newValue);
+    }
+  }, [backgroundBlur, step, toggleBlur]);
 
   // ── Spacebar = pause / resume while recording ────────────────────────────
   useEffect(() => {
@@ -2286,14 +2310,14 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
           <div style={{
             display: "flex", alignItems: "center", justifyContent: "space-between",
             background: "var(--card2)", border: "1px solid var(--border2)",
-            borderRadius: "10px", padding: "0.75rem 1rem", marginBottom: "1.25rem",
+            borderRadius: "10px", padding: "0.75rem 1rem", marginBottom: "0.75rem",
           }}>
             <div>
               <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text)" }}>
-                🌫️ Background Blur
+                🌫️ AI Background Blur
               </div>
               <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "0.15rem" }}>
-                Blur your background for privacy
+                MediaPipe AI — detects you and blurs background
               </div>
             </div>
             <button onClick={() => setBackgroundBlur(v => !v)} style={{
@@ -2309,6 +2333,44 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
               }} />
             </button>
           </div>
+
+          {/* Blur strength slider (only show when blur is enabled) */}
+          {backgroundBlur && (
+            <div style={{
+              background: "var(--card2)", border: "1px solid var(--border2)",
+              borderRadius: "10px", padding: "0.75rem 1rem", marginBottom: "1.25rem",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                <label style={{ fontSize: "0.8rem", color: "var(--text)", fontWeight: 600 }}>
+                  Blur Strength
+                </label>
+                <span style={{ fontSize: "0.75rem", color: "var(--primary)", fontWeight: 700 }}>
+                  {blurStrength}px
+                </span>
+              </div>
+              <input
+                type="range"
+                min="5"
+                max="40"
+                step="5"
+                value={blurStrength}
+                onChange={(e) => setBlurStrength(Number(e.target.value))}
+                style={{
+                  width: "100%",
+                  height: "6px",
+                  borderRadius: "3px",
+                  background: `linear-gradient(to right, var(--primary) 0%, var(--primary) ${((blurStrength - 5) / 35) * 100}%, var(--border2) ${((blurStrength - 5) / 35) * 100}%, var(--border2) 100%)`,
+                  outline: "none",
+                  cursor: "pointer",
+                  WebkitAppearance: "none",
+                }}
+              />
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.25rem", fontSize: "0.65rem", color: "var(--muted)" }}>
+                <span>Light</span>
+                <span>Strong</span>
+              </div>
+            </div>
+          )}
 
           {/* Vocabulary challenge */}
           {vocabulary.length > 0 && (
@@ -2329,6 +2391,8 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
             onLoadedMetadata={syncPreviewAspect}
             style={livePreviewStyle} />
           <div style={{ fontSize: "5rem", fontWeight: 900, color: "var(--primary)", lineHeight: 1 }}>{countdown}</div>
+          
+          {/* Noise cancellation status */}
           {ncStatus === "loading" && (
             <p style={{ color: "var(--warning)", fontSize: "0.82rem" }}>⚙️ Loading AI noise cancellation…</p>
           )}
@@ -2341,6 +2405,21 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
           {!noiseCancel && (
             <p style={{ color: "var(--muted)", fontSize: "0.82rem" }}>🎙️ Browser noise suppression active</p>
           )}
+          
+          {/* Background blur status */}
+          {backgroundBlur && blurStatus === "loading" && (
+            <p style={{ color: "var(--warning)", fontSize: "0.82rem" }}>⚙️ Loading AI background blur…</p>
+          )}
+          {backgroundBlur && blurStatus === "active" && (
+            <p style={{ color: "var(--success)", fontSize: "0.82rem" }}>✅ AI background blur active</p>
+          )}
+          {backgroundBlur && blurStatus === "fallback" && (
+            <p style={{ color: "var(--muted)", fontSize: "0.82rem" }}>🌫️ Background blur unavailable — continuing without</p>
+          )}
+          {backgroundBlur && blurStatus === "error" && (
+            <p style={{ color: "var(--danger)", fontSize: "0.82rem" }}>⚠️ Background blur error — continuing without</p>
+          )}
+          
           <p style={{ color: "var(--muted)" }}>Get ready…</p>
         </div>
       )}
@@ -2355,25 +2434,7 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
               style={{
                 ...livePreviewStyle,
                 maxWidth: "100%",
-                filter: backgroundBlur ? "blur(0px)" : "none", // Will blur background via CSS backdrop
               }} />
-            
-            {/* Background blur overlay (CSS-based) */}
-            {backgroundBlur && (
-              <div style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backdropFilter: "blur(20px)",
-                WebkitBackdropFilter: "blur(20px)",
-                pointerEvents: "none",
-                zIndex: 1,
-                maskImage: "radial-gradient(ellipse 40% 50% at center, transparent 40%, black 70%)",
-                WebkitMaskImage: "radial-gradient(ellipse 40% 50% at center, transparent 40%, black 70%)",
-              }} />
-            )}
 
             {/* REC badge */}
             <div style={{
@@ -2388,15 +2449,15 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
               {isPaused ? "PAUSED" : "REC"}
             </div>
 
-            {/* Background blur badge */}
-            {backgroundBlur && (
+            {/* Background blur badge - only show if active */}
+            {backgroundBlur && blurStatus === "active" && (
               <div style={{
                 position: "absolute", top: "12px", right: ncStatus === "active" ? "75px" : "12px",
                 background: "rgba(139,92,246,0.85)", color: "#fff",
                 padding: "0.2rem 0.55rem", borderRadius: "99px",
                 fontSize: "0.68rem", fontWeight: 700,
                 zIndex: 2,
-              }}>🌫️ BLUR</div>
+              }}>🌫️ AI BLUR</div>
             )}
 
             {/* NC badge */}
@@ -2491,6 +2552,75 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
               }}>
                 ⏹ Stop
               </button>
+            </div>
+
+            {/* Live blur controls during recording */}
+            <div style={{
+              background: "var(--bg)", border: "1px solid var(--border)",
+              borderRadius: 12, padding: "0.85rem 1rem",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.65rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text)" }}>
+                    🌫️ Background Blur
+                  </span>
+                  {blurStatus === "active" && backgroundBlur && (
+                    <span style={{
+                      fontSize: "0.65rem", fontWeight: 700, color: "var(--success)",
+                      background: "rgba(34,211,160,0.15)", padding: "0.15rem 0.5rem",
+                      borderRadius: 12, border: "1px solid rgba(34,211,160,0.3)",
+                    }}>ACTIVE</span>
+                  )}
+                </div>
+                <button onClick={handleBlurToggle} style={{
+                  width: "44px", height: "24px", borderRadius: "12px", border: "none", cursor: "pointer",
+                  background: backgroundBlur ? "var(--primary)" : "var(--border2)",
+                  position: "relative", transition: "background 0.2s", flexShrink: 0,
+                }}>
+                  <span style={{
+                    position: "absolute", top: "3px",
+                    left: backgroundBlur ? "22px" : "3px",
+                    width: "18px", height: "18px", borderRadius: "50%",
+                    background: "#fff", transition: "left 0.2s",
+                  }} />
+                </button>
+              </div>
+              
+              {/* Blur strength slider - always visible for easy adjustment */}
+              {backgroundBlur && (
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.4rem" }}>
+                    <label style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 600 }}>
+                      Blur Strength
+                    </label>
+                    <span style={{ fontSize: "0.75rem", color: "var(--primary)", fontWeight: 700 }}>
+                      {blurStrength}px
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="5"
+                    max="40"
+                    step="5"
+                    value={blurStrength}
+                    onChange={(e) => setBlurStrength(Number(e.target.value))}
+                    style={{
+                      width: "100%",
+                      height: "6px",
+                      borderRadius: "3px",
+                      background: `linear-gradient(to right, var(--primary) 0%, var(--primary) ${((blurStrength - 5) / 35) * 100}%, var(--border2) ${((blurStrength - 5) / 35) * 100}%, var(--border2) 100%)`,
+                      outline: "none",
+                      cursor: "pointer",
+                      WebkitAppearance: "none",
+                    }}
+                  />
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.25rem", fontSize: "0.65rem", color: "var(--muted)" }}>
+                    <span>Light</span>
+                    <span>Medium</span>
+                    <span>Strong</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Min time hint */}
