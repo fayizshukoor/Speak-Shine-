@@ -39,7 +39,7 @@ const MIME_BY_EXTENSION = Object.entries(VIDEO_EXTENSIONS_BY_MIME).reduce((acc, 
   return acc;
 }, {});
 
-const MAX_ANALYSIS_MB = 110; // Railway RAM limit
+const MAX_ANALYSIS_MB = 200; // Increased limit for larger videos (Railway has enough RAM)
 
 /**
  * Sanitize filename to prevent path traversal

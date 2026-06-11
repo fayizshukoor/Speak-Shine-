@@ -702,7 +702,8 @@ function ProcessingProgress({ stage, stageKey, completedSteps = [], percent = 0,
 // Only compress when the file exceeds the server's hard 110 MB limit.
 // Compression plays the video in real-time (canvas → MediaRecorder), so
 // a 7-min video takes ~7 min. We only trigger it as a last resort.
-const COMPRESS_THRESHOLD = 110 * 1024 * 1024; // 110 MB — server hard limit
+const COMPRESS_THRESHOLD = 500 * 1024 * 1024; // 500 MB - effectively disable compression
+const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB hard limit
 
 // True when the browser can re-encode large files before upload (canvas + MediaRecorder).
 const CAN_COMPRESS =
@@ -757,27 +758,42 @@ function compressVideo(file, onProgress) {
     const video = document.createElement("video");
     video.preload = "auto";
     video.playsInline = true;
-    video.muted = true; // required for autoplay to work in most browsers
+    video.muted = false; // IMPORTANT: Don't mute - we need audio for compression!
     const blobUrl = URL.createObjectURL(file);
     video.src = blobUrl;
 
-    // Hard timeout — if compression doesn't finish in 12 minutes, skip it
+    // Timeout: Original duration + 2 minutes buffer
+    // (We compress at 1× speed now, so a 5-min video takes ~5 min to compress)
+    const timeoutMs = Math.max(3 * 60 * 1000, (duration + 120) * 1000);
     const hardTimeout = setTimeout(() => {
       cleanup();
       reject(new Error("Compression timed out — uploading original"));
-    }, 12 * 60 * 1000);
+    }, timeoutMs);
 
     const cleanup = () => {
       clearTimeout(hardTimeout);
       URL.revokeObjectURL(blobUrl);
+      // Force cleanup of canvas/context to free memory
+      if (canvas) {
+        canvas.width = canvas.height = 0;
+        canvas = null;
+      }
+      if (ctx) ctx = null;
+      if (video) {
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+      }
     };
     video.onerror = () => { cleanup(); reject(new Error("Failed to load video for compression")); };
+
+    let canvas, ctx; // Declare outside for cleanup
 
     video.onloadedmetadata = () => {
       const duration = video.duration;
       if (!duration || !isFinite(duration)) { cleanup(); reject(new Error("Unknown duration")); return; }
 
-      // Scale to max 720p
+      // Scale to max 720p (reduce memory usage)
       let w = video.videoWidth, h = video.videoHeight;
       const maxDim = 720;
       if (Math.max(w, h) > maxDim) {
@@ -787,29 +803,50 @@ function compressVideo(file, onProgress) {
       }
       w += w % 2; h += h % 2; // even dimensions
 
-      const canvas = document.createElement("canvas");
+      canvas = document.createElement("canvas");
       canvas.width = w; canvas.height = h;
-      const ctx = canvas.getContext("2d");
+      ctx = canvas.getContext("2d", {
+        alpha: false, // Disable alpha channel to save memory
+        willReadFrequently: false,
+        desynchronized: true, // Better performance
+      });
       const canvasStream = canvas.captureStream(24);
 
-      // Capture audio via Web Audio API (silent — no speaker output)
+      // Capture audio via Web Audio API
+      // Route audio through Web Audio without playing to speakers
       let audioCtx;
+      let audioConnected = false;
       try {
         audioCtx = new AudioContext();
         const src = audioCtx.createMediaElementSource(video);
         const dest = audioCtx.createMediaStreamDestination();
         src.connect(dest);
-        dest.stream.getAudioTracks().forEach(t => canvasStream.addTrack(t));
+        // DON'T connect src to audioCtx.destination (speakers) - keeps it silent
+        dest.stream.getAudioTracks().forEach(t => {
+          canvasStream.addTrack(t);
+          console.log(`[Compress] Audio track added: ${t.label || 'unlabeled'}`);
+        });
+        audioConnected = dest.stream.getAudioTracks().length > 0;
+        console.log(`[Compress] Audio ${audioConnected ? 'captured' : 'NOT captured'}`);
       } catch (e) {
         console.warn("[Compress] Audio capture failed:", e.message);
       }
 
-      // Target bitrate: aim for ~40MB output
-      const targetBitrate = Math.min(1200000, Math.floor((40 * 8 * 1024 * 1024) / duration));
+      // Target bitrate: aim for ~80-100MB output (raised from 40MB)
+      // Video bitrate: adjusted based on duration
+      // Audio bitrate: 96kbps for good speech quality (don't let it auto-compress to silence)
+      const targetVideoBitrate = Math.min(1500000, Math.floor((90 * 8 * 1024 * 1024) / duration));
+      const targetAudioBitrate = 96000; // 96 kbps - good quality for speech
+      
       const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")
         ? "video/webm;codecs=vp8,opus" : "video/webm";
 
-      const recorder = new MediaRecorder(canvasStream, { mimeType, videoBitsPerSecond: targetBitrate });
+      const recorder = new MediaRecorder(canvasStream, { 
+        mimeType, 
+        videoBitsPerSecond: targetVideoBitrate,
+        audioBitsPerSecond: targetAudioBitrate, // Explicit audio bitrate to preserve speech
+        // Request smaller chunk size to reduce memory buffering
+      });
       const chunks = [];
       recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
       recorder.onstop = () => {
@@ -819,11 +856,17 @@ function compressVideo(file, onProgress) {
         console.log(`[Compress] Done: ${(file.size/1024/1024).toFixed(1)}MB → ${(blob.size/1024/1024).toFixed(1)}MB`);
         resolve(blob);
       };
-      recorder.onerror = () => { cleanup(); reject(new Error("Compression recording failed")); };
+      recorder.onerror = (err) => { 
+        console.error("[Compress] Recording error:", err); 
+        cleanup(); 
+        reject(new Error("Compression recording failed")); 
+      };
 
-      // Start recording + playback
-      recorder.start(1000);
-      video.playbackRate = 4; // 4× speed — compress 7min video in ~1.75min
+      // Start recording + playback at NORMAL speed
+      // We record at 1× speed to preserve original duration and audio pitch
+      // (The compression happens from bitrate reduction, not time compression)
+      recorder.start(100);
+      
       video.play().catch(e => {
         // Autoplay blocked — skip compression, upload original
         recorder.stop();
@@ -831,8 +874,18 @@ function compressVideo(file, onProgress) {
         reject(new Error("Autoplay blocked: " + e.message));
       });
 
+      let lastFrameTime = 0;
       const draw = () => {
         if (video.ended || video.paused) return;
+        
+        // Throttle drawing to ~24fps to reduce CPU/memory pressure
+        const now = performance.now();
+        if (now - lastFrameTime < 42) {
+          requestAnimationFrame(draw);
+          return;
+        }
+        lastFrameTime = now;
+        
         ctx.drawImage(video, 0, 0, w, h);
         if (onProgress) onProgress(Math.min(video.currentTime / duration, 0.99));
         requestAnimationFrame(draw);
@@ -1070,28 +1123,51 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
 
     try {
       let fileToUpload = file;
+      let originalDuration = fileDuration; // Capture duration before compression
 
       // ── Compress large files in the browser ──
-      if (file.size > COMPRESS_THRESHOLD && typeof MediaRecorder !== "undefined" && typeof HTMLCanvasElement.prototype.captureStream === "function") {
+      // Only attempt compression if file exceeds threshold and browser supports it
+      if (file.size > COMPRESS_THRESHOLD && CAN_COMPRESS) {
         setStage("compressing");
         setCompressProgress(0);
+        
+        // Read duration from original file BEFORE compressing (compressed WebM may have wrong metadata)
+        if (!originalDuration) {
+          console.log('[Upload] Reading duration from original file before compression...');
+          originalDuration = await readVideoBlobDuration(file);
+          if (originalDuration) {
+            setFileDuration(originalDuration);
+            console.log(`[Upload] Original duration: ${originalDuration}s`);
+          }
+        }
+        
         try {
+          console.log(`[Upload] File ${(file.size/1024/1024).toFixed(1)}MB exceeds ${(COMPRESS_THRESHOLD/1024/1024).toFixed(0)}MB threshold - compressing...`);
           const compressed = await compressVideo(file, (p) => setCompressProgress(Math.round(p * 100)));
           const ext = file.name.replace(/\.[^.]+$/, ".webm");
           fileToUpload = new File([compressed], ext, { type: "video/webm" });
-          console.log(`[Upload] Compressed ${(file.size/1024/1024).toFixed(1)}MB → ${(fileToUpload.size/1024/1024).toFixed(1)}MB`);
+          console.log(`[Upload] ✅ Compressed ${(file.size/1024/1024).toFixed(1)}MB → ${(fileToUpload.size/1024/1024).toFixed(1)}MB`);
         } catch (compErr) {
-          console.warn("[Upload] Compression failed, uploading original:", compErr.message);
+          console.warn("[Upload] ⚠️ Compression failed, uploading original file:", compErr.message);
+          setError(null); // Clear any error display
+          setStage(""); // Reset stage
+          setCompressProgress(0);
           fileToUpload = file;
+          
+          // If original file is too large and compression failed, show clear error
+          if (file.size > 200 * 1024 * 1024) {
+            setUploading(false);
+            setError(`Video compression failed (browser memory limit). Your file is ${(file.size/1024/1024).toFixed(1)}MB (max 200MB without compression). Please:\n• Record a shorter video (max ${isMonthlyReflection || isMonthlyGoals ? "10" : isWeeklyReflection ? "7" : "5"} min)\n• Or use a lower resolution when recording`);
+            return;
+          }
         }
       }
 
-      // Server hard-rejects anything over 110 MB. Abort with a clear message
-      // rather than letting the upload fail with a 413.
-      if (fileToUpload.size > 110 * 1024 * 1024) {
+      // Server accepts files up to 200 MB
+      if (fileToUpload.size > 200 * 1024 * 1024) {
         setUploading(false);
         setStage("");
-        setError(`File is ${(fileToUpload.size / 1024 / 1024).toFixed(1)} MB even after compression (max 110 MB). Please use a shorter or lower-resolution video.`);
+        setError(`File is ${(fileToUpload.size / 1024 / 1024).toFixed(1)}MB (max 200MB). Please record a shorter or lower-resolution video.`);
         return;
       }
 
@@ -1218,8 +1294,15 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
       // Step 4: Tell our server the upload is done — start analysis
       setStage("confirming");
 
-      // Get video duration from the browser before confirming
-      const fileDuration = await readVideoBlobDuration(fileToUpload);
+      // Use original duration (before compression) for validation
+      // Don't re-read from compressed file as WebM metadata may be incorrect
+      const recordedDuration = originalDuration || await readVideoBlobDuration(fileToUpload);
+      
+      if (recordedDuration) {
+        console.log(`[Upload] Sending duration to server: ${recordedDuration}s`);
+      } else {
+        console.warn('[Upload] Could not determine video duration');
+      }
 
       const { data } = await api.post("/video/confirm", {
         key:       presign.key,
@@ -1228,7 +1311,7 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
         isPublic:  true,
         videoHash: videoHash, // Send hash for cache checking
         frameKeys: frameKeys, // Send frame keys if uploaded
-        ...(fileDuration ? { recordedDuration: fileDuration } : {}),
+        ...(recordedDuration ? { recordedDuration } : {}),
       });
       
       // Cache successful result for future uploads
@@ -1363,6 +1446,7 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
   const [compressProgress, setCompressProgress] = useState(0);
   const [isPaused, setIsPaused]     = useState(false);
   const [noiseCancel, setNoiseCancel] = useState(true);
+  const [backgroundBlur, setBackgroundBlur] = useState(false); // Background blur toggle
   const [ncStatus, setNcStatus]     = useState("idle");
   const [previewAspect, setPreviewAspect] = useState(null);
   const [draftRestored, setDraftRestored] = useState(false); // true when draft loaded from IndexedDB
@@ -2174,7 +2258,7 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
           <div style={{
             display: "flex", alignItems: "center", justifyContent: "space-between",
             background: "var(--card2)", border: "1px solid var(--border2)",
-            borderRadius: "10px", padding: "0.75rem 1rem", marginBottom: "1.25rem",
+            borderRadius: "10px", padding: "0.75rem 1rem", marginBottom: "0.75rem",
           }}>
             <div>
               <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text)" }}>
@@ -2192,6 +2276,34 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
               <span style={{
                 position: "absolute", top: "3px",
                 left: noiseCancel ? "22px" : "3px",
+                width: "18px", height: "18px", borderRadius: "50%",
+                background: "#fff", transition: "left 0.2s",
+              }} />
+            </button>
+          </div>
+
+          {/* Background blur toggle */}
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            background: "var(--card2)", border: "1px solid var(--border2)",
+            borderRadius: "10px", padding: "0.75rem 1rem", marginBottom: "1.25rem",
+          }}>
+            <div>
+              <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text)" }}>
+                🌫️ Background Blur
+              </div>
+              <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "0.15rem" }}>
+                Blur your background for privacy
+              </div>
+            </div>
+            <button onClick={() => setBackgroundBlur(v => !v)} style={{
+              width: "44px", height: "24px", borderRadius: "12px", border: "none", cursor: "pointer",
+              background: backgroundBlur ? "var(--primary)" : "var(--border2)",
+              position: "relative", transition: "background 0.2s", flexShrink: 0,
+            }}>
+              <span style={{
+                position: "absolute", top: "3px",
+                left: backgroundBlur ? "22px" : "3px",
                 width: "18px", height: "18px", borderRadius: "50%",
                 background: "#fff", transition: "left 0.2s",
               }} />
@@ -2240,7 +2352,28 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
           <div style={{ position: "relative", marginBottom: "0.85rem" }}>
             <video ref={liveVideoRef} autoPlay muted playsInline
               onLoadedMetadata={syncPreviewAspect}
-              style={{ ...livePreviewStyle, maxWidth: "100%" }} />
+              style={{
+                ...livePreviewStyle,
+                maxWidth: "100%",
+                filter: backgroundBlur ? "blur(0px)" : "none", // Will blur background via CSS backdrop
+              }} />
+            
+            {/* Background blur overlay (CSS-based) */}
+            {backgroundBlur && (
+              <div style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backdropFilter: "blur(20px)",
+                WebkitBackdropFilter: "blur(20px)",
+                pointerEvents: "none",
+                zIndex: 1,
+                maskImage: "radial-gradient(ellipse 40% 50% at center, transparent 40%, black 70%)",
+                WebkitMaskImage: "radial-gradient(ellipse 40% 50% at center, transparent 40%, black 70%)",
+              }} />
+            )}
 
             {/* REC badge */}
             <div style={{
@@ -2248,11 +2381,23 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
               background: isPaused ? "rgba(245,158,11,0.9)" : "rgba(248,113,113,0.9)",
               color: "#fff", padding: "0.25rem 0.65rem", borderRadius: "99px",
               fontSize: "0.75rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.4rem",
+              zIndex: 2,
             }}>
               <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#fff",
                 animation: isPaused ? "none" : "blink 1s infinite" }} />
               {isPaused ? "PAUSED" : "REC"}
             </div>
+
+            {/* Background blur badge */}
+            {backgroundBlur && (
+              <div style={{
+                position: "absolute", top: "12px", right: ncStatus === "active" ? "75px" : "12px",
+                background: "rgba(139,92,246,0.85)", color: "#fff",
+                padding: "0.2rem 0.55rem", borderRadius: "99px",
+                fontSize: "0.68rem", fontWeight: 700,
+                zIndex: 2,
+              }}>🌫️ BLUR</div>
+            )}
 
             {/* NC badge */}
             {ncStatus === "active" && (
@@ -2261,11 +2406,12 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
                 background: "rgba(34,211,160,0.85)", color: "#fff",
                 padding: "0.2rem 0.55rem", borderRadius: "99px",
                 fontSize: "0.68rem", fontWeight: 700,
+                zIndex: 2,
               }}>🎙️ AI NC</div>
             )}
 
             {/* Timer bar — color shifts green→yellow→red as time fills up */}
-            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "0 0 12px 12px" }}>
+            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "0 0 12px 12px", zIndex: 2 }}>
               <div style={{
                 height: "100%",
                 width: `${(elapsed / MAX_SECONDS) * 100}%`,
