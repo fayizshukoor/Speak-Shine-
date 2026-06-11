@@ -68,6 +68,6 @@ export default defineConfig({
   },
   assetsInclude: ["**/*.wasm"],
   optimizeDeps: {
-    exclude: ["@jitsi/rnnoise-wasm"],
+    exclude: ["@jitsi/rnnoise-wasm", "@mediapipe/selfie_segmentation"],
   },
 });

@@ -99,12 +99,41 @@ export function useBackgroundBlur(blurStrength = 20) {
       // Dynamic import to reduce initial bundle size
       let SelfieSegmentation;
       try {
-        const module = await import('@mediapipe/selfie_segmentation');
-        SelfieSegmentation = module.SelfieSegmentation;
+        // Import the entire module
+        const mediaPipeModule = await import('@mediapipe/selfie_segmentation');
+        
+        console.log('[BackgroundBlur] Raw module:', mediaPipeModule);
+        console.log('[BackgroundBlur] Module keys:', Object.keys(mediaPipeModule));
+        
+        // Try different access patterns
+        if (mediaPipeModule.SelfieSegmentation) {
+          SelfieSegmentation = mediaPipeModule.SelfieSegmentation;
+          console.log('[BackgroundBlur] Found via named export');
+        } else if (mediaPipeModule.default) {
+          if (typeof mediaPipeModule.default === 'function') {
+            SelfieSegmentation = mediaPipeModule.default;
+            console.log('[BackgroundBlur] Found via default export (direct)');
+          } else if (mediaPipeModule.default.SelfieSegmentation) {
+            SelfieSegmentation = mediaPipeModule.default.SelfieSegmentation;
+            console.log('[BackgroundBlur] Found via default.SelfieSegmentation');
+          }
+        }
+        
+        // Validate constructor
+        if (!SelfieSegmentation) {
+          throw new Error('SelfieSegmentation not found in any export pattern');
+        }
+        
+        if (typeof SelfieSegmentation !== 'function') {
+          throw new Error(`SelfieSegmentation is not a constructor (type: ${typeof SelfieSegmentation})`);
+        }
+        
         console.log('[BackgroundBlur] MediaPipe module loaded successfully');
       } catch (importErr) {
-        console.error('[BackgroundBlur] Failed to import MediaPipe:', importErr);
-        throw new Error('MediaPipe library not available');
+        console.error('[BackgroundBlur] Failed to load MediaPipe:', importErr);
+        setBlurStatus('fallback');
+        setBlurError('MediaPipe loading failed');
+        return originalStream;
       }
 
       // Create hidden video element to read frames from original stream
