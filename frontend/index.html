@@ -28,6 +28,10 @@
     <!-- Preconnect to external origins to reduce DNS/TLS latency -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+
+    <!-- MediaPipe Selfie Segmentation - loaded globally to avoid Vite build issues -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/selfie_segmentation.js" crossorigin="anonymous"></script>
 
     <!-- Non-blocking font load: display=swap shows system font immediately,
          swaps to Inter once loaded — eliminates render-blocking -->

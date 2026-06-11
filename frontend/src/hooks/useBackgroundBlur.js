@@ -96,45 +96,56 @@ export function useBackgroundBlur(blurStrength = 20) {
         return originalStream;
       }
 
-      // Dynamic import to reduce initial bundle size
+      // Check if MediaPipe is loaded globally (via script tag in index.html)
       let SelfieSegmentation;
-      try {
-        // Import the entire module
-        const mediaPipeModule = await import('@mediapipe/selfie_segmentation');
-        
-        console.log('[BackgroundBlur] Raw module:', mediaPipeModule);
-        console.log('[BackgroundBlur] Module keys:', Object.keys(mediaPipeModule));
-        
-        // Try different access patterns
-        if (mediaPipeModule.SelfieSegmentation) {
-          SelfieSegmentation = mediaPipeModule.SelfieSegmentation;
-          console.log('[BackgroundBlur] Found via named export');
-        } else if (mediaPipeModule.default) {
-          if (typeof mediaPipeModule.default === 'function') {
-            SelfieSegmentation = mediaPipeModule.default;
-            console.log('[BackgroundBlur] Found via default export (direct)');
-          } else if (mediaPipeModule.default.SelfieSegmentation) {
-            SelfieSegmentation = mediaPipeModule.default.SelfieSegmentation;
-            console.log('[BackgroundBlur] Found via default.SelfieSegmentation');
+      
+      if (window.SelfieSegmentation) {
+        // Loaded via script tag - most reliable for production
+        SelfieSegmentation = window.SelfieSegmentation;
+        console.log('[BackgroundBlur] MediaPipe loaded from window object');
+      } else {
+        // Fallback: try dynamic import (for development)
+        try {
+          const mediaPipeModule = await import('@mediapipe/selfie_segmentation');
+          
+          console.log('[BackgroundBlur] Trying dynamic import fallback');
+          console.log('[BackgroundBlur] Module keys:', Object.keys(mediaPipeModule));
+          
+          // Try different access patterns
+          const keys = Object.keys(mediaPipeModule);
+          if (keys.length > 0) {
+            const firstExport = mediaPipeModule[keys[0]];
+            if (firstExport && firstExport.SelfieSegmentation) {
+              SelfieSegmentation = firstExport.SelfieSegmentation;
+            } else if (typeof firstExport === 'function') {
+              SelfieSegmentation = firstExport;
+            }
           }
+          
+          if (!SelfieSegmentation && mediaPipeModule.SelfieSegmentation) {
+            SelfieSegmentation = mediaPipeModule.SelfieSegmentation;
+          } else if (!SelfieSegmentation && mediaPipeModule.default) {
+            if (typeof mediaPipeModule.default === 'function') {
+              SelfieSegmentation = mediaPipeModule.default;
+            } else if (mediaPipeModule.default.SelfieSegmentation) {
+              SelfieSegmentation = mediaPipeModule.default.SelfieSegmentation;
+            }
+          }
+        } catch (importErr) {
+          console.error('[BackgroundBlur] Dynamic import failed:', importErr);
         }
-        
-        // Validate constructor
-        if (!SelfieSegmentation) {
-          throw new Error('SelfieSegmentation not found in any export pattern');
-        }
-        
-        if (typeof SelfieSegmentation !== 'function') {
-          throw new Error(`SelfieSegmentation is not a constructor (type: ${typeof SelfieSegmentation})`);
-        }
-        
-        console.log('[BackgroundBlur] MediaPipe module loaded successfully');
-      } catch (importErr) {
-        console.error('[BackgroundBlur] Failed to load MediaPipe:', importErr);
+      }
+      
+      // Validate constructor
+      if (!SelfieSegmentation || typeof SelfieSegmentation !== 'function') {
+        console.error('[BackgroundBlur] SelfieSegmentation not available');
+        console.error('[BackgroundBlur] window.SelfieSegmentation:', window.SelfieSegmentation);
         setBlurStatus('fallback');
-        setBlurError('MediaPipe loading failed');
+        setBlurError('MediaPipe not loaded');
         return originalStream;
       }
+      
+      console.log('[BackgroundBlur] MediaPipe ready, SelfieSegmentation:', typeof SelfieSegmentation);
 
       // Create hidden video element to read frames from original stream
       const video = document.createElement('video');
