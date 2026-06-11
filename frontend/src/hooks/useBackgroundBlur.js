@@ -97,55 +97,46 @@ export function useBackgroundBlur(blurStrength = 20) {
       }
 
       // Check if MediaPipe is loaded globally (via script tag in index.html)
-      let SelfieSegmentation;
+      // Priority: window object first (most reliable in production)
+      let SelfieSegmentation = window.SelfieSegmentation;
       
-      if (window.SelfieSegmentation) {
-        // Loaded via script tag - most reliable for production
-        SelfieSegmentation = window.SelfieSegmentation;
-        console.log('[BackgroundBlur] MediaPipe loaded from window object');
+      if (SelfieSegmentation && typeof SelfieSegmentation === 'function') {
+        console.log('[BackgroundBlur] ✅ Using MediaPipe from window object');
       } else {
+        console.log('[BackgroundBlur] window.SelfieSegmentation not available, trying dynamic import...');
+        
         // Fallback: try dynamic import (for development)
         try {
           const mediaPipeModule = await import('@mediapipe/selfie_segmentation');
           
-          console.log('[BackgroundBlur] Trying dynamic import fallback');
           console.log('[BackgroundBlur] Module keys:', Object.keys(mediaPipeModule));
           
-          // Try different access patterns
-          const keys = Object.keys(mediaPipeModule);
-          if (keys.length > 0) {
-            const firstExport = mediaPipeModule[keys[0]];
-            if (firstExport && firstExport.SelfieSegmentation) {
-              SelfieSegmentation = firstExport.SelfieSegmentation;
-            } else if (typeof firstExport === 'function') {
-              SelfieSegmentation = firstExport;
-            }
-          }
-          
-          if (!SelfieSegmentation && mediaPipeModule.SelfieSegmentation) {
+          // The module has a 'default' key - access it directly
+          if (mediaPipeModule.default && typeof mediaPipeModule.default === 'function') {
+            SelfieSegmentation = mediaPipeModule.default;
+            console.log('[BackgroundBlur] ✅ Using default export');
+          } else if (mediaPipeModule.SelfieSegmentation) {
             SelfieSegmentation = mediaPipeModule.SelfieSegmentation;
-          } else if (!SelfieSegmentation && mediaPipeModule.default) {
-            if (typeof mediaPipeModule.default === 'function') {
-              SelfieSegmentation = mediaPipeModule.default;
-            } else if (mediaPipeModule.default.SelfieSegmentation) {
-              SelfieSegmentation = mediaPipeModule.default.SelfieSegmentation;
-            }
+            console.log('[BackgroundBlur] ✅ Using named export');
+          } else if (mediaPipeModule.default && mediaPipeModule.default.SelfieSegmentation) {
+            SelfieSegmentation = mediaPipeModule.default.SelfieSegmentation;
+            console.log('[BackgroundBlur] ✅ Using default.SelfieSegmentation');
           }
         } catch (importErr) {
           console.error('[BackgroundBlur] Dynamic import failed:', importErr);
         }
       }
       
-      // Validate constructor
+      // Final validation
       if (!SelfieSegmentation || typeof SelfieSegmentation !== 'function') {
-        console.error('[BackgroundBlur] SelfieSegmentation not available');
-        console.error('[BackgroundBlur] window.SelfieSegmentation:', window.SelfieSegmentation);
+        console.error('[BackgroundBlur] ❌ MediaPipe not available');
+        console.error('[BackgroundBlur] window.SelfieSegmentation:', typeof window.SelfieSegmentation);
         setBlurStatus('fallback');
         setBlurError('MediaPipe not loaded');
         return originalStream;
       }
       
-      console.log('[BackgroundBlur] MediaPipe ready, SelfieSegmentation:', typeof SelfieSegmentation);
+      console.log('[BackgroundBlur] ✅ MediaPipe ready');
 
       // Create hidden video element to read frames from original stream
       const video = document.createElement('video');
