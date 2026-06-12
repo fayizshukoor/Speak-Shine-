@@ -100,7 +100,7 @@ export function useBackgroundBlur(blurStrength = 20) {
       // Check multiple times with delays to handle race condition
       let SelfieSegmentation = window.SelfieSegmentation;
       let attempts = 0;
-      const maxAttempts = 10;
+      const maxAttempts = 20; // Increased from 10 to 20 (6 seconds total)
       
       while (!SelfieSegmentation && attempts < maxAttempts) {
         console.log(`[BackgroundBlur] Waiting for MediaPipe... (attempt ${attempts + 1}/${maxAttempts})`);
@@ -133,6 +133,12 @@ export function useBackgroundBlur(blurStrength = 20) {
           }
         } catch (importErr) {
           console.error('[BackgroundBlur] Dynamic import failed:', importErr);
+        }
+        
+        // FINAL CHECK: Script might have loaded during dynamic import attempt
+        if (!SelfieSegmentation && window.SelfieSegmentation) {
+          console.log('[BackgroundBlur] ✅ Recovered from window.SelfieSegmentation after import attempt');
+          SelfieSegmentation = window.SelfieSegmentation;
         }
       }
       
