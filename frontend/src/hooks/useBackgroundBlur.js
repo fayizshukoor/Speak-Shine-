@@ -96,14 +96,23 @@ export function useBackgroundBlur(blurStrength = 20) {
         return originalStream;
       }
 
-      // Check if MediaPipe is loaded globally (via script tag in index.html)
-      // Priority: window object first (most reliable in production)
+      // Wait for MediaPipe to load (script tag loads async)
+      // Check multiple times with delays to handle race condition
       let SelfieSegmentation = window.SelfieSegmentation;
+      let attempts = 0;
+      const maxAttempts = 10;
+      
+      while (!SelfieSegmentation && attempts < maxAttempts) {
+        console.log(`[BackgroundBlur] Waiting for MediaPipe... (attempt ${attempts + 1}/${maxAttempts})`);
+        await new Promise(resolve => setTimeout(resolve, 300)); // Wait 300ms
+        SelfieSegmentation = window.SelfieSegmentation;
+        attempts++;
+      }
       
       if (SelfieSegmentation && typeof SelfieSegmentation === 'function') {
-        console.log('[BackgroundBlur] ✅ Using MediaPipe from window object');
+        console.log('[BackgroundBlur] ✅ MediaPipe loaded from window object');
       } else {
-        console.log('[BackgroundBlur] window.SelfieSegmentation not available, trying dynamic import...');
+        console.log('[BackgroundBlur] window.SelfieSegmentation not available after waiting, trying dynamic import...');
         
         // Fallback: try dynamic import (for development)
         try {
