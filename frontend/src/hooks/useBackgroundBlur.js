@@ -206,6 +206,11 @@ export function useBackgroundBlur(blurStrength = 20) {
 
       segmenterRef.current = segmenter;
 
+      // Temporal smoothing: store previous mask for blending
+      let previousMask = null;
+      const TEMPORAL_SMOOTH_FACTOR = 0.7; // 70% current, 30% previous
+      const EDGE_FEATHER_RADIUS = 3; // Pixels to feather at edges
+
       // Process each frame
       let isProcessing = false;
       let lastFrameTime = 0;
@@ -237,14 +242,57 @@ export function useBackgroundBlur(blurStrength = 20) {
             return;
           }
 
-          // Step 1: Draw the original image
-          ctx.drawImage(results.image, 0, 0, width, height);
+          // Step 1: Get the segmentation mask
+          const maskCanvas = document.createElement('canvas');
+          maskCanvas.width = width;
+          maskCanvas.height = height;
+          const maskCtx = maskCanvas.getContext('2d');
+          maskCtx.drawImage(results.segmentationMask, 0, 0, width, height);
+          const rawMaskData = maskCtx.getImageData(0, 0, width, height);
+          const maskData = rawMaskData.data;
+
+          // Step 2: Apply temporal smoothing (blend with previous frame)
+          if (previousMask) {
+            for (let i = 0; i < maskData.length; i += 4) {
+              maskData[i] = maskData[i] * TEMPORAL_SMOOTH_FACTOR + previousMask[i] * (1 - TEMPORAL_SMOOTH_FACTOR);
+            }
+          }
           
-          // Step 2: Get image data to manually composite with mask
+          // Store current mask for next frame
+          previousMask = new Uint8ClampedArray(maskData);
+
+          // Step 3: Apply edge feathering (Gaussian-like blur on mask edges)
+          const smoothedMask = new Uint8ClampedArray(maskData.length);
+          for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+              const idx = (y * width + x) * 4;
+              let sum = 0;
+              let count = 0;
+              
+              // Sample surrounding pixels for feathering
+              for (let dy = -EDGE_FEATHER_RADIUS; dy <= EDGE_FEATHER_RADIUS; dy++) {
+                for (let dx = -EDGE_FEATHER_RADIUS; dx <= EDGE_FEATHER_RADIUS; dx++) {
+                  const nx = x + dx;
+                  const ny = y + dy;
+                  
+                  if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                    const nidx = (ny * width + nx) * 4;
+                    sum += maskData[nidx];
+                    count++;
+                  }
+                }
+              }
+              
+              smoothedMask[idx] = sum / count;
+            }
+          }
+
+          // Step 4: Draw the original image
+          ctx.drawImage(results.image, 0, 0, width, height);
           const imageData = ctx.getImageData(0, 0, width, height);
           const data = imageData.data;
 
-          // Step 3: Create a temporary canvas for the blurred background
+          // Step 5: Create blurred background
           const blurCanvas = document.createElement('canvas');
           blurCanvas.width = width;
           blurCanvas.height = height;
@@ -253,28 +301,17 @@ export function useBackgroundBlur(blurStrength = 20) {
           blurCtx.drawImage(results.image, 0, 0, width, height);
           const blurredData = blurCtx.getImageData(0, 0, width, height).data;
 
-          // Step 4: Create a temporary canvas for the mask
-          const maskCanvas = document.createElement('canvas');
-          maskCanvas.width = width;
-          maskCanvas.height = height;
-          const maskCtx = maskCanvas.getContext('2d');
-          maskCtx.drawImage(results.segmentationMask, 0, 0, width, height);
-          const maskData = maskCtx.getImageData(0, 0, width, height).data;
-
-          // Step 5: Composite based on mask
-          // Mask: white (255) = person, black (0) = background
+          // Step 6: Composite using smoothed mask
           for (let i = 0; i < data.length; i += 4) {
-            const maskValue = maskData[i] / 255; // Normalize to 0-1
+            const maskValue = smoothedMask[i] / 255; // Normalized to 0-1
             
-            // If mask is 1 (person), keep original pixel
-            // If mask is 0 (background), use blurred pixel
+            // Blend original (person) and blurred (background) based on mask
             data[i]     = data[i] * maskValue + blurredData[i] * (1 - maskValue);     // R
             data[i + 1] = data[i + 1] * maskValue + blurredData[i + 1] * (1 - maskValue); // G
             data[i + 2] = data[i + 2] * maskValue + blurredData[i + 2] * (1 - maskValue); // B
-            // Alpha stays the same
           }
 
-          // Step 6: Put the composited image back
+          // Step 7: Put the composited image back
           ctx.putImageData(imageData, 0, 0);
         } catch (err) {
           console.warn('[BackgroundBlur] Frame processing error:', err);
