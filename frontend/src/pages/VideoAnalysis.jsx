@@ -918,7 +918,8 @@ async function resetCameraZoom(videoTrack) {
 
 function buildRecordingMediaConstraints(camId, micId) {
   const isMobile = isMobileRecordingDevice();
-  const videoBase = camId ? { deviceId: { ideal: camId } } : { facingMode: "user" };
+  // Use 'exact' for deviceId to enforce the selected device, not 'ideal'
+  const videoBase = camId ? { deviceId: { exact: camId } } : { facingMode: "user" };
 
   const video = isMobile
     ? {
@@ -940,7 +941,8 @@ function buildRecordingMediaConstraints(camId, micId) {
   return {
     video,
     audio: {
-      ...(micId ? { deviceId: { ideal: micId } } : {}),
+      // Use 'exact' for deviceId to enforce the selected device, not 'ideal'
+      ...(micId ? { deviceId: { exact: micId } } : {}),
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: true,
@@ -951,19 +953,41 @@ function buildRecordingMediaConstraints(camId, micId) {
 }
 
 async function openRecordingStream(camId, micId) {
+  console.log(`[DeviceSelection] Opening stream with camId="${camId}", micId="${micId}"`);
   const full = buildRecordingMediaConstraints(camId, micId);
+  console.log('[DeviceSelection] Built constraints:', JSON.stringify(full, null, 2));
   try {
     const stream = await navigator.mediaDevices.getUserMedia(full);
     const track = stream.getVideoTracks()[0];
-    if (track) await resetCameraZoom(track);
+    if (track) {
+      const settings = track.getSettings();
+      console.log(`[DeviceSelection] ✓ Video track using deviceId: "${settings.deviceId}", label: "${track.label}"`);
+      await resetCameraZoom(track);
+    }
+    const audioTrack = stream.getAudioTracks()[0];
+    if (audioTrack) {
+      const audioSettings = audioTrack.getSettings();
+      console.log(`[DeviceSelection] ✓ Audio track using deviceId: "${audioSettings.deviceId}", label: "${audioTrack.label}"`);
+    }
     return stream;
-  } catch {
+  } catch (err) {
+    console.warn('[DeviceSelection] Primary constraints failed, trying fallback:', err.message);
+    // Fallback: use 'exact' deviceId if specified, otherwise use facingMode
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: camId ? { deviceId: { ideal: camId }, facingMode: "user" } : { facingMode: "user" },
+      video: camId ? { deviceId: { exact: camId }, facingMode: "user" } : { facingMode: "user" },
       audio: full.audio,
     });
     const track = stream.getVideoTracks()[0];
-    if (track) await resetCameraZoom(track);
+    if (track) {
+      const settings = track.getSettings();
+      console.log(`[DeviceSelection] ✓ Fallback video track using deviceId: "${settings.deviceId}", label: "${track.label}"`);
+      await resetCameraZoom(track);
+    }
+    const audioTrack = stream.getAudioTracks()[0];
+    if (audioTrack) {
+      const audioSettings = audioTrack.getSettings();
+      console.log(`[DeviceSelection] ✓ Fallback audio track using deviceId: "${audioSettings.deviceId}", label: "${audioTrack.label}"`);
+    }
     return stream;
   }
 }
@@ -2262,16 +2286,26 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
 
           {/* Device selectors */}
           <div className="grid-cols-2" style={{ marginBottom: "1.25rem" }}>
-            <div>
+            <div style={{ position: 'relative', zIndex: 10 }}>
               <label className="form-label">📷 Camera</label>
-              <select className="form-input" value={camId} onChange={e => setCamId(e.target.value)}>
+              <select 
+                className="form-input" 
+                value={camId} 
+                onChange={e => setCamId(e.target.value)}
+                style={{ cursor: 'pointer', position: 'relative', zIndex: 10 }}
+              >
                 <option value="">Default camera</option>
                 {cameras.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || `Camera ${d.deviceId.slice(0,6)}`}</option>)}
               </select>
             </div>
-            <div>
+            <div style={{ position: 'relative', zIndex: 10 }}>
               <label className="form-label">🎙️ Microphone</label>
-              <select className="form-input" value={micId} onChange={e => setMicId(e.target.value)}>
+              <select 
+                className="form-input" 
+                value={micId} 
+                onChange={e => setMicId(e.target.value)}
+                style={{ cursor: 'pointer', position: 'relative', zIndex: 10 }}
+              >
                 <option value="">Default mic</option>
                 {mics.map(d => <option key={d.deviceId} value={d.deviceId}>{d.label || `Mic ${d.deviceId.slice(0,6)}`}</option>)}
               </select>
