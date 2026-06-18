@@ -103,6 +103,140 @@ speak-shine/
 
 ---
 
+## Using Infisical for Environment Variables (Optional)
+
+[Infisical](https://infisical.com/) is a secure way to manage environment variables across development and production environments without storing secrets in `.env` files.
+
+### Setup Infisical
+
+#### 1. Install Infisical CLI
+
+```bash
+# macOS/Linux
+curl -1sLf 'https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.deb.sh' | sudo -E bash
+sudo apt-get update && sudo apt-get install -y infisical
+
+# Or using npm
+npm install -g @infisical/cli
+
+# Or using Homebrew (macOS)
+brew install infisical/get-cli/infisical
+```
+
+#### 2. Login to Infisical
+
+```bash
+infisical login
+```
+
+Select **Infisical Cloud (US Region)** and complete login in browser.
+
+#### 3. Initialize Project
+
+In your project directory:
+
+```bash
+infisical init
+```
+
+Select your organization, project, and environment (e.g., `development`, `production`).
+
+This creates/updates `.infisical.json` with your workspace configuration.
+
+#### 4. Add Secrets to Infisical Dashboard
+
+Go to [app.infisical.com](https://app.infisical.com/) and add all environment variables from `.env.example`:
+
+- `MONGODB_URI`
+- `JWT_SECRET`
+- `JWT_REFRESH_SECRET`
+- `GROQ_API_KEY`
+- `R2_*` variables
+- etc.
+
+Create separate environments:
+- **development** — for local development
+- **production** — for production server
+
+### Using Infisical in Development
+
+Instead of using `.env` file:
+
+```bash
+# Start backend with Infisical
+infisical run --env=development -- npm run dev:api
+
+# Or set as default environment
+infisical run -- npm run dev:api
+```
+
+This automatically injects all secrets from Infisical into your application.
+
+### Using Infisical in Production
+
+#### Option 1: GitHub Actions (Automated)
+
+The deployment workflow automatically pulls production secrets if Infisical CLI is installed on the server:
+
+```bash
+# On your EC2/production server, install Infisical CLI
+curl -1sLf 'https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.deb.sh' | sudo -E bash
+sudo apt-get update && sudo apt-get install -y infisical
+
+# Login with service token (for CI/CD)
+infisical login
+```
+
+The GitHub Actions workflow will automatically run:
+```bash
+infisical export --env=production --format=dotenv > .env
+```
+
+#### Option 2: Manual Sync on Server
+
+SSH into your production server:
+
+```bash
+cd /path/to/Speak-Shine-
+infisical export --env=production --format=dotenv > .env
+docker compose restart app
+```
+
+#### Option 3: Service Tokens (Recommended for CI/CD)
+
+1. Create a service token in Infisical dashboard
+2. Add it as a GitHub secret: `INFISICAL_TOKEN`
+3. Update GitHub Actions workflow:
+
+```yaml
+- name: Pull Infisical secrets
+  run: |
+    infisical export --token=${{ secrets.INFISICAL_TOKEN }} --env=production --format=dotenv > .env
+```
+
+### Infisical Best Practices
+
+✅ **Do:**
+- Use separate environments (development, staging, production)
+- Rotate service tokens regularly
+- Use role-based access control for team members
+- Keep `.infisical.json` in version control (it's safe, contains no secrets)
+
+❌ **Don't:**
+- Commit `.env` files (add to `.gitignore`)
+- Share service tokens in Slack/email
+- Use the same secrets across dev and production
+- Store Infisical personal access tokens in code
+
+### Fallback to .env
+
+If Infisical is not available, the app falls back to reading `.env` file. This ensures:
+- Local development works without Infisical
+- Production can use either Infisical OR `.env`
+- No breaking changes for existing deployments
+
+---
+
 ## Environment Variables
 
 ```env
