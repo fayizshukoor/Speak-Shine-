@@ -21,16 +21,38 @@ AI-powered speech analysis platform that helps users improve communication skill
 
 ## Features
 
-- **Video Analysis** — Upload or record a video; AI scores fluency, grammar, confidence, vocabulary, eye contact, body language, and facial expression
+### Video Recording & Analysis
+- **Advanced Recording** — Record or upload videos with intelligent camera/microphone selection
+- **AI Background Blur** — Real-time background blur using MediaPipe Selfie Segmentation with adjustable strength (5-40px)
+- **AI Noise Cancellation** — RNNoise WASM-based audio enhancement for clearer recordings
 - **Browser Frame Extraction** — 16 frames extracted in-browser before upload, saving 93% server RAM and speeding up visual analysis
+- **AI Scoring** — Comprehensive analysis of fluency, grammar, confidence, vocabulary, eye contact, body language, and facial expression
+- **Smart Compression** — Automatic video optimization with quality preservation (up to 500MB frontend, 200MB backend processing)
+
+### Processing & Performance
 - **Concurrent Queue** — Up to 15 videos processed simultaneously (configurable via `VIDEO_QUEUE_CONCURRENCY`)
 - **Security Caching** — Redis caches security check results; repeat uploads skip virus/codec/content checks entirely
-- **Daily Questions** — Scheduled question published each morning; special questions on Sundays, month-start, and month-end
+- **Submit Gate** — Pre-submission validation with real-time feedback on video quality requirements
+- **Progress Tracking** — SSE-based real-time progress updates during video processing
+
+### Learning & Engagement
+- **Daily Questions** — Scheduled questions published each morning; special questions on Sundays, month-start, and month-end
+- **Weekly Reflections** — Dedicated Sunday reflection prompts with 6 guided questions
+- **Vocabulary Generator** — AI extracts and explains advanced vocabulary from user submissions
+- **Community Feed** — Public video sharing with reactions, comments, and engagement tracking
 - **Progress Tracking** — Daily reports, streaks, weekly/monthly submission counters, fine system for missed days
-- **Live Sessions** — Trainer-hosted video rooms via LiveKit
-- **Chat** — Group chat and direct messaging via Socket.io
-- **Attendance** — Session attendance tracking
+
+### Communication & Collaboration
+- **Live Sessions** — Trainer-hosted video rooms via LiveKit with real-time attendance tracking
+- **Group Chat** — Real-time group messaging via Socket.io
+- **Direct Messaging** — One-on-one chat between users
+- **Notifications** — In-app notification system with unread tracking
+- **Attendance** — Session attendance tracking and reporting
+
+### Admin & Monitoring
 - **Admin Dashboard** — Real-time monitoring, queue stats, user management, question bank
+- **Trainer Dashboard** — Student progress tracking, attendance management, live session hosting
+- **User Dashboard** — Personal progress, submission history, streak tracking, vocabulary library
 
 ---
 
@@ -69,10 +91,11 @@ speak-shine/
 │
 ├── frontend/
 │   └── src/
-│       ├── pages/          # VideoAnalysis, AdminDashboard, UserDashboard…
-│       ├── components/     # Layout, Chat, LiveRoom, Modal…
-│       ├── hooks/          # useVideoFrameHash, useNoiseCancellation…
-│       └── context/        # AuthContext
+│       ├── pages/          # VideoAnalysis, AdminDashboard, UserDashboard, TrainerDashboard…
+│       ├── components/     # Layout, Chat, LiveRoom, Modal, NotificationBell…
+│       ├── hooks/          # useBackgroundBlur, useNoiseCancellation, useVideoFrameHash…
+│       ├── context/        # AuthContext
+│       └── api/            # client.js (axios instance)
 │
 └── scripts/
     └── reset-admin-password.js
@@ -104,7 +127,7 @@ R2_PUBLIC_URL=https://...
 GROQ_API_KEY=
 GROQ_API_KEY_2=          # optional second key for rate-limit rotation
 
-# LiveKit (optional)
+# LiveKit (optional - required for live video sessions)
 LIVEKIT_API_KEY=
 LIVEKIT_API_SECRET=
 LIVEKIT_URL=wss://...
@@ -120,8 +143,10 @@ ENABLE_VIRUS_SCAN=false
 ENABLE_CODEC_VALIDATION=false
 ENABLE_CONTENT_MODERATION=false
 
-# Queue concurrency (default 15, safe for 512 MB RAM)
-VIDEO_QUEUE_CONCURRENCY=15
+# Queue & Processing
+VIDEO_QUEUE_CONCURRENCY=15    # default 15, safe for 512 MB RAM
+MAX_VIDEO_SIZE_MB=200          # backend processing limit
+MAX_FRONTEND_SIZE_MB=500       # frontend upload limit before compression
 ```
 
 ---
@@ -348,6 +373,39 @@ Standard CRUD endpoints under `/api/users`, `/api/dashboard`, `/api/questions`, 
 
 ---
 
+## New Features & Enhancements
+
+### Camera & Audio Controls
+- **Device Selection** — Choose specific camera and microphone devices from dropdowns
+- **Exact Device Enforcement** — Uses `exact` constraints to ensure selected devices are used during recording
+- **Device Logging** — Console logging helps verify correct device usage
+
+### AI-Powered Enhancements
+- **Background Blur** — MediaPipe Selfie Segmentation with:
+  - Adjustable blur strength (5-40px slider)
+  - Temporal smoothing (70% current / 30% previous frame) to reduce flickering
+  - Edge feathering (3-pixel Gaussian blur) for smooth boundaries
+  - Live toggle during recording
+- **Noise Cancellation** — RNNoise WASM processing with real-time status indicators
+
+### Video Quality & Compression
+- **Smart Compression** — Browser-based video compression with:
+  - Preserved audio pitch and duration
+  - Capped bitrates (1.1 Mbps video / 96 kbps audio)
+  - Memory-efficient processing with proper cleanup
+  - Increased thresholds (500MB frontend, 200MB backend)
+
+### Password Security
+- **Strong Password Enforcement** — All registrations require:
+  - Minimum 8 characters
+  - At least 1 uppercase letter
+  - At least 1 lowercase letter
+  - At least 1 number
+  - At least 1 special character
+  - Real-time validation feedback
+
+---
+
 ## Video Processing Pipeline
 
 ```
@@ -373,18 +431,45 @@ Cleanup (hourly cron)
 
 ---
 
-## Deployment (Railway)
+## Deployment (GitHub Actions → Docker)
 
-1. Push to GitHub — Railway auto-deploys on push to `webapp` branch
-2. Set all environment variables in the Railway service dashboard
-3. The single `Dockerfile` builds the frontend and starts the API server
+The project uses GitHub Actions for continuous deployment:
 
-Key Railway settings:
+1. **Push to GitHub** — Deployment triggers on push to `main` branch
+2. **Docker Build** — Single `Dockerfile` builds frontend and backend
+3. **Environment Variables** — Set all required variables in your deployment platform (Railway, Render, etc.)
+
+### GitHub Deployment Workflow
+
+The `.github/workflows/deploy.yml` automatically:
+- Builds the Docker image
+- Installs dependencies
+- Builds the React frontend
+- Starts the Node.js API server
+
+### Key Deployment Settings
+
 - **Start command:** `node api/server.js`
 - **Health check:** `GET /api/health`
-- **RAM:** 512 MB is sufficient (video processing uses ~9 MB per video)
+- **RAM:** 512 MB minimum (sufficient for concurrent video processing)
+- **Ports:** Exposes port 3001 (or value from `PORT` env variable)
 
-To adjust queue concurrency without redeploying, change `VIDEO_QUEUE_CONCURRENCY` in Railway variables and redeploy (takes ~30 s).
+### Deployment Platforms
+
+**Railway / Render:**
+1. Connect your GitHub repository
+2. Set environment variables in the dashboard
+3. Deploy will trigger automatically on push to `main`
+
+**Manual Docker Deployment:**
+```bash
+docker build -t speak-shine .
+docker run -p 3001:3001 --env-file .env speak-shine
+```
+
+### Adjusting Performance
+
+To adjust queue concurrency without redeploying, change `VIDEO_QUEUE_CONCURRENCY` in your platform's environment variables and restart the service.
 
 ---
 
