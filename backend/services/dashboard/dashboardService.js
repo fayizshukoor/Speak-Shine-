@@ -151,7 +151,6 @@ export async function getUserProfile(phone) {
   });
 
   const topStreak = leaderboardSorted
-    .slice(0, 5)
     .map(u => ({
       name: u.name,
       userId: u.userId,

@@ -1001,7 +1001,7 @@ export default function UserDashboard() {
       {data?.topStreak?.length > 0 && (
         <div className="card" style={{ marginBottom: "1rem" }}>
           <div className="section-title">🏆 Today's Leaderboard</div>
-          <div className="streak-list">
+          <div className="streak-list" style={{ maxHeight: "16rem", overflowY: "auto", paddingRight: "0.25rem" }}>
             {data.topStreak.map((u, i) => {
               const isMe = data?.myStreakEntry?.inTop5 && data.myStreakEntry.rank === i + 1;
               return (
