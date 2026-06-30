@@ -43,11 +43,21 @@ jobs:
             echo "================================="
             echo "Pull environment variables from Infisical"
             echo "================================="
-            # Check if Infisical CLI is installed
+            # Try Infisical first; fall back to existing .env on any failure
+            # (expired session, network issue, etc.)
             if command -v infisical &> /dev/null; then
-              echo "Infisical CLI found, pulling production secrets..."
-              infisical export --env=production --format=dotenv > .env
-              echo "✓ Environment variables synced from Infisical"
+              echo "Infisical CLI found, attempting to pull production secrets..."
+              if infisical export --env=production --format=dotenv > .env.infisical 2>/dev/null; then
+                mv .env.infisical .env
+                echo "✓ Environment variables synced from Infisical"
+              else
+                rm -f .env.infisical
+                echo "⚠ Infisical export failed (session expired?) — using existing .env file"
+                if [ ! -f .env ]; then
+                  echo "❌ Error: No .env file found and Infisical export failed"
+                  exit 1
+                fi
+              fi
             else
               echo "⚠ Infisical CLI not found, using existing .env file"
               if [ ! -f .env ]; then
