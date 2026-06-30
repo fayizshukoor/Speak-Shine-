@@ -1234,40 +1234,7 @@ export default function UserDashboard() {
       )}
 
       {scores.length > 0 ? (
-        <div style={{ position: "relative" }}>
-          {/* Blur overlay for guests */}
-          {isGuest && (
-            <div style={{
-              position: "absolute", inset: 0, zIndex: 10,
-              background: "rgba(5,5,15,0.75)",
-              backdropFilter: "blur(4px)",
-              WebkitBackdropFilter: "blur(4px)",
-              borderRadius: 14,
-              display: "flex", flexDirection: "column",
-              alignItems: "center", justifyContent: "center",
-              textAlign: "center", padding: "2rem",
-              gap: "0.75rem",
-            }}>
-              <div style={{ fontSize: "2.5rem" }}>🔒</div>
-              <div style={{ fontWeight: 800, fontSize: "1.1rem", color: "#fff" }}>Your score history will appear here</div>
-              <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.65)", marginBottom: "0.5rem" }}>
-                Submit a video every day and watch your progress grow session by session.
-              </div>
-              <button
-                onClick={() => navigate("/register")}
-                style={{
-                  background: "linear-gradient(135deg,#7c6fff,#4f46e5)",
-                  border: "none", color: "#fff", borderRadius: 12,
-                  padding: "0.7rem 1.75rem", fontSize: "0.9rem",
-                  fontWeight: 700, cursor: "pointer",
-                  boxShadow: "0 4px 20px rgba(124,111,255,0.4)",
-                }}
-              >
-                ✨ Register Free
-              </button>
-            </div>
-          )}
-          <>
+        <>
           <div className="stat-grid">
             {Object.entries(SCORES).map(([k, c]) => (
               <StatCard key={k} icon={k==="fluency"?"🗣️":k==="grammar"?"📝":k==="confidence"?"💪":"📚"}
@@ -1316,6 +1283,11 @@ export default function UserDashboard() {
                 ))}
               </LineChart>
             </ResponsiveContainer>
+            {isGuest && (
+              <div style={{ textAlign:"center", fontSize:"0.75rem", color:"var(--muted)", marginTop:"0.5rem", padding:"0.5rem", background:"rgba(124,111,255,0.07)", borderRadius:8 }}>
+                📊 Sample data — register to track your real progress
+              </div>
+            )}
           </div>
 
           <div className="card" style={{ marginTop: "1rem" }}>
@@ -1343,33 +1315,15 @@ export default function UserDashboard() {
             {/* Pagination */}
             {totalPages > 1 && (
               <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "0.5rem", marginTop: "1rem", flexWrap: "wrap" }}>
-                <button
-                  className="btn-ghost"
-                  style={{ padding: "0.3rem 0.75rem", fontSize: "0.82rem" }}
-                  onClick={() => setSessionPage(p => Math.max(1, p - 1))}
-                  disabled={sessionPage === 1}
-                >← Prev</button>
-
+                <button className="btn-ghost" style={{ padding: "0.3rem 0.75rem", fontSize: "0.82rem" }} onClick={() => setSessionPage(p => Math.max(1, p - 1))} disabled={sessionPage === 1}>← Prev</button>
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-                  <button
-                    key={p}
-                    className={sessionPage === p ? "btn-primary" : "btn-ghost"}
-                    style={{ padding: "0.3rem 0.65rem", fontSize: "0.82rem", minWidth: 34 }}
-                    onClick={() => setSessionPage(p)}
-                  >{p}</button>
+                  <button key={p} className={sessionPage === p ? "btn-primary" : "btn-ghost"} style={{ padding: "0.3rem 0.65rem", fontSize: "0.82rem", minWidth: 34 }} onClick={() => setSessionPage(p)}>{p}</button>
                 ))}
-
-                <button
-                  className="btn-ghost"
-                  style={{ padding: "0.3rem 0.75rem", fontSize: "0.82rem" }}
-                  onClick={() => setSessionPage(p => Math.min(totalPages, p + 1))}
-                  disabled={sessionPage === totalPages}
-                >Next →</button>
+                <button className="btn-ghost" style={{ padding: "0.3rem 0.75rem", fontSize: "0.82rem" }} onClick={() => setSessionPage(p => Math.min(totalPages, p + 1))} disabled={sessionPage === totalPages}>Next →</button>
               </div>
             )}
           </div>
-          </>
-        </div>
+        </>
       ) : (
         <div className="card empty-state">
           <div className="empty-icon">📹</div>

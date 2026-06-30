@@ -967,9 +967,9 @@ export default function CommunityFeed() {
 
   useEffect(() => {
     if (!user) {
-      // Guests see dummy community feed from preview API
+      // Guests see dummy community feed from preview API (cached 24h)
       api.get("/guest/preview")
-        .then(r => setFeed((r.data?.communityFeed || []).map(p => ({ ...p, _id: p.id, isDemo: true, likeCount: p.reactions?.like || 0, dislikeCount: p.reactions?.dislike || 0, comments: [] }))))
+        .then(r => setFeed(r.data?.communityFeed || []))
         .catch(() => {})
         .finally(() => setLoading(false));
       return;
@@ -1181,12 +1181,16 @@ export default function CommunityFeed() {
               {/* Header */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                  <div className="avatar" style={{ width: "38px", height: "38px", fontSize: "0.9rem" }}>
-                    {(item.uploaderName || "?")[0].toUpperCase()}
+                  <div className="avatar" style={{
+                    width: "38px", height: "38px", fontSize: "0.9rem",
+                    ...(item.uploaderColor ? { background: `linear-gradient(135deg, ${item.uploaderColor}, ${item.uploaderColor}99)` } : {}),
+                  }}>
+                    {item.uploaderInitials || (item.uploaderName || "?")[0].toUpperCase()}
                   </div>
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--text)" }}>
+                    <div style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--text)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
                       {item.uploaderName || "Anonymous"}
+                      {item.isDemo && <span style={{ fontSize: "0.62rem", background: "rgba(124,111,255,0.15)", color: "#a78bfa", borderRadius: 20, padding: "0.1rem 0.45rem", fontWeight: 700 }}>DEMO</span>}
                     </div>
                     <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
                       {fmtTime(item.submittedAt)}{item.videoDuration ? ` · ${fmtDur(item.videoDuration)}` : ""}
@@ -1216,34 +1220,35 @@ export default function CommunityFeed() {
 
               {/* Video player */}
               {item.isDemo ? (
-                /* Guest demo card — locked video placeholder */
+                /* Demo card — show topic + colored thumbnail, no video lock */
                 <div style={{
                   width: "100%", borderRadius: "10px", background: "#0a0a14",
-                  border: "1px solid rgba(124,111,255,0.25)",
+                  border: `1px solid ${item.uploaderColor || "rgba(124,111,255,0.25)"}44`,
                   aspectRatio: "16/9", display: "flex", alignItems: "center", justifyContent: "center",
                   position: "relative", overflow: "hidden", marginBottom: "1rem",
                 }}>
                   <div style={{
                     position: "absolute", inset: 0,
-                    background: `linear-gradient(135deg, ${["#7c6fff","#4ade80","#fbbf24","#f472b6","#60a5fa","#fb923c"][feed.indexOf(item) % 6]}22, transparent)`,
+                    background: `linear-gradient(135deg, ${item.uploaderColor || "#7c6fff"}22, transparent 70%)`,
                   }} />
-                  <div style={{ textAlign: "center", position: "relative", zIndex: 1 }}>
-                    <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🔒</div>
-                    <div style={{ fontWeight: 700, color: "#fff", fontSize: "0.88rem", marginBottom: "0.25rem" }}>
-                      Register to watch
-                    </div>
-                    <div style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.6)", marginBottom: "0.75rem" }}>
-                      {item.duration} video
+                  <div style={{ textAlign: "center", position: "relative", zIndex: 1, padding: "1rem" }}>
+                    <div style={{ fontSize: "2.5rem", marginBottom: "0.5rem" }}>🎙️</div>
+                    <div style={{ fontWeight: 600, color: "#fff", fontSize: "0.82rem", lineHeight: 1.4, maxWidth: 280 }}>
+                      "{item.analysis?.transcription?.slice(0, 100)}…"
                     </div>
                     <button
                       onClick={() => navigate("/register")}
                       style={{
-                        background: "linear-gradient(135deg, #7c6fff, #4f46e5)",
+                        marginTop: "0.75rem",
+                        background: `linear-gradient(135deg, ${item.uploaderColor || "#7c6fff"}, ${item.uploaderColor || "#4f46e5"})`,
                         border: "none", color: "#fff",
                         borderRadius: 8, padding: "0.4rem 0.9rem",
                         fontSize: "0.75rem", fontWeight: 700, cursor: "pointer",
                       }}
-                    >Join Free →</button>
+                    >🎬 Watch Real Videos — Register Free</button>
+                  </div>
+                  <div style={{ position: "absolute", bottom: 8, right: 10, background: "rgba(0,0,0,0.7)", borderRadius: 6, padding: "2px 8px", fontSize: "0.7rem", color: "#fff" }}>
+                    {fmtDur(item.videoDuration)}
                   </div>
                 </div>
               ) : playing === item._id ? (
