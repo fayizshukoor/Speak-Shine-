@@ -1264,10 +1264,11 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
       uploadStartRef.current = Date.now();
 
       // ── Upload video (runs in parallel with frame extraction) ──
-      const uploadFile = (url, headers = {}) => new Promise((resolve, reject) => {
+      // withCredentials must only be set for same-origin proxy requests, NOT for R2 presigned URLs
+      const uploadFile = (url, headers = {}, useCookies = false) => new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", url);
-        xhr.withCredentials = true; // send cookies for cookie-based auth
+        if (useCookies) xhr.withCredentials = true; // only for proxy-upload (same origin)
         Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
         xhr.upload.onprogress = (e) => {
           if (e.total) {
@@ -1299,7 +1300,7 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
       try {
         await uploadFile(presign.uploadUrl, {
           "Content-Type": fileToUpload.type || "video/mp4",
-        });
+        }, false); // false = no cookies for R2 presigned URL
         console.log("[Upload] ⚡ Direct R2 upload succeeded");
       } catch (directErr) {
         console.warn("[Upload] Direct R2 upload failed, falling back to proxy:", directErr.message);
@@ -1316,7 +1317,7 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
           "x-r2-key": presign.key,
           "x-mime-type": fileToUpload.type || "video/mp4",
           ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-        });
+        }, true); // true = send cookies for same-origin proxy
       }
 
       // Wait for frame extraction to finish (may already be done)
@@ -2111,10 +2112,10 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
       uploadStartRef.current = Date.now();
 
       // ── Upload video (runs in parallel with frame extraction) ──
-      const uploadRecFile = (url, headers = {}) => new Promise((resolve, reject) => {
+      const uploadRecFile = (url, headers = {}, useCookies = false) => new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", url);
-        xhr.withCredentials = true; // send cookies for cookie-based auth
+        if (useCookies) xhr.withCredentials = true; // only for same-origin proxy
         Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
         xhr.upload.onprogress = (e) => {
           if (e.total) {
@@ -2146,7 +2147,7 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
       });
 
       try {
-        await uploadRecFile(presign.uploadUrl, { "Content-Type": fileToUpload.type });
+        await uploadRecFile(presign.uploadUrl, { "Content-Type": fileToUpload.type }, false); // no cookies for R2
         console.log("[Upload] ⚡ Direct R2 upload succeeded");
       } catch (directErr) {
         console.warn("[Upload] Direct R2 upload failed, falling back to proxy:", directErr.message);
@@ -2163,7 +2164,7 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
           "x-r2-key": presign.key,
           "x-mime-type": fileToUpload.type,
           ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-        });
+        }, true); // send cookies for same-origin proxy
       }
 
       // Wait for frame extraction to finish
