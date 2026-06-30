@@ -20,10 +20,13 @@ jobs:
 
       - name: Deploy to EC2
         uses: appleboy/ssh-action@master
+        env:
+          ENV_FILE_CONTENT: ${{ secrets.ENV_FILE_CONTENT }}
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
+          envs: ENV_FILE_CONTENT
           script: |
             set -euo pipefail
 
@@ -43,22 +46,21 @@ jobs:
             echo "================================="
             echo "Pull environment variables from Infisical"
             echo "================================="
-            # Try Infisical first; fall back to existing .env on any failure
-            if command -v infisical &> /dev/null; then
+            # If ENV_FILE_CONTENT secret is set, use it as the authoritative .env
+            if [ -n "${ENV_FILE_CONTENT:-}" ]; then
+              echo "$ENV_FILE_CONTENT" > .env
+              echo "✓ Environment variables written from ENV_FILE_CONTENT secret"
+            # Otherwise try Infisical
+            elif command -v infisical &> /dev/null; then
               echo "Infisical CLI found, attempting to pull production secrets..."
               if infisical export --env=production --format=dotenv > /tmp/.env.infisical.tmp 2>/dev/null \
-                  && [ -s /tmp/.env.infisical.tmp ]; then
-                # Only replace .env if the new file is non-empty and contains JWT_SECRET
-                if grep -q "JWT_SECRET" /tmp/.env.infisical.tmp; then
-                  mv /tmp/.env.infisical.tmp .env
-                  echo "✓ Environment variables synced from Infisical"
-                else
-                  rm -f /tmp/.env.infisical.tmp
-                  echo "⚠ Infisical output missing JWT_SECRET — keeping existing .env"
-                fi
+                  && [ -s /tmp/.env.infisical.tmp ] \
+                  && grep -q "JWT_SECRET" /tmp/.env.infisical.tmp; then
+                mv /tmp/.env.infisical.tmp .env
+                echo "✓ Environment variables synced from Infisical"
               else
                 rm -f /tmp/.env.infisical.tmp
-                echo "⚠ Infisical export failed (session expired?) — using existing .env"
+                echo "⚠ Infisical export failed — using existing .env"
               fi
             else
               echo "⚠ Infisical CLI not found, using existing .env file"
