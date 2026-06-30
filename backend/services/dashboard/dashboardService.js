@@ -160,6 +160,19 @@ export async function getUserProfile(phone) {
       monthlyScore: u.monthlyScore ?? 0,
     }));
 
+  // ── Today's top scorer ──────────────────────────────────────────────────
+  // Find the user with the highest todayScore who actually scored today
+  const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  const todayIST = `${nowIST.getFullYear()}-${String(nowIST.getMonth()+1).padStart(2,"0")}-${String(nowIST.getDate()).padStart(2,"0")}`;
+  const todayScoredUsers = allUsers.filter(u => u.lastScoreDate === todayIST && u.todayScore != null);
+  const topScorerToday = todayScoredUsers.length > 0
+    ? todayScoredUsers.reduce((best, u) => (u.todayScore > best.todayScore ? u : best))
+    : null;
+  const todayTopScorer = topScorerToday ? {
+    name: topScorerToday.name,
+    score: Math.round(topScorerToday.todayScore),
+  } : null;
+
   // Find the current user's rank in the full leaderboard
   const myRankIdx = leaderboardSorted.findIndex(u =>
     u.phone === phone ||

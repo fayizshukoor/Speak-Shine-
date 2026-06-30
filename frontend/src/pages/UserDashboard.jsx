@@ -997,6 +997,41 @@ export default function UserDashboard() {
         </div>
       )}
 
+      {/* ── Today's Top Scorer ── */}
+      {data?.todayTopScorer && (
+        <div className="card" style={{
+          marginBottom: "1rem",
+          background: "linear-gradient(135deg, rgba(6,182,212,0.08) 0%, rgba(34,211,160,0.08) 100%)",
+          border: "1px solid rgba(6,182,212,0.3)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <div style={{
+              fontSize: "2rem", lineHeight: 1,
+              filter: "drop-shadow(0 0 8px rgba(6,182,212,0.6))",
+            }}>⭐</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: "0.68rem", fontWeight: 600, color: "#22d3ee", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "0.2rem" }}>
+                Today's Top Scorer
+              </div>
+              <div style={{ fontSize: "1rem", fontWeight: 700, color: "var(--text)" }}>
+                {data.todayTopScorer.name}
+              </div>
+            </div>
+            <div style={{
+              fontSize: "1.5rem", fontWeight: 800,
+              color: "#22d3ee",
+              background: "rgba(6,182,212,0.12)",
+              border: "1px solid rgba(6,182,212,0.25)",
+              borderRadius: 12,
+              padding: "0.3rem 0.75rem",
+              whiteSpace: "nowrap",
+            }}>
+              {data.todayTopScorer.score} pts
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Top Streaks leaderboard — always visible ── */}
       {data?.topStreak?.length > 0 && (
         <div className="card" style={{ marginBottom: "1rem" }}>
