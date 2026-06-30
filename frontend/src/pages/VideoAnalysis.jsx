@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 import Modal from "../components/Modal.jsx";
-import api from "../api/client.js";
+import api, { getAuthToken } from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import GuestBanner from "../components/GuestBanner.jsx";
 import { getSharedSocket } from "../hooks/useSocket.js";
@@ -90,7 +90,8 @@ export default function VideoAnalysis() {
     if (!reportId || !report || report.status !== "processing") return;
 
     let done = false;
-    const token = localStorage.getItem("token");
+    // token may be null for cookie-based sessions — SSE/XHR use withCredentials instead
+    const token = localStorage.getItem("token") || null;
 
     const finish = (data) => {
       if (done) return;
@@ -135,7 +136,11 @@ export default function VideoAnalysis() {
     poll();
     const pollTimer = setInterval(poll, 700);
 
-    const evtSource = new EventSource(`/api/video/progress/${reportId}?token=${token}`);
+    const evtSource = new EventSource(
+      token
+        ? `/api/video/progress/${reportId}?token=${encodeURIComponent(token)}`
+        : `/api/video/progress/${reportId}`
+    );
     evtSource.onmessage = (e) => {
       try {
         applyProgress(JSON.parse(e.data));
@@ -1262,6 +1267,7 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
       const uploadFile = (url, headers = {}) => new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", url);
+        xhr.withCredentials = true; // send cookies for cookie-based auth
         Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
         xhr.upload.onprogress = (e) => {
           if (e.total) {
@@ -1301,12 +1307,15 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
         setUploadSpeed(null);
         setUploadEta(null);
         uploadStartRef.current = Date.now();
-        const token = localStorage.getItem("token");
-        await uploadFile(`/api/video/proxy-upload?token=${encodeURIComponent(token)}`, {
+        const token = await getAuthToken();
+        const proxyUrl = token
+          ? `/api/video/proxy-upload?token=${encodeURIComponent(token)}`
+          : `/api/video/proxy-upload`;
+        await uploadFile(proxyUrl, {
           "Content-Type": fileToUpload.type || "video/mp4",
           "x-r2-key": presign.key,
           "x-mime-type": fileToUpload.type || "video/mp4",
-          "Authorization": `Bearer ${token}`,
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
         });
       }
 
@@ -2105,6 +2114,7 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
       const uploadRecFile = (url, headers = {}) => new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("PUT", url);
+        xhr.withCredentials = true; // send cookies for cookie-based auth
         Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
         xhr.upload.onprogress = (e) => {
           if (e.total) {
@@ -2144,12 +2154,15 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
         setUploadSpeed(null);
         setUploadEta(null);
         uploadStartRef.current = Date.now();
-        const token = localStorage.getItem("token");
-        await uploadRecFile(`/api/video/proxy-upload?token=${encodeURIComponent(token)}`, {
+        const token = await getAuthToken();
+        const proxyUrl = token
+          ? `/api/video/proxy-upload?token=${encodeURIComponent(token)}`
+          : `/api/video/proxy-upload`;
+        await uploadRecFile(proxyUrl, {
           "Content-Type": fileToUpload.type,
           "x-r2-key": presign.key,
           "x-mime-type": fileToUpload.type,
-          "Authorization": `Bearer ${token}`,
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
         });
       }
 

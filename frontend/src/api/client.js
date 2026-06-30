@@ -79,9 +79,10 @@ api.interceptors.response.use(
     const originalRequest = err.config;
 
     // If token expired — try silent refresh
+    // Handle both TOKEN_EXPIRED code and plain 401 Unauthorized (e.g. from video upload)
     if (err.response?.status === 401 &&
-        err.response?.data?.code === "TOKEN_EXPIRED" &&
-        !originalRequest._retry) {
+        !originalRequest._retry &&
+        !originalRequest.url?.includes("/auth/refresh")) {
 
       if (isRefreshing) {
         return new Promise((resolve) => {
@@ -107,8 +108,8 @@ api.interceptors.response.use(
       }
     }
 
-    // Other 401 — session gone, go to login
-    if (err.response?.status === 401) {
+    // Other 401 after retry failed — session truly gone, redirect to login
+    if (err.response?.status === 401 && originalRequest._retry) {
       localStorage.removeItem("token");
       localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");
@@ -165,3 +166,22 @@ export function bustCache(urlPrefix) {
 }
 
 export default api;
+
+/**
+ * Get a valid auth token for use in XHR headers / query strings.
+ * Prefers the legacy localStorage token (migration period).
+ * Falls back to requesting a fresh short-lived token via /auth/token endpoint.
+ * For cookie-only sessions, returns null — callers should use withCredentials instead.
+ */
+export async function getAuthToken() {
+  const legacy = localStorage.getItem("token");
+  if (legacy) {
+    try {
+      const { exp } = JSON.parse(atob(legacy.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+      if (exp * 1000 - Date.now() > 30_000) return legacy; // still valid
+    } catch {}
+  }
+  // Cookie-based session — no token in localStorage
+  // The server accepts cookies via withCredentials, so return null
+  return null;
+}
