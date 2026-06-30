@@ -5,7 +5,6 @@
  */
 
 import { getRedisClient, isRedisAvailable } from "../config/redis.js";
-import Auth from "../../models/authSchema.js";
 
 const DAILY_REGISTRATION_LIMIT = parseInt(process.env.MAX_DAILY_REGISTRATIONS || "30", 10);
 const GUEST_VISIT_TTL = 24 * 60 * 60; // 24 hours in seconds
