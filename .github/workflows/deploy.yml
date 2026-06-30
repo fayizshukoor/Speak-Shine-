@@ -44,26 +44,29 @@ jobs:
             echo "Pull environment variables from Infisical"
             echo "================================="
             # Try Infisical first; fall back to existing .env on any failure
-            # (expired session, network issue, etc.)
             if command -v infisical &> /dev/null; then
               echo "Infisical CLI found, attempting to pull production secrets..."
-              if infisical export --env=production --format=dotenv > .env.infisical 2>/dev/null; then
-                mv .env.infisical .env
-                echo "✓ Environment variables synced from Infisical"
-              else
-                rm -f .env.infisical
-                echo "⚠ Infisical export failed (session expired?) — using existing .env file"
-                if [ ! -f .env ]; then
-                  echo "❌ Error: No .env file found and Infisical export failed"
-                  exit 1
+              if infisical export --env=production --format=dotenv > /tmp/.env.infisical.tmp 2>/dev/null \
+                  && [ -s /tmp/.env.infisical.tmp ]; then
+                # Only replace .env if the new file is non-empty and contains JWT_SECRET
+                if grep -q "JWT_SECRET" /tmp/.env.infisical.tmp; then
+                  mv /tmp/.env.infisical.tmp .env
+                  echo "✓ Environment variables synced from Infisical"
+                else
+                  rm -f /tmp/.env.infisical.tmp
+                  echo "⚠ Infisical output missing JWT_SECRET — keeping existing .env"
                 fi
+              else
+                rm -f /tmp/.env.infisical.tmp
+                echo "⚠ Infisical export failed (session expired?) — using existing .env"
               fi
             else
               echo "⚠ Infisical CLI not found, using existing .env file"
-              if [ ! -f .env ]; then
-                echo "❌ Error: No .env file found and Infisical is not installed"
-                exit 1
-              fi
+            fi
+            # Final safety check
+            if [ ! -f .env ] || ! grep -q "JWT_SECRET" .env; then
+              echo "❌ Error: .env is missing or does not contain JWT_SECRET"
+              exit 1
             fi
 
             echo "================================="
