@@ -50,7 +50,7 @@ function ProtectedRoute({ children, roles, loginPath = "/login" }) {
 // Root redirect based on role
 function HomeRedirect() {
   const { user } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/dashboard" replace />;  // guests see preview
   if (user.role === "admin")   return <Navigate to="/admin"     replace />;
   if (user.role === "trainer") return <Navigate to="/trainer"   replace />;
   if (user.role === "viewer")  return <Navigate to="/admin"     replace />;
@@ -139,27 +139,11 @@ function AppRoutes() {
               <GuestRoute loginFor="trainer"><Login loginFor="trainer" /></GuestRoute>
             } />
 
-            {/* Protected pages */}
-            <Route path="/dashboard" element={
-              <ProtectedRoute roles={["user","admin","trainer"]} loginPath="/login">
-                <UserDashboard />
-              </ProtectedRoute>
-            } />
-            <Route path="/video-analysis" element={
-              <ProtectedRoute roles={["user","admin","trainer"]} loginPath="/login">
-                <VideoAnalysis />
-              </ProtectedRoute>
-            } />
-            <Route path="/record" element={
-              <ProtectedRoute roles={["user","admin","trainer"]} loginPath="/login">
-                <VideoAnalysis />
-              </ProtectedRoute>
-            } />
-            <Route path="/community" element={
-              <ProtectedRoute roles={["user","admin","trainer"]} loginPath="/login">
-                <CommunityFeed />
-              </ProtectedRoute>
-            } />
+            {/* Protected pages — guests see preview mode, logged-in users see real data */}
+            <Route path="/dashboard" element={<UserDashboard />} />
+            <Route path="/video-analysis" element={<VideoAnalysis />} />
+            <Route path="/record" element={<VideoAnalysis />} />
+            <Route path="/community" element={<CommunityFeed />} />
             <Route path="/live/:id" element={
               <ProtectedRoute roles={["user","admin","trainer"]} loginPath="/login">
                 <LiveSession />

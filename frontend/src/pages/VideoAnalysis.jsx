@@ -3,6 +3,8 @@ import { useLocation, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 import Modal from "../components/Modal.jsx";
 import api from "../api/client.js";
+import { useAuth } from "../context/AuthContext.jsx";
+import GuestBanner from "../components/GuestBanner.jsx";
 import { getSharedSocket } from "../hooks/useSocket.js";
 import { useNoiseCancellation } from "../hooks/useNoiseCancellation.js";
 import { useBackgroundBlur } from "../hooks/useBackgroundBlur.js";
@@ -17,6 +19,8 @@ import { saveDraft, loadDraft, clearDraft } from "../utils/videoDraftDB.js";
 export default function VideoAnalysis() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isGuest = !user;
 
   const [mode, setMode] = useState(() => {
     return location.pathname === "/record" ? "record" : "upload";
@@ -48,6 +52,15 @@ export default function VideoAnalysis() {
   const [modal, setModal]             = useState(null);
 
   useEffect(() => {
+    if (isGuest) {
+      // Show sample question for guests from preview API
+      api.get("/guest/preview").then(r => {
+        const t = r.data?.today;
+        if (t?.question) setTodayQuestion({ question: t.question, topic: t.topic, category: t.category });
+        if (Array.isArray(t?.vocabulary) && t.vocabulary.length > 0) setTodayVocabulary(t.vocabulary);
+      }).catch(() => {});
+      return;
+    }
     loadMyReports();
     // Fetch today's question for the top card
     api.get("/dashboard/me").then(r => {
@@ -58,7 +71,7 @@ export default function VideoAnalysis() {
       if (t?.isWeeklyReflection) setIsWeeklyReflection(true);
       if (Array.isArray(t?.vocabulary) && t.vocabulary.length > 0) setTodayVocabulary(t.vocabulary);
     }).catch(() => {});
-  }, []);
+  }, [isGuest]);
 
   // Auto-refresh reports table when there are processing reports
   useEffect(() => {
@@ -212,6 +225,25 @@ export default function VideoAnalysis() {
         />
       )}
       <div className="video-analysis-page">
+        {/* Guest banner */}
+        {isGuest && <GuestBanner />}
+        {isGuest && (
+          <div style={{
+            background: "rgba(124,111,255,0.07)",
+            border: "1px solid rgba(124,111,255,0.25)",
+            borderRadius: 12,
+            padding: "0.85rem 1.1rem",
+            marginBottom: "1rem",
+            fontSize: "0.82rem",
+            color: "var(--muted)",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.6rem",
+          }}>
+            <span>👁️</span>
+            <span>You can <strong style={{ color: "var(--text)" }}>record or upload</strong> a video in preview mode, but <strong style={{ color: "#f87171" }}>submitting is disabled</strong>. Register to get AI feedback!</span>
+          </div>
+        )}
 
         {/* ── Weekly Reflection Card (Sunday) ── */}
         {isWeeklyReflection && (
@@ -438,8 +470,8 @@ export default function VideoAnalysis() {
         </div>
 
         {mode === "upload"
-          ? <UploadCard onAnalysisStarted={onAnalysisStarted} isMonthlyReflection={isMonthlyReflection} isMonthlyGoals={isMonthlyGoals} isWeeklyReflection={isWeeklyReflection} vocabulary={todayVocabulary} />
-          : <RecordCard  onAnalysisStarted={onAnalysisStarted} question={todayQuestion} isMonthlyReflection={isMonthlyReflection} isMonthlyGoals={isMonthlyGoals} isWeeklyReflection={isWeeklyReflection} vocabulary={todayVocabulary} />
+          ? <UploadCard onAnalysisStarted={onAnalysisStarted} isMonthlyReflection={isMonthlyReflection} isMonthlyGoals={isMonthlyGoals} isWeeklyReflection={isWeeklyReflection} vocabulary={todayVocabulary} isGuest={isGuest} />
+          : <RecordCard  onAnalysisStarted={onAnalysisStarted} question={todayQuestion} isMonthlyReflection={isMonthlyReflection} isMonthlyGoals={isMonthlyGoals} isWeeklyReflection={isWeeklyReflection} vocabulary={todayVocabulary} isGuest={isGuest} />
         }
 
         {/* Report Section */}
@@ -1109,7 +1141,7 @@ function VocabularyWords({ words, compact = false }) {
 }
 
 // ── Upload Card (direct-to-R2 flow) ─────────────────────────────────────────
-function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, isWeeklyReflection, vocabulary = [] }) {
+function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, isWeeklyReflection, vocabulary = [], isGuest = false }) {
   const [file, setFile]           = useState(null);
   const [fileDuration, setFileDuration] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -1434,12 +1466,18 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
         {vocabulary.length > 0 && (
           <VocabularyWords words={vocabulary} />
         )}
-        <button className="btn-primary" onClick={handleUpload} disabled={!file || uploading || (uploadGate && !uploadGate.passed)} style={{ width: "100%" }}>
+        <button className="btn-primary" onClick={handleUpload} disabled={!file || uploading || (uploadGate && !uploadGate.passed) || isGuest} style={{ width: "100%", position: "relative" }}>
           {uploading ?
             (stage === "hashing" ? `Analyzing ${hashProgress}%…` :
              stage === "uploading-frames" ? "Uploading frames…" :
              stage === "confirming" ? "Starting analysis…" : `Uploading ${progress}%…`) :
+            isGuest ? "🔒 Register to Submit & Get AI Feedback" :
             "Upload & Analyze"}        </button>
+        {isGuest && (
+          <p style={{ textAlign: "center", fontSize: "0.78rem", color: "var(--muted)", marginTop: "0.4rem" }}>
+            <a href="/register" style={{ color: "#7c6fff", textDecoration: "none", fontWeight: 600 }}>Register free →</a> to submit videos and receive AI analysis
+          </p>
+        )}
       </div>
       {error && <div className="error-box" style={{ marginTop: "1rem" }}><p>{error}</p></div>}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
@@ -1452,7 +1490,8 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
 // ── Record Card ──────────────────────────────────────────────────────────────
 // States: "setup" → "countdown" → "recording" → "preview" → "uploading"
 
-function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthlyGoals, isWeeklyReflection, vocabulary = [] }) {
+function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthlyGoals, isWeeklyReflection, vocabulary = [], isGuest = false }) {
+  const navigate = useNavigate();
   const [step, setStep]             = useState("setup");
   const [cameras, setCameras]       = useState([]);
   const { generateHashAndFrames, cacheResult, isHashing, hashProgress } = useVideoFrameHash();
@@ -2801,13 +2840,18 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
             <button className="btn-secondary" onClick={retake} style={{ flex: 1 }}>🔄 Retake</button>
             <button
               className="btn-primary"
-              onClick={submitRecording}
-              disabled={!recordGate?.passed || bgCompressState === "compressing"}
-              style={{ flex: 2, opacity: bgCompressState === "compressing" ? 0.6 : 1 }}
+              onClick={isGuest ? () => navigate("/register") : submitRecording}
+              disabled={isGuest ? false : (!recordGate?.passed || bgCompressState === "compressing")}
+              style={{ flex: 2, opacity: (!isGuest && bgCompressState === "compressing") ? 0.6 : 1 }}
             >
-              {bgCompressState === "compressing" ? `🗜️ Compressing… ${bgCompressProgress}%` : "🚀 Submit for Analysis"}
+              {isGuest ? "🔒 Register to Submit" : bgCompressState === "compressing" ? `🗜️ Compressing… ${bgCompressProgress}%` : "🚀 Submit for Analysis"}
             </button>
           </div>
+          {isGuest && (
+            <p style={{ textAlign: "center", fontSize: "0.78rem", color: "var(--muted)", marginTop: "0.4rem" }}>
+              <a href="/register" style={{ color: "#7c6fff", textDecoration: "none", fontWeight: 600 }}>Register free →</a> to get AI-powered feedback on your recording
+            </p>
+          )}
           
           {/* Alternative upload suggestion */}
           <div style={{

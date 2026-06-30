@@ -2253,3 +2253,25 @@ button[aria-label="Toggle Chat"] {
 }
 
 
+
+/* ── Guest / Preview mode ── */
+@keyframes pulse-cta {
+  0%, 100% { box-shadow: 0 2px 10px rgba(124,111,255,0.4); }
+  50% { box-shadow: 0 4px 20px rgba(124,111,255,0.7), 0 0 0 4px rgba(124,111,255,0.15); }
+}
+
+.guest-lock-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(5,5,15,0.88);
+  backdrop-filter: blur(6px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+  z-index: 10;
+  gap: 0.75rem;
+  text-align: center;
+  padding: 1.5rem;
+}

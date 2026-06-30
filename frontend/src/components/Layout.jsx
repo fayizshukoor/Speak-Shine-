@@ -117,6 +117,11 @@ export default function Layout({ children, title }) {
   const handleLogout = () => setShowLogoutModal(true);
 
   const navLinks = () => {
+    if (!user) return [
+      { to: "/dashboard",      label: "📊 Preview" },
+      { to: "/video-analysis", label: "📹 Try It" },
+      { to: "/community",      label: "👥 Community" },
+    ];
     if (user?.role === "admin") return [
       { to: "/admin",     label: "🛡️ Admin" },
       { to: "/trainer",   label: "🎓 Trainer" },
@@ -281,6 +286,45 @@ export default function Layout({ children, title }) {
 
         {/* Right side */}
         <div className="header-right">
+          {/* Guest CTAs — shown when not logged in */}
+          {!user && (
+            <>
+              <Link
+                to="/login"
+                style={{
+                  color: "#7c6fff",
+                  textDecoration: "none",
+                  fontSize: "0.82rem",
+                  fontWeight: 600,
+                  padding: "0.4rem 0.75rem",
+                  border: "1px solid rgba(124,111,255,0.4)",
+                  borderRadius: 10,
+                }}
+              >
+                Login
+              </Link>
+              <Link
+                to="/register"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.3rem",
+                  background: "linear-gradient(135deg, #7c6fff, #4f46e5)",
+                  color: "#fff",
+                  textDecoration: "none",
+                  fontSize: "0.82rem",
+                  fontWeight: 700,
+                  padding: "0.45rem 0.9rem",
+                  borderRadius: 10,
+                  boxShadow: "0 2px 10px rgba(124,111,255,0.4)",
+                  whiteSpace: "nowrap",
+                  animation: "pulse-cta 2.5s ease-in-out infinite",
+                }}
+              >
+                ✨ Register Now
+              </Link>
+            </>
+          )}
           {/* Install App button */}
           {canInstall && (
             <div style={{ position: "relative" }}>
@@ -331,11 +375,10 @@ export default function Layout({ children, title }) {
             </div>
           )}
 
-          <NotificationBell token={localStorage.getItem("token")} />
-
-          <span className={`role-badge ${user?.role}`}>{user?.role}</span>
-          <span className="header-name">{user?.name}</span>
-          <button className="logout-btn" onClick={handleLogout}>Logout</button>
+          {user && <NotificationBell token={localStorage.getItem("token")} />}
+          {user && <span className={`role-badge ${user?.role}`}>{user?.role}</span>}
+          {user && <span className="header-name">{user?.name}</span>}
+          {user && <button className="logout-btn" onClick={handleLogout}>Logout</button>}
 
           {/* Hamburger — mobile only */}
           {links.length > 0 && (
@@ -360,12 +403,19 @@ export default function Layout({ children, title }) {
               {l.label}
             </Link>
           ))}
-          <button
-            onClick={handleLogout}
-            style={{ marginTop: "auto", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", color: "var(--danger)", padding: "0.875rem 1rem", borderRadius: 12, fontSize: "0.9rem", fontWeight: 600, textAlign: "left" }}
-          >
-            🚪 Logout
-          </button>
+          {user ? (
+            <button
+              onClick={handleLogout}
+              style={{ marginTop: "auto", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", color: "var(--danger)", padding: "0.875rem 1rem", borderRadius: 12, fontSize: "0.9rem", fontWeight: 600, textAlign: "left" }}
+            >
+              🚪 Logout
+            </button>
+          ) : (
+            <>
+              <Link to="/login" onClick={() => setMenuOpen(false)} style={{ display: "block", padding: "0.875rem 1rem", borderRadius: 12, fontSize: "0.9rem", fontWeight: 600, color: "#7c6fff", border: "1px solid rgba(124,111,255,0.3)", textDecoration: "none", textAlign: "center" }}>Login</Link>
+              <Link to="/register" onClick={() => setMenuOpen(false)} style={{ display: "block", padding: "0.875rem 1rem", borderRadius: 12, fontSize: "0.9rem", fontWeight: 700, background: "linear-gradient(135deg,#7c6fff,#4f46e5)", color: "#fff", textDecoration: "none", textAlign: "center" }}>✨ Register Now</Link>
+            </>
+          )}
           {canInstall && (
             <button
               onClick={handleInstallClick}

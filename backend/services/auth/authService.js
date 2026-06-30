@@ -500,6 +500,8 @@ export async function resetPassword(resetToken, newPassword) {
 
 // ── Registration Flow ────────────────────────────────────────────────────────
 
+const DAILY_REGISTRATION_LIMIT = parseInt(process.env.MAX_DAILY_REGISTRATIONS || "30", 10);
+
 /**
  * Step 1 — Send OTP to phone for registration (SMS only, never voice)
  */
@@ -514,6 +516,18 @@ export async function sendRegistrationOTP(phone) {
   const existing = await Auth.findOne({ phone: { $in: [stripped, `91${stripped}`] } });
   if (existing) {
     throw new Error("An account with this number already exists. Please log in.");
+  }
+
+  // Enforce daily registration limit (30 slots/day)
+  const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  const midnightIST = new Date(nowIST);
+  midnightIST.setHours(0, 0, 0, 0);
+  const todayCount = await PendingRegistration.countDocuments({ createdAt: { $gte: midnightIST } });
+  if (todayCount >= DAILY_REGISTRATION_LIMIT) {
+    const error = new Error(`Registration is full for today (${DAILY_REGISTRATION_LIMIT} slots). New slots open at midnight. Try again tomorrow!`);
+    error.statusCode = 429;
+    error.code = "DAILY_LIMIT_REACHED";
+    throw error;
   }
 
   const otp = generateOTP();

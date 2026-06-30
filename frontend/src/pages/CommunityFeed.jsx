@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 import api from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { getSharedSocket } from "../hooks/useSocket.js";
+import GuestBanner from "../components/GuestBanner.jsx";
 
 const scoreColor = v => v >= 7 ? "var(--success)" : v >= 5 ? "var(--warning)" : "var(--danger)";
 const scoreBg    = v => v >= 7 ? "rgba(74,222,128,0.1)" : v >= 5 ? "rgba(251,191,36,0.1)" : "rgba(248,113,113,0.1)";
@@ -913,6 +914,7 @@ function ProtectedVideoPlayer({ src, identity, watermarkUrl, fullscreenId, itemI
 export default function CommunityFeed() {
   const { user, token } = useAuth();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [feed, setFeed]         = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(null);
@@ -964,6 +966,14 @@ export default function CommunityFeed() {
   const watermarkUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgStr)}`;
 
   useEffect(() => {
+    if (!user) {
+      // Guests see dummy community feed from preview API
+      api.get("/guest/preview")
+        .then(r => setFeed((r.data?.communityFeed || []).map(p => ({ ...p, _id: p.id, isDemo: true, likeCount: p.reactions?.like || 0, dislikeCount: p.reactions?.dislike || 0, comments: [] }))))
+        .catch(() => {})
+        .finally(() => setLoading(false));
+      return;
+    }
     api.get("/video/community-feed")
       .then(r => {
         const items = r.data.feed || [];
@@ -971,7 +981,7 @@ export default function CommunityFeed() {
       })
       .catch(() => setError("Failed to load community feed"))
       .finally(() => setLoading(false));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Real-time comment & like updates from other users
   useEffect(() => {
@@ -1117,12 +1127,17 @@ export default function CommunityFeed() {
       )}
       <div style={{ maxWidth: "900px", margin: "0 auto", userSelect: "none", WebkitUserSelect: "none" }}>
 
+        {/* Guest banner — shown when not logged in */}
+        {!user && <GuestBanner />}
+
         <div style={{ marginBottom: "1.5rem" }}>
           <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text)", marginBottom: "0.4rem" }}>
             👥 Today's Submissions
           </h2>
           <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
-            Watch, like, and comment on how other members answered today's question. Videos auto-delete after 24 hours.
+            {user
+              ? "Watch, like, and comment on how other members answered today's question. Videos auto-delete after 24 hours."
+              : "Preview of community submissions — register to see real videos and join the conversation!"}
           </p>
         </div>
 
@@ -1200,7 +1215,38 @@ export default function CommunityFeed() {
               )}
 
               {/* Video player */}
-              {playing === item._id ? (
+              {item.isDemo ? (
+                /* Guest demo card — locked video placeholder */
+                <div style={{
+                  width: "100%", borderRadius: "10px", background: "#0a0a14",
+                  border: "1px solid rgba(124,111,255,0.25)",
+                  aspectRatio: "16/9", display: "flex", alignItems: "center", justifyContent: "center",
+                  position: "relative", overflow: "hidden", marginBottom: "1rem",
+                }}>
+                  <div style={{
+                    position: "absolute", inset: 0,
+                    background: `linear-gradient(135deg, ${["#7c6fff","#4ade80","#fbbf24","#f472b6","#60a5fa","#fb923c"][feed.indexOf(item) % 6]}22, transparent)`,
+                  }} />
+                  <div style={{ textAlign: "center", position: "relative", zIndex: 1 }}>
+                    <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🔒</div>
+                    <div style={{ fontWeight: 700, color: "#fff", fontSize: "0.88rem", marginBottom: "0.25rem" }}>
+                      Register to watch
+                    </div>
+                    <div style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.6)", marginBottom: "0.75rem" }}>
+                      {item.duration} video
+                    </div>
+                    <button
+                      onClick={() => navigate("/register")}
+                      style={{
+                        background: "linear-gradient(135deg, #7c6fff, #4f46e5)",
+                        border: "none", color: "#fff",
+                        borderRadius: 8, padding: "0.4rem 0.9rem",
+                        fontSize: "0.75rem", fontWeight: 700, cursor: "pointer",
+                      }}
+                    >Join Free →</button>
+                  </div>
+                </div>
+              ) : playing === item._id ? (
                 <div style={{ marginBottom: "1.5rem" }}>
                   <ProtectedVideoPlayer
                     src={item.videoUrl ? item.videoUrl + "#t=0.1" : item.videoUrl}

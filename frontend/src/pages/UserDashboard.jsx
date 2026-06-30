@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 import StatCard from "../components/StatCard.jsx";
 import api from "../api/client.js";
+import { useAuth } from "../context/AuthContext.jsx";
+import GuestBanner from "../components/GuestBanner.jsx";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, Legend, RadarChart, Radar, PolarGrid, PolarAngleAxis,
@@ -565,40 +567,98 @@ function setCachedDashboard(data) {
   } catch {}
 }
 
+// ── Guest dummy data — same shape as /api/dashboard/me response ─────────────
+function buildGuestData() {
+  const scores = Array.from({ length: 10 }, (_, i) => {
+    const prog = i * 0.22;
+    const j = () => (Math.random() - 0.5) * 0.8;
+    return {
+      fluency:    +Math.min(10, Math.max(1, 5.8 + prog + j())).toFixed(1),
+      grammar:    +Math.min(10, Math.max(1, 6.2 + prog + j())).toFixed(1),
+      confidence: +Math.min(10, Math.max(1, 5.5 + prog + j())).toFixed(1),
+      vocabulary: +Math.min(10, Math.max(1, 6.0 + prog + j())).toFixed(1),
+      submittedAt: new Date(Date.now() - (9 - i) * 86400000).toISOString(),
+    };
+  });
+
+  return {
+    isGuest: true,
+    profile: {
+      name: "Preview User",
+      streak: 7,
+      weeklySubmissions: 4,
+      monthlySubmissions: 18,
+      completed: false,
+      fine: 0,
+      streakFreeze: 1,
+      monthlyScore: 142,
+      feedbackScores: scores,
+    },
+    today: {
+      question: "Tell us about a skill you are learning and why it excites you.",
+      topic: "Personal Growth",
+      category: "Self-Development",
+      questionSent: true,
+      isMonthlyReflection: false,
+      isMonthlyGoals: false,
+      isWeeklyReflection: false,
+      vocabulary: [
+        { word: "Resilience",   meaning: "The ability to recover quickly from setbacks",         example: "Her resilience helped her bounce back after every failure." },
+        { word: "Perseverance", meaning: "Continued effort despite difficulty",                   example: "With perseverance, he finally mastered public speaking." },
+        { word: "Articulate",   meaning: "Able to express thoughts clearly",                      example: "She was articulate and confident during the presentation." },
+      ],
+    },
+    stats: { total: 87, completed: 23, pending: 64, totalFreeze: 12 },
+    topStreak: [
+      { name: "Arjun M.",  streak: 42, completed: true,  weeklySubmissions: 5, monthlyScore: 210 },
+      { name: "Priya K.",  streak: 38, completed: true,  weeklySubmissions: 5, monthlyScore: 195 },
+      { name: "Rahul S.",  streak: 31, completed: false, weeklySubmissions: 4, monthlyScore: 157 },
+      { name: "Divya R.",  streak: 27, completed: true,  weeklySubmissions: 5, monthlyScore: 143 },
+      { name: "Kiran T.",  streak: 19, completed: false, weeklySubmissions: 3, monthlyScore:  98 },
+    ],
+    myStreakEntry: null,
+    streakRecord: { name: "Arjun M.", streak: 87, achievedAt: new Date(Date.now() - 30 * 86400000).toISOString() },
+    showReport: false,
+    posterSendTime: "08:00",
+  };
+}
+
 export default function UserDashboard() {
-  const cached = getCachedDashboard();
-  const [data, setData] = useState(cached); // show cached immediately
+  const { user } = useAuth();
+  const isGuest = !user;
+
+  const cached = isGuest ? null : getCachedDashboard();
+  const [data, setData] = useState(() => isGuest ? buildGuestData() : cached);
   const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(!cached); // skip spinner if cached
+  const [loading, setLoading] = useState(!isGuest && !cached);
   const [liveSessions, setLiveSessions] = useState([]);
   const [sessionPage, setSessionPage] = useState(1);
   const navigate = useNavigate();
 
   useEffect(() => {
+    if (isGuest) return; // guests already have dummy data
     const fetchData = () => {
       Promise.all([
         api.get("/dashboard/me"),
         api.get("/live-sessions").catch(() => ({ data: [] })),
       ]).then(([d, ls]) => {
         setData(d.data);
-        setCachedDashboard(d.data); // save fresh data for next visit
+        setCachedDashboard(d.data);
         setLiveSessions((ls.data || []).filter(s => s.status === "live" || s.status === "scheduled"));
       })
       .catch(err => {
-        // Only show error if we have no cached data to fall back on
         if (!getCachedDashboard()) setError(err.response?.data?.error || "Failed to load data");
       })
       .finally(() => setLoading(false));
     };
 
     fetchData();
-    // Poll every 30s so the leaderboard updates when others submit
     const interval = setInterval(() => api.get("/dashboard/me").then(d => {
       setData(d.data);
       setCachedDashboard(d.data);
     }).catch(() => {}), 30_000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isGuest]);
 
   if (loading) return <Layout title="My Dashboard"><div className="spinner-wrap"><div className="spinner"/><p style={{color:"var(--muted)"}}>Loading…</p></div></Layout>;
   if (error) return <Layout title="My Dashboard"><div className="error-box"><p>{error}</p><button className="btn-primary" style={{marginTop:"1rem"}} onClick={()=>window.location.reload()}>Retry</button></div></Layout>;
@@ -615,7 +675,8 @@ export default function UserDashboard() {
 
   return (
     <Layout title="My Dashboard">
-      {/* Show Daily Report (12 AM - 8 AM) */}
+      {/* Guest banner — shown to unauthenticated visitors */}
+      {isGuest && <GuestBanner />}
       {data?.showReport && data?.dailyReport && (
         <div className="daily-poster" style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)" }}>
           <div className="daily-poster-header">
@@ -838,11 +899,12 @@ export default function UserDashboard() {
           {/* CTA Button */}
           <button
             className="daily-poster-cta"
-            onClick={() => navigate('/record')}
+            onClick={() => isGuest ? navigate('/register') : navigate('/record')}
             style={{
               cursor: 'pointer', border: 'none', width: '100%',
               transition: 'transform 0.2s, box-shadow 0.2s',
-              ...(data?.today?.isMonthlyReflection ? { background:"linear-gradient(135deg,#7c3aed,#5b21b6)", boxShadow:"0 4px 20px rgba(139,92,246,0.4)" }
+              ...(isGuest ? { background: "linear-gradient(135deg,#7c6fff,#4f46e5)", boxShadow:"0 4px 20px rgba(124,111,255,0.4)" }
+                : data?.today?.isMonthlyReflection ? { background:"linear-gradient(135deg,#7c3aed,#5b21b6)", boxShadow:"0 4px 20px rgba(139,92,246,0.4)" }
                 : data?.today?.isMonthlyGoals ? { background:"linear-gradient(135deg,#16a34a,#15803d)", boxShadow:"0 4px 20px rgba(34,197,94,0.4)" }
                 : data?.today?.isWeeklyReflection ? { background:"linear-gradient(135deg,#0ea5e9,#0284c7)", boxShadow:"0 4px 20px rgba(14,165,233,0.4)" }
                 : {}),
@@ -850,7 +912,8 @@ export default function UserDashboard() {
             onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; }}
             onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; }}
           >
-            {data?.today?.isMonthlyReflection ? "🌟 Record Monthly Reflection Video"
+            {isGuest ? "✨ Register to Submit Your Answer"
+             : data?.today?.isMonthlyReflection ? "🌟 Record Monthly Reflection Video"
              : data?.today?.isMonthlyGoals ? "🎯 Record Monthly Goals Video"
              : data?.today?.isWeeklyReflection ? "📅 Record Weekly Reflection Video"
              : "🎥 Upload Your Speaking Video Now!"}
@@ -858,7 +921,7 @@ export default function UserDashboard() {
         </div>
       )}
 
-      {!profile && (
+      {!profile && !isGuest && (
         <div className="warn-box">
           <p>⚠️ Account not linked to WhatsApp yet</p>
           <p>Register with the same phone number you use in the WhatsApp group. Submit a video to see your data here.</p>
@@ -874,7 +937,7 @@ export default function UserDashboard() {
         />
       )}
 
-      {profile && data?.today?.question && (
+      {profile && data?.today?.question && !isGuest && (
         profile.completed
           ? <CelebrationCard
               name={profile?.name}
@@ -897,6 +960,39 @@ export default function UserDashboard() {
                 streak={profile?.streak || 0}
                 navigate={navigate}
               />
+      )}
+
+      {/* Guest submit nudge — same visual weight as SubmitNudge but drives to register */}
+      {isGuest && data?.today?.question && (
+        <div style={{
+          background: "linear-gradient(135deg, #1e3a8a 0%, #1e40af 60%, #1e3a8a 100%)",
+          border: "2px solid rgba(96,165,250,0.5)",
+          borderRadius: 16, padding: "1.75rem 1.5rem",
+          marginBottom: "1.5rem", position: "relative", overflow: "hidden",
+        }}>
+          <div style={{ position:"absolute", top:-60, right:-60, width:200, height:200, borderRadius:"50%", background:"radial-gradient(circle, rgba(96,165,250,0.3) 0%, transparent 70%)", pointerEvents:"none" }} />
+          <div style={{ fontSize:"0.75rem", color:"rgba(255,255,255,0.7)", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:"0.5rem" }}>
+            🎯 Ready to take the challenge?
+          </div>
+          <div style={{ fontSize:"1.3rem", fontWeight:800, color:"#fff", marginBottom:"0.5rem", lineHeight:1.3 }}>
+            Submit your video and get AI-powered feedback!
+          </div>
+          <div style={{ fontSize:"0.85rem", color:"rgba(255,255,255,0.75)", marginBottom:"1.25rem" }}>
+            Register to unlock fluency, grammar, confidence & vocabulary analysis after each submission.
+          </div>
+          <button
+            onClick={() => navigate('/register')}
+            style={{
+              width:"100%", background:"linear-gradient(135deg,#60a5fa,#3b82f6)",
+              color:"#fff", border:"none", borderRadius:12,
+              padding:"1rem", fontSize:"1.05rem", fontWeight:800,
+              cursor:"pointer", textTransform:"uppercase", letterSpacing:"0.05em",
+              boxShadow:"0 6px 20px rgba(0,0,0,0.3)",
+            }}
+          >
+            ✨ Register Free — 30 Spots Daily
+          </button>
+        </div>
       )}
 
       <div className="stat-grid">
@@ -1138,7 +1234,40 @@ export default function UserDashboard() {
       )}
 
       {scores.length > 0 ? (
-        <>
+        <div style={{ position: "relative" }}>
+          {/* Blur overlay for guests */}
+          {isGuest && (
+            <div style={{
+              position: "absolute", inset: 0, zIndex: 10,
+              background: "rgba(5,5,15,0.75)",
+              backdropFilter: "blur(4px)",
+              WebkitBackdropFilter: "blur(4px)",
+              borderRadius: 14,
+              display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center",
+              textAlign: "center", padding: "2rem",
+              gap: "0.75rem",
+            }}>
+              <div style={{ fontSize: "2.5rem" }}>🔒</div>
+              <div style={{ fontWeight: 800, fontSize: "1.1rem", color: "#fff" }}>Your score history will appear here</div>
+              <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.65)", marginBottom: "0.5rem" }}>
+                Submit a video every day and watch your progress grow session by session.
+              </div>
+              <button
+                onClick={() => navigate("/register")}
+                style={{
+                  background: "linear-gradient(135deg,#7c6fff,#4f46e5)",
+                  border: "none", color: "#fff", borderRadius: 12,
+                  padding: "0.7rem 1.75rem", fontSize: "0.9rem",
+                  fontWeight: 700, cursor: "pointer",
+                  boxShadow: "0 4px 20px rgba(124,111,255,0.4)",
+                }}
+              >
+                ✨ Register Free
+              </button>
+            </div>
+          )}
+          <>
           <div className="stat-grid">
             {Object.entries(SCORES).map(([k, c]) => (
               <StatCard key={k} icon={k==="fluency"?"🗣️":k==="grammar"?"📝":k==="confidence"?"💪":"📚"}
@@ -1200,7 +1329,7 @@ export default function UserDashboard() {
                     return (
                       <tr key={i}>
                         <td style={{ color: "var(--muted)" }}>{globalIdx}</td>
-                        <td style={{ color: "var(--muted)" }}>{s.date ? new Date(s.date).toLocaleDateString("en-IN") : "—"}</td>
+                        <td style={{ color: "var(--muted)" }}>{s.date ? new Date(s.date).toLocaleDateString("en-IN") : s.submittedAt ? new Date(s.submittedAt).toLocaleDateString("en-IN") : "—"}</td>
                         {["fluency","grammar","confidence","vocabulary"].map(k => (
                           <td key={k} style={{ fontWeight: 600, color: scoreColor(s[k] || 0) }}>{s[k] ?? "—"}/10</td>
                         ))}
@@ -1239,7 +1368,8 @@ export default function UserDashboard() {
               </div>
             )}
           </div>
-        </>
+          </>
+        </div>
       ) : (
         <div className="card empty-state">
           <div className="empty-icon">📹</div>

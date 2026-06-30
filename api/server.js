@@ -50,7 +50,7 @@ import chatRoutes from "../backend/routes/chat.routes.js";
 import liveSessionRoutes from "../backend/routes/liveSessions.routes.js";
 import monitoringRoutes from "../backend/routes/monitoring.routes.js";
 import notificationRoutes from "../backend/routes/notifications.routes.js";
-import submissionsRoutes from "../backend/routes/submissions.routes.js";
+import guestRoutes from "../backend/routes/guest.routes.js";
 
 console.log("[Routes] Loading MVC routes...");
 console.log("[Routes] Auth routes loaded:", !!authRoutes);
@@ -332,6 +332,7 @@ if (!isProd) {
 }
 
 app.use("/api/auth",         authRoutes);
+app.use("/api/guest",        guestRoutes);  // No auth required — guest preview
 // Block all write operations for viewer accounts across every route
 app.use("/api", blockViewer);
 app.use("/api/users",        userRoutes);
