@@ -112,34 +112,9 @@ export function useBackgroundBlur(blurStrength = 20) {
       if (SelfieSegmentation && typeof SelfieSegmentation === 'function') {
         console.log('[BackgroundBlur] ✅ MediaPipe loaded from window object');
       } else {
-        console.log('[BackgroundBlur] window.SelfieSegmentation not available after waiting, trying dynamic import...');
-        
-        // Fallback: try dynamic import (for development)
-        try {
-          const mediaPipeModule = await import('@mediapipe/selfie_segmentation');
-          
-          console.log('[BackgroundBlur] Module keys:', Object.keys(mediaPipeModule));
-          
-          // The module has a 'default' key - access it directly
-          if (mediaPipeModule.default && typeof mediaPipeModule.default === 'function') {
-            SelfieSegmentation = mediaPipeModule.default;
-            console.log('[BackgroundBlur] ✅ Using default export');
-          } else if (mediaPipeModule.SelfieSegmentation) {
-            SelfieSegmentation = mediaPipeModule.SelfieSegmentation;
-            console.log('[BackgroundBlur] ✅ Using named export');
-          } else if (mediaPipeModule.default && mediaPipeModule.default.SelfieSegmentation) {
-            SelfieSegmentation = mediaPipeModule.default.SelfieSegmentation;
-            console.log('[BackgroundBlur] ✅ Using default.SelfieSegmentation');
-          }
-        } catch (importErr) {
-          console.error('[BackgroundBlur] Dynamic import failed:', importErr);
-        }
-        
-        // FINAL CHECK: Script might have loaded during dynamic import attempt
-        if (!SelfieSegmentation && window.SelfieSegmentation) {
-          console.log('[BackgroundBlur] ✅ Recovered from window.SelfieSegmentation after import attempt');
-          SelfieSegmentation = window.SelfieSegmentation;
-        }
+        // MediaPipe is loaded via CDN script tag in index.html (window.SelfieSegmentation)
+        // If it's still not available after waiting, the CDN script may have failed to load
+        console.error('[BackgroundBlur] ❌ window.SelfieSegmentation not available — CDN script may have failed');
       }
       
       // Final validation

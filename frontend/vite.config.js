@@ -36,6 +36,8 @@ export default defineConfig({
     target: "es2020",
     chunkSizeWarningLimit: 600,
     rollupOptions: {
+      // MediaPipe is loaded via CDN script tag — never bundle it
+      external: ['@mediapipe/selfie_segmentation'],
       output: {
         manualChunks(id) {
           // React core — tiny, cached forever
