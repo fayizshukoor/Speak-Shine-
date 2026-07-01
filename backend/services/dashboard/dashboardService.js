@@ -246,6 +246,7 @@ export async function getUserProfile(phone) {
     },
     topStreak,
     myStreakEntry,
+    todayTopScorer,
     streakRecord: await (async () => {
       // Always check if current top user beats the stored record
       const topUser = sortedByStreak[0];
