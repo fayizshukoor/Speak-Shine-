@@ -18,6 +18,8 @@ COPY frontend ./frontend
 
 ENV VITE_API_URL=/api
 ENV NODE_ENV=production
+# Increase Node heap for Vite build — prevents OOM (exit code 120) on low-memory hosts
+ENV NODE_OPTIONS="--max-old-space-size=3072"
 
 RUN cd frontend && npm run build
 
