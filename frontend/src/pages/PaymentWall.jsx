@@ -28,6 +28,7 @@ export default function PaymentWall({ onSuccess }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [paid, setPaid] = useState(false);
+  const [failed, setFailed] = useState(false);
   const navigate = useNavigate();
   const { login, user } = useAuth();
 
@@ -112,6 +113,7 @@ export default function PaymentWall({ onSuccess }) {
       const rzp = new window.Razorpay(options);
       rzp.on("payment.failed", (response) => {
         setLoading(false);
+        setFailed(true);
         setError(
           response.error?.description ||
           "Payment failed. Please try a different payment method."
@@ -126,6 +128,44 @@ export default function PaymentWall({ onSuccess }) {
       setLoading(false);
     }
   };
+
+  if (failed) {
+    return (
+      <Layout title="Payment Failed">
+        <div style={{
+          display: "flex", flexDirection: "column", alignItems: "center",
+          justifyContent: "center", minHeight: "60vh", textAlign: "center",
+          padding: "2rem",
+        }}>
+          <div style={{ fontSize: "4rem", marginBottom: "1rem" }}>❌</div>
+          <h2 style={{ color: "#f87171", fontSize: "1.5rem", fontWeight: 800, marginBottom: "0.5rem" }}>
+            Payment Failed
+          </h2>
+          <p style={{ color: "var(--muted)", fontSize: "0.9rem", marginBottom: "0.5rem", maxWidth: 340, lineHeight: 1.6 }}>
+            {error || "Something went wrong with your payment."}
+          </p>
+          <p style={{ color: "var(--muted)", fontSize: "0.8rem", marginBottom: "2rem" }}>
+            No money was deducted. You can try again safely.
+          </p>
+          <button
+            onClick={() => { setFailed(false); setError(null); }}
+            style={{
+              background: "linear-gradient(135deg, #7c6fff 0%, #6d5ce7 100%)",
+              color: "#fff", border: "none", borderRadius: 12,
+              padding: "0.9rem 2rem", fontSize: "1rem", fontWeight: 700,
+              cursor: "pointer", boxShadow: "0 6px 24px rgba(124,111,255,0.35)",
+              marginBottom: "1rem",
+            }}
+          >
+            🔄 Try Again
+          </button>
+          <p style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+            Contact your trainer if the problem persists.
+          </p>
+        </div>
+      </Layout>
+    );
+  }
 
   if (paid) {
     return (
