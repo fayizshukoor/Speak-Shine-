@@ -8,6 +8,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/client.js";
 import Layout from "../components/Layout.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 
 // ── Load Razorpay checkout.js script once ────────────────────────────────────
 function loadRazorpayScript() {
@@ -28,19 +29,27 @@ export default function PaymentWall({ onSuccess }) {
   const [error, setError] = useState(null);
   const [paid, setPaid] = useState(false);
   const navigate = useNavigate();
+  const { login, user } = useAuth();
 
-  // After successful payment, navigate to video analysis
+  // After successful payment — update auth context then hard-reload
+  // so PaidRoute re-evaluates with paid=true from the fresh session
   useEffect(() => {
     if (paid) {
       setTimeout(() => {
         if (onSuccess) {
           onSuccess();
         } else {
-          navigate("/video-analysis");
+          // Update user in memory so PaidRoute unblocks immediately,
+          // then hard-navigate to flush any cached state
+          if (user) {
+            login({ ...user, paid: true });
+          }
+          // Hard reload to /video-analysis — forces fresh AuthContext boot
+          window.location.href = "/video-analysis";
         }
       }, 1800);
     }
-  }, [paid, navigate, onSuccess]);
+  }, [paid, navigate, onSuccess, login, user]);
 
   const handlePay = async () => {
     setError(null);
