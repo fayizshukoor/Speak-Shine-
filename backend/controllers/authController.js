@@ -47,6 +47,7 @@ export async function login(req, res, next) {
       role: result.role,
       name: result.name,
       phone: result.phone,
+      paid: result.paid,
       expiresIn: result.expiresIn,
     });
   } catch (error) {

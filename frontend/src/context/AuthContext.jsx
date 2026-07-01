@@ -56,7 +56,13 @@ export function AuthProvider({ children }) {
         try {
           const { data } = await api.get("/users/me");
           if (!cancelled && data?.auth) {
-            setUser({ phone: data.auth.phone, role: data.auth.role, name: data.auth.name });
+            setUser({
+              phone: data.auth.phone,
+              role:  data.auth.role,
+              name:  data.auth.name,
+              // paid comes from the User tracking document
+              paid:  data.user?.paid ?? false,
+            });
             // After migration: no localStorage token → use sentinel for socket
             setToken(localStorage.getItem("token") || COOKIE_AUTH_SENTINEL);
             scheduleRefresh();

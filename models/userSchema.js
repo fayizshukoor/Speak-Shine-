@@ -36,6 +36,15 @@ const userSchema = new mongoose.Schema({
     default: [],
   },
 
+  // ── Payment ──────────────────────────────────────────────────────────────
+  // paid: true = user has an active subscription, false = payment required
+  // Set to true by admin manually, or automatically after Razorpay verification
+  paid: { type: Boolean, default: false },
+  // Razorpay order/payment IDs for audit trail
+  razorpayOrderId:   { type: String, default: null },
+  razorpayPaymentId: { type: String, default: null },
+  paidAt:            { type: Date,   default: null },
+
   // Legacy fields — kept for DB compatibility, no longer used in business logic
   fine: { type: Number, default: 0 },
   weeklyFine: { type: Number, default: 0 },

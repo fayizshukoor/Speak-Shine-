@@ -8,6 +8,7 @@ import multer from "multer";
 import rateLimit from "express-rate-limit";
 import * as videoController from "../controllers/videoController.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
+import { requirePaid } from "../middleware/requirePaid.js";
 
 const router = express.Router();
 
@@ -44,13 +45,14 @@ function handleMulterError(err, req, res, next) {
 
 // ── Presigned Upload Routes ──────────────────────────────────────────────────
 // /presign just generates a URL — doesn't count against upload limit
-router.get("/presign", authMiddleware, videoController.getPresignedUrl);
+router.get("/presign", authMiddleware, requirePaid, videoController.getPresignedUrl);
 
 // /proxy-upload: browser sends file here, server streams it to R2 (avoids CORS on R2)
 // Uses the presigned URL from /presign — no file is stored on the server
 router.put(
   "/proxy-upload",
   authMiddleware,
+  requirePaid,
   (req, res, next) => {
     // Enforce 110MB limit at the routing layer
     const contentLength = parseInt(req.headers["content-length"] || "0", 10);
@@ -63,13 +65,13 @@ router.put(
 );
 
 // /upload-frames receives browser-extracted frames for AI analysis (doesn't count against limit)
-router.post("/upload-frames", authMiddleware, videoController.uploadFrames);
+router.post("/upload-frames", authMiddleware, requirePaid, videoController.uploadFrames);
 
 // /pre-check — validate duration/size/frames before upload (no rate limit)
-router.post("/pre-check", authMiddleware, videoController.preCheckSubmit);
+router.post("/pre-check", authMiddleware, requirePaid, videoController.preCheckSubmit);
 
 // /confirm is the real submission — apply rate limit here
-router.post("/confirm", authMiddleware, videoUploadLimiter, videoController.confirmUpload);
+router.post("/confirm", authMiddleware, requirePaid, videoUploadLimiter, videoController.confirmUpload);
 
 // ── Direct Upload Route ──────────────────────────────────────────────────────
 router.post(

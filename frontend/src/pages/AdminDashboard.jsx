@@ -904,7 +904,7 @@ export default function AdminDashboard() {
           </div>
           <div className="table-wrap">
             <table className="data-table">
-              <thead><tr><th>Name</th><th>Phone</th><th>Role</th><th>Streak</th><th>🧊 Freeze</th><th>Weekly</th><th>Monthly</th><th>⭐ Score</th><th>Status</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Name</th><th>Phone</th><th>Role</th><th>Streak</th><th>🧊 Freeze</th><th>Weekly</th><th>Monthly</th><th>⭐ Score</th><th>Status</th><th>💳 Paid</th><th>Actions</th></tr></thead>
               <tbody>{filteredUsers.map(u=>(
                 <tr key={u.userId}>
                   <td style={{fontWeight:500,whiteSpace:"nowrap"}}>{u.registeredName||u.name||"—"}</td>
@@ -922,6 +922,30 @@ export default function AdminDashboard() {
                   <td>{u.monthlySubmissions||0}</td>
                   <td style={{color:"#a78bfa",fontWeight:600}}>⭐ {u.monthlyScore||0}</td>
                   <td><span style={{color:u.isActive?"var(--success)":"var(--danger)",fontSize:"0.8rem"}}>{u.isActive?"Active":"Disabled"}</span></td>
+                  <td>
+                    <button
+                      onClick={async()=>{
+                        try {
+                          const {data} = await api.patch(`/payments/admin/toggle-paid/${u.phone}`);
+                          setUsers(prev => prev.map(x => x.phone===u.phone ? {...x, paid: data.paid} : x));
+                          msg(`${u.registeredName||u.name||u.phone} marked as ${data.paid?"✅ Paid":"❌ Unpaid"}`);
+                        } catch(e) { msg(e?.response?.data?.error||"Failed","danger"); }
+                      }}
+                      style={{
+                        background: u.paid ? "rgba(74,222,128,0.15)" : "rgba(248,113,113,0.12)",
+                        color: u.paid ? "#4ade80" : "#f87171",
+                        border: `1px solid ${u.paid ? "rgba(74,222,128,0.35)" : "rgba(248,113,113,0.3)"}`,
+                        borderRadius: 8,
+                        padding: "0.25rem 0.6rem",
+                        fontSize: "0.75rem",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {u.paid ? "✅ Paid" : "❌ Unpaid"}
+                    </button>
+                  </td>
                   <td style={{whiteSpace:"nowrap"}}>
                     <button className="btn-ghost" style={{marginRight:3}} onClick={()=>viewStudentDetail(u)}>View</button>
                     <button className="btn-ghost" style={{marginRight:3}} onClick={()=>toggleUser(u.phone)}>{u.isActive?"Disable":"Enable"}</button>

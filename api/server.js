@@ -52,6 +52,7 @@ import monitoringRoutes from "../backend/routes/monitoring.routes.js";
 import notificationRoutes from "../backend/routes/notifications.routes.js";
 import submissionsRoutes from "../backend/routes/submissions.routes.js";
 import guestRoutes from "../backend/routes/guest.routes.js";
+import paymentRoutes from "../backend/routes/payment.routes.js";
 
 console.log("[Routes] Loading MVC routes...");
 console.log("[Routes] Auth routes loaded:", !!authRoutes);
@@ -347,6 +348,8 @@ app.use("/api/live-sessions", liveSessionRoutes);
 app.use("/api/monitoring",   monitoringRoutes);
 app.use("/api/submissions",  submissionsRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/payments",     paymentRoutes);
+console.log("[Routes] Payment routes mounted at /api/payments");
 
 app.use("/api", (_, res) => res.status(404).json({ error: "API route not found" }));
 

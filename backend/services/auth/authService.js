@@ -247,13 +247,24 @@ export async function loginUser(phone, password, ipAddress) {
 
   await auth.save();
 
+  // Fetch paid status from User tracking document
+  let paid = false;
+  try {
+    const stripped = auth.phone?.replace(/^(\+91|91)/, "");
+    const userDoc = await User.findOne({
+      $or: [{ phone: auth.phone }, { phone: stripped }],
+    }).select("paid").lean();
+    paid = userDoc?.paid ?? false;
+  } catch { /* non-critical — default false */ }
+
   return {
     accessToken,
     refreshToken,
     expiresIn: 900,
     role: auth.role,
     name: auth.name,
-    phone: auth.phone
+    phone: auth.phone,
+    paid,
   };
 }
 

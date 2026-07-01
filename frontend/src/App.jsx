@@ -18,6 +18,7 @@ const VideoAnalysis   = lazy(() => import("./pages/VideoAnalysis.jsx"));
 const CommunityFeed   = lazy(() => import("./pages/CommunityFeed.jsx"));
 const LiveSession     = lazy(() => import("./pages/LiveSession.jsx"));
 const NotFound        = lazy(() => import("./pages/NotFound.jsx"));
+const PaymentWall     = lazy(() => import("./pages/PaymentWall.jsx"));
 
 function PageLoader() {
   return (
@@ -55,6 +56,18 @@ function HomeRedirect() {
   if (user.role === "trainer") return <Navigate to="/trainer"   replace />;
   if (user.role === "viewer")  return <Navigate to="/admin"     replace />;
   return <Navigate to="/dashboard" replace />;
+}
+
+// Block unpaid users from accessing video/analysis pages — show payment wall instead.
+// Admins, trainers, and viewers bypass the gate.
+function PaidRoute({ children }) {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  const bypass = ["admin", "trainer", "viewer"].includes(user.role);
+  if (bypass) return children;
+  // paid status is stored in user.paid (set after boot from /users/me)
+  if (!user.paid) return <PaymentWall />;
+  return children;
 }
 
 // Hide ChatLauncher on live session pages
@@ -141,9 +154,14 @@ function AppRoutes() {
 
             {/* Protected pages — guests see preview mode, logged-in users see real data */}
             <Route path="/dashboard" element={<UserDashboard />} />
-            <Route path="/video-analysis" element={<VideoAnalysis />} />
-            <Route path="/record" element={<VideoAnalysis />} />
+            <Route path="/video-analysis" element={
+              <PaidRoute><VideoAnalysis /></PaidRoute>
+            } />
+            <Route path="/record" element={
+              <PaidRoute><VideoAnalysis /></PaidRoute>
+            } />
             <Route path="/community" element={<CommunityFeed />} />
+            <Route path="/payment" element={<PaymentWall />} />
             <Route path="/live/:id" element={
               <ProtectedRoute roles={["user","admin","trainer"]} loginPath="/login">
                 <LiveSession />
