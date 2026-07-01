@@ -204,7 +204,7 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://static.cloudflareinsights.com", "https://checkout.razorpay.com", "https://api.razorpay.com"], // TODO: Remove unsafe-inline/eval gradually
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://static.cloudflareinsights.com", "https://checkout.razorpay.com", "https://api.razorpay.com", "https://unpkg.com"], // TODO: Remove unsafe-inline/eval gradually
       "script-src-attr": ["'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "https:", "blob:"],
