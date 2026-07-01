@@ -13,7 +13,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 const CATS = ["Daily Life","Opinion","Personal Experience","English Growth","Future Goals","Fun Topic","Free Talk"];
 const PIE_COLORS = ["#7c6fff","#4ade80","#fbbf24","#ff6b9d","#38bdf8","#fb923c","#a78bfa"];
 const tt = { background:"#16162a", border:"1px solid #252545", borderRadius:10, fontSize:12 };
-const TABS = [{id:"overview",l:"📊 Overview"},{id:"today",l:"📅 Today"},{id:"users",l:"👥 Users"},{id:"registrations",l:"📋 Registrations"},{id:"reports",l:"📈 Reports"},{id:"points",l:"⭐ Points"},{id:"submissions",l:"📝 Submissions"},{id:"questions",l:"❓ Questions"},{id:"manual-questions",l:"📝 Manual Questions"},{id:"live",l:"🎥 Live Sessions"},{id:"payments",l:"💳 Payments"},{id:"monitoring",l:"🖥️ Monitor"},{id:"settings",l:"⚙️ Settings"}];"⚙️ Settings"}];
+const TABS = [{id:"overview",l:"📊 Overview"},{id:"today",l:"📅 Today"},{id:"users",l:"👥 Users"},{id:"registrations",l:"📋 Registrations"},{id:"reports",l:"📈 Reports"},{id:"points",l:"⭐ Points"},{id:"submissions",l:"📝 Submissions"},{id:"questions",l:"❓ Questions"},{id:"manual-questions",l:"📝 Manual Questions"},{id:"live",l:"🎥 Live Sessions"},{id:"payments",l:"💳 Payments"},{id:"monitoring",l:"🖥️ Monitor"},{id:"settings",l:"⚙️ Settings"}];
 
 export default function AdminDashboard() {
   const [tab, setTab] = useState("overview");
@@ -209,6 +209,8 @@ export default function AdminDashboard() {
       loadReports();
     } else if (tab === "registrations") {
       loadPendingRegs();
+    } else if (tab === "payments") {
+      loadPayments();
     } else if (tab === "settings") {
       loadSettings();
     }
@@ -1428,6 +1430,94 @@ export default function AdminDashboard() {
               </table>
             </div>
           </div>
+        </>
+      )}
+
+      {/* PAYMENTS */}
+      {tab==="payments" && (
+        <>
+          {paymentLoading ? (
+            <div className="spinner-wrap"><div className="spinner"/></div>
+          ) : paymentData ? (
+            <>
+              {/* Stats row */}
+              <div className="stat-grid" style={{marginBottom:"1rem"}}>
+                <div className="card" style={{textAlign:"center"}}>
+                  <div style={{fontSize:"1.8rem",fontWeight:900,color:"#4ade80"}}>₹{paymentData.stats?.totalRevenue||0}</div>
+                  <div style={{fontSize:"0.75rem",color:"var(--muted)",marginTop:"0.25rem"}}>Total Revenue</div>
+                </div>
+                <div className="card" style={{textAlign:"center"}}>
+                  <div style={{fontSize:"1.8rem",fontWeight:900,color:"#7c6fff"}}>{paymentData.stats?.totalPaid||0}</div>
+                  <div style={{fontSize:"0.75rem",color:"var(--muted)",marginTop:"0.25rem"}}>Paid Users</div>
+                </div>
+                <div className="card" style={{textAlign:"center"}}>
+                  <div style={{fontSize:"1.8rem",fontWeight:900,color:"#fbbf24"}}>{paymentData.stats?.totalManual||0}</div>
+                  <div style={{fontSize:"0.75rem",color:"var(--muted)",marginTop:"0.25rem"}}>Manual Activations</div>
+                </div>
+                <div className="card" style={{textAlign:"center"}}>
+                  <div style={{fontSize:"1.8rem",fontWeight:900,color:"#38bdf8"}}>{paymentData.pagination?.total||0}</div>
+                  <div style={{fontSize:"0.75rem",color:"var(--muted)",marginTop:"0.25rem"}}>Total Transactions</div>
+                </div>
+              </div>
+
+              {/* Transactions table */}
+              <div className="card">
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem",flexWrap:"wrap",gap:"0.5rem"}}>
+                  <div className="section-title" style={{margin:0}}>💳 All Transactions</div>
+                  <button className="btn-ghost" onClick={loadPayments} style={{fontSize:"0.8rem"}}>🔄 Refresh</button>
+                </div>
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Name / Phone</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Source</th>
+                        <th>Payment ID</th>
+                        <th>Note</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(paymentData.transactions||[]).map((tx,i)=>(
+                        <tr key={tx._id||i}>
+                          <td style={{color:"var(--muted)",whiteSpace:"nowrap",fontSize:"0.8rem"}}>
+                            {new Date(tx.createdAt).toLocaleString("en-IN",{timeZone:"Asia/Kolkata",day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"})}
+                          </td>
+                          <td>
+                            <div style={{fontWeight:600,fontSize:"0.85rem"}}>{tx.name||"—"}</div>
+                            <div style={{color:"var(--muted)",fontSize:"0.75rem"}}>{tx.phone}</div>
+                          </td>
+                          <td style={{fontWeight:700,color:"#4ade80"}}>{tx.amount>0?`₹${tx.amount}`:"—"}</td>
+                          <td>
+                            <span style={{
+                              background: tx.status==="success"?"rgba(74,222,128,0.12)":tx.status==="manual"?"rgba(251,191,36,0.12)":"rgba(248,113,113,0.12)",
+                              color: tx.status==="success"?"#4ade80":tx.status==="manual"?"#fbbf24":"#f87171",
+                              border: `1px solid ${tx.status==="success"?"rgba(74,222,128,0.3)":tx.status==="manual"?"rgba(251,191,36,0.3)":"rgba(248,113,113,0.3)"}`,
+                              borderRadius:8,padding:"0.2rem 0.6rem",fontSize:"0.72rem",fontWeight:700,
+                            }}>
+                              {tx.status==="success"?"✅ Success":tx.status==="manual"?"🔧 Manual":tx.status==="refunded"?"↩️ Refunded":"❌ Failed"}
+                            </span>
+                          </td>
+                          <td style={{fontSize:"0.8rem",color:"var(--muted)"}}>{tx.source==="admin"?"👤 Admin":"💳 Razorpay"}</td>
+                          <td style={{fontFamily:"monospace",fontSize:"0.75rem",color:"var(--muted)"}}>
+                            {tx.razorpayPaymentId?tx.razorpayPaymentId.slice(-12):"—"}
+                          </td>
+                          <td style={{fontSize:"0.78rem",color:"var(--muted)"}}>{tx.note||"—"}</td>
+                        </tr>
+                      ))}
+                      {(paymentData.transactions||[]).length===0&&(
+                        <tr><td colSpan={7} style={{textAlign:"center",color:"var(--muted)",padding:"2rem"}}>No transactions yet</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="warn-box"><p>Failed to load payment data. <button className="btn-ghost" onClick={loadPayments}>Retry</button></p></div>
+          )}
         </>
       )}
 
