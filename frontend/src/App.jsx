@@ -19,6 +19,7 @@ const CommunityFeed   = lazy(() => import("./pages/CommunityFeed.jsx"));
 const LiveSession     = lazy(() => import("./pages/LiveSession.jsx"));
 const NotFound        = lazy(() => import("./pages/NotFound.jsx"));
 const PaymentWall     = lazy(() => import("./pages/PaymentWall.jsx"));
+const PaymentHistory  = lazy(() => import("./pages/PaymentHistory.jsx"));
 
 function PageLoader() {
   return (
@@ -162,6 +163,11 @@ function AppRoutes() {
             } />
             <Route path="/community" element={<CommunityFeed />} />
             <Route path="/payment" element={<PaymentWall />} />
+            <Route path="/payment-history" element={
+              <ProtectedRoute roles={["user","admin","trainer"]} loginPath="/login">
+                <PaymentHistory />
+              </ProtectedRoute>
+            } />
             <Route path="/live/:id" element={
               <ProtectedRoute roles={["user","admin","trainer"]} loginPath="/login">
                 <LiveSession />

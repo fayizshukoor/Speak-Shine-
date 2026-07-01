@@ -143,9 +143,10 @@ export default function Layout({ children, title }) {
       { to: "/community", label: "👥 Community" },
     ];
     return [
-      { to: "/dashboard", label: "📊 Dashboard" },
-      { to: "/video-analysis", label: "📹 Video Analysis" },
-      { to: "/community", label: "👥 Community" },
+      { to: "/dashboard",       label: "📊 Dashboard" },
+      { to: "/video-analysis",  label: "📹 Video Analysis" },
+      { to: "/community",       label: "👥 Community" },
+      { to: "/payment-history", label: "💳 Payments" },
     ];
   };
 
