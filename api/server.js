@@ -222,7 +222,7 @@ app.use(helmet({
       fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'", "blob:", process.env.R2_PUBLIC_URL || "https:"],
-      frameSrc: ["'none'", "https://api.razorpay.com"],
+      frameSrc: ["https://api.razorpay.com"],
     },
   },
   crossOriginEmbedderPolicy: false,
