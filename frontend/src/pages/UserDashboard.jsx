@@ -1095,39 +1095,53 @@ export default function UserDashboard() {
 
       {/* ── Today's Top Scorer ── */}
       {data?.todayTopScorer && (
-        <div className="card" style={{
+        <div style={{
           marginBottom: "1rem",
-          background: "linear-gradient(135deg, rgba(6,182,212,0.08) 0%, rgba(34,211,160,0.08) 100%)",
+          borderRadius: 18,
+          padding: "0.85rem 1.25rem",
+          position: "relative",
+          overflow: "hidden",
+          background: "linear-gradient(135deg, #0a2a30 0%, #082028 60%, #061a20 100%)",
           border: "1px solid rgba(6,182,212,0.3)",
+          boxShadow: "0 8px 32px rgba(6,182,212,0.1), inset 0 1px 0 rgba(6,182,212,0.15)",
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            <div style={{
-              fontSize: "2rem", lineHeight: 1,
-              filter: "drop-shadow(0 0 8px rgba(6,182,212,0.6))",
-            }}>⭐</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: "0.68rem", fontWeight: 600, color: "#22d3ee", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "0.2rem" }}>
-                Today's Top Scorer
+          {/* shimmer line at top */}
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "linear-gradient(90deg, transparent 0%, #22d3ee 40%, #34d399 60%, transparent 100%)", opacity: 0.8 }} />
+          {/* glow orbs */}
+          <div style={{ position: "absolute", top: -40, right: -40, width: 160, height: 160, borderRadius: "50%", background: "radial-gradient(circle, rgba(6,182,212,0.15) 0%, transparent 70%)", pointerEvents: "none" }} />
+          <div style={{ position: "absolute", bottom: -30, left: -20, width: 100, height: 100, borderRadius: "50%", background: "radial-gradient(circle, rgba(52,211,153,0.1) 0%, transparent 70%)", pointerEvents: "none" }} />
+
+          {/* single row: label + name on left, score on right — all vertically centered */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
+            {/* left: label + name */}
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", marginBottom: "0.25rem" }}>
+                <span style={{ fontSize: "0.75rem", lineHeight: 1 }}>⭐</span>
+                <span style={{ fontSize: "0.58rem", fontWeight: 800, letterSpacing: "0.13em", textTransform: "uppercase", color: "#22d3ee", opacity: 0.8 }}>Today's Top Scorer</span>
               </div>
-              <div style={{ fontSize: "1rem", fontWeight: 700, color: "var(--text)" }}>
+              <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#f0fdff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.02em" }}>
                 {data.todayTopScorer.name}
               </div>
+              <div style={{ fontSize: "0.65rem", color: "rgba(34,211,238,0.45)", marginTop: "0.1rem" }}>highest score today</div>
             </div>
-            <div style={{
-              fontSize: "1.5rem", fontWeight: 800,
-              color: "#22d3ee",
-              background: "rgba(6,182,212,0.12)",
-              border: "1px solid rgba(6,182,212,0.25)",
-              borderRadius: 12,
-              padding: "0.3rem 0.75rem",
-              whiteSpace: "nowrap",
-            }}>
-              {data.todayTopScorer.score} pts
+
+            {/* right: score number + "points" label */}
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0 }}>
+              <span style={{
+                fontSize: "2.1rem", fontWeight: 900, lineHeight: 1,
+                background: "linear-gradient(135deg, #22d3ee 0%, #34d399 100%)",
+                WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+                letterSpacing: "-0.03em",
+              }}>
+                {data.todayTopScorer.score}
+              </span>
+              <span style={{ fontSize: "0.56rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(34,211,238,0.45)", marginTop: "0.15rem" }}>
+                points
+              </span>
             </div>
           </div>
         </div>
       )}
-
       {/* ── Top Streaks leaderboard — always visible ── */}
       {data?.topStreak?.length > 0 && (
         <div className="card" style={{ marginBottom: "1rem" }}>
