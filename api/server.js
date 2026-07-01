@@ -204,7 +204,7 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://static.cloudflareinsights.com"], // TODO: Remove unsafe-inline/eval gradually
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://static.cloudflareinsights.com", "https://checkout.razorpay.com", "https://api.razorpay.com"], // TODO: Remove unsafe-inline/eval gradually
       "script-src-attr": ["'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "https:", "blob:"],
@@ -214,13 +214,15 @@ app.use(helmet({
         `https://${(process.env.R2_ENDPOINT || "").replace(/^https?:\/\//, "")}`,
         "https://cloudflareinsights.com",
         "https://*.livekit.cloud",
+        "https://api.razorpay.com",
+        "https://lumberjack.razorpay.com",
         "wss:",
         "ws:"
       ],
       fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'", "blob:", process.env.R2_PUBLIC_URL || "https:"],
-      frameSrc: ["'none'"],
+      frameSrc: ["'none'", "https://api.razorpay.com"],
     },
   },
   crossOriginEmbedderPolicy: false,
