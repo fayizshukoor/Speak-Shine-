@@ -886,7 +886,12 @@ function ManualQuestionsPanel() {
   };
 
   const load = async () => {
-      setManualQuestions(questionsRes.data);
+    try {
+      const [questionsRes, templatesRes] = await Promise.all([
+        api.get("/questions?limit=200"),
+        api.get("/questions/templates").catch(() => ({ data: {} })),
+      ]);
+      setManualQuestions(questionsRes.data?.questions || questionsRes.data || []);
       setTemplates(templatesRes.data);
     } catch (err) {
       notify(err.response?.data?.error || "Failed to load data", "error");
