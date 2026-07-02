@@ -68,17 +68,27 @@ export async function deleteQuestion(req, res) {
  */
 export async function setupManualQuestion(req, res) {
   try {
-    const { setupType, scheduledFor, category, topic, question } = req.body;
+    const { setupType, scheduledFor, scheduledTime, category, topic, question, audioUrl, storyTranscript, summaryGuide } = req.body;
     const createdBy = req.user.phone;
     
     const result = await questionsService.setupManualQuestion(
       setupType, 
       scheduledFor, 
+      scheduledTime,
       category, 
       topic, 
       question, 
-      createdBy
+      createdBy,
+      { audioUrl, storyTranscript, summaryGuide }
     );
+    if (setupType === "story_summary") {
+      try {
+        const { publishDueManualStoryQuestion } = await import("../services/scheduler/questionSchedulerService.js");
+        await publishDueManualStoryQuestion();
+      } catch (publishErr) {
+        console.warn("[Questions] Story publish check skipped:", publishErr.message);
+      }
+    }
     res.status(201).json(result);
   } catch (error) {
     if (error.statusCode) {
@@ -257,6 +267,45 @@ export async function cleanGenericQuestions(req, res) {
     });
   } catch (error) {
     console.error("[Questions] Clean generic error:", error.message);
+    res.status(500).json({ error: error.message });
+  }
+}
+
+/**
+ * POST /api/questions/generate-story - AI-generate a listening story (admin/trainer)
+ */
+export async function generateStoryNow(req, res) {
+  try {
+    const { generateListeningStory } = await import("../services/ai/storyGenerator.js");
+    const Status = (await import("../../models/statusSchema.js")).default;
+    const status = await Status.findOne().lean();
+    const wordCount = status?.storyWordCount ?? 200;
+    const usedThemes = status?.usedStoryThemes || [];
+    const level = status?.storyLevel || "B1";
+    const story = await generateListeningStory({ wordCount, usedThemes, level });
+    // Track used theme to avoid repeats
+    await Status.updateOne({}, { $addToSet: { usedStoryThemes: story.theme } }, { upsert: true });
+    res.json({ success: true, ...story });
+  } catch (error) {
+    console.error("[Questions] Story generation error:", error.message);
+    res.status(500).json({ error: error.message });
+  }
+}
+
+/**
+ * POST /api/questions/generate-story-audio
+ * Body: { storyText, topic }
+ * Generates TTS audio, uploads to R2, returns { audioUrl }
+ */
+export async function generateStoryAudio(req, res) {
+  try {
+    const { storyText, topic } = req.body;
+    if (!storyText) return res.status(400).json({ error: "storyText is required" });
+    const { generateAndUploadStoryAudio } = await import("../services/ai/storyAudioService.js");
+    const audioUrl = await generateAndUploadStoryAudio(storyText, topic || "story");
+    res.json({ success: true, audioUrl });
+  } catch (error) {
+    console.error("[Questions] Story audio error:", error.message);
     res.status(500).json({ error: error.message });
   }
 }

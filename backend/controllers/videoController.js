@@ -131,6 +131,7 @@ export async function preCheckSubmit(req, res) {
       isMonthlyReflection: !!req.body?.isMonthlyReflection,
       isMonthlyGoals: !!req.body?.isMonthlyGoals,
       isWeeklyReflection: !!req.body?.isWeeklyReflection,
+      isStorySummary: !!req.body?.isStorySummary,
     };
     const gate = evaluateSubmitGate({
       durationSeconds: req.body?.durationSeconds ?? null,

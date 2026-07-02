@@ -6,7 +6,7 @@
 import Status from "../../../models/statusSchema.js";
 import Question from "../../../models/questionSchema.js";
 import { generateAndInsertQuestions } from "../ai/questionGenerator.js";
-import { getManualQuestionForDate } from "../questions/questionsService.js";
+import { getDueManualQuestion, getManualQuestionForDate } from "../questions/questionsService.js";
 import { ensureTodayVocabulary } from "../ai/vocabularyGenerator.js";
 
 // Monthly reflection questions — shown on the last day of every month
@@ -45,6 +45,9 @@ export const WEEKLY_REFLECTION_QUESTIONS = [
 export const WEEKLY_REFLECTION_TOPIC = "Weekly Reflection";
 export const WEEKLY_REFLECTION_CATEGORY = "Weekly Reflection";
 
+export const STORY_SUMMARY_TOPIC = "Story Summary";
+export const STORY_SUMMARY_CATEGORY = "Listening Practice";
+
 /**
  * Check if today is the last day of the month (IST)
  */
@@ -74,12 +77,112 @@ function isSunday() {
 }
 
 /**
+ * Check if today is Saturday (IST)
+ */
+function isSaturday() {
+  const now = new Date();
+  const istDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  return istDate.getDay() === 6; // 6 = Saturday
+}
+
+/**
+ * Auto-generate and publish a story summary for Saturday.
+ * Skips if a manual story is already scheduled for today.
+ */
+async function publishAutoSaturdayStory() {
+  try {
+    const { generateListeningStory } = await import("../ai/storyGenerator.js");
+    const { generateAndUploadStoryAudio } = await import("../ai/storyAudioService.js");
+
+    const status = await Status.findOne().lean();
+    const wordCount = status?.storyWordCount ?? 200;
+    const usedThemes = status?.usedStoryThemes || [];
+
+    console.log("[QuestionScheduler] 🎧 Auto-generating Saturday story…");
+    const story = await generateListeningStory({ wordCount, usedThemes });
+
+    // Generate and upload audio
+    const audioUrl = await generateAndUploadStoryAudio(story.story, story.topic);
+
+    // Save used theme
+    await Status.updateOne({}, { $addToSet: { usedStoryThemes: story.theme } }, { upsert: true });
+
+    // Publish as story summary day
+    await Status.updateOne({}, {
+      $set: {
+        questionSentToday: true,
+        isStorySummaryDay: true,
+        isMonthlyReflectionDay: false,
+        isMonthlyGoalsDay: false,
+        isWeeklyReflectionDay: false,
+        todayContentType: "story_audio",
+        todayTopic: story.topic,
+        todayQuestion: story.question,
+        todayCategory: STORY_SUMMARY_CATEGORY,
+        todayAudioUrl: audioUrl,
+        todayStoryTranscript: story.story,
+        todaySummaryGuide: story.summaryGuide.join("\n"),
+        todayPosterImage: null,
+        todayVocabulary: [],
+      }
+    }, { upsert: true });
+
+    console.log(`[QuestionScheduler] ✅ Saturday story published: "${story.topic}"`);
+    return { published: true, type: "story_summary", topic: story.topic, source: "auto" };
+  } catch (err) {
+    console.error("[QuestionScheduler] Saturday story auto-publish failed:", err.message);
+    return { published: false, error: err.message };
+  }
+}
+
+async function publishStoryQuestion(storyQuestion) {
+  await Status.updateOne({}, {
+    $set: {
+      questionSentToday: true,
+      isStorySummaryDay: true,
+      isMonthlyReflectionDay: false,
+      isMonthlyGoalsDay: false,
+      isWeeklyReflectionDay: false,
+      todayContentType: "story_audio",
+      todayTopic: storyQuestion.topic || STORY_SUMMARY_TOPIC,
+      todayQuestion: storyQuestion.question || "Listen to the story and record a short video summary in your own words.",
+      todayCategory: storyQuestion.category || STORY_SUMMARY_CATEGORY,
+      todayAudioUrl: storyQuestion.audioUrl || null,
+      todayStoryTranscript: storyQuestion.storyTranscript || null,
+      todaySummaryGuide: storyQuestion.summaryGuide || null,
+      todayPosterImage: null,
+      todayVocabulary: [],
+    }
+  }, { upsert: true });
+
+  return {
+    published: true,
+    type: "story_summary",
+    topic: storyQuestion.topic || STORY_SUMMARY_TOPIC,
+    source: "manual"
+  };
+}
+
+/**
+ * Publish a due story summary task by exact scheduled datetime.
+ * This can override the current daily question because story tasks are explicitly scheduled.
+ */
+export async function publishDueManualStoryQuestion(now = new Date()) {
+  const storyQuestion = await getDueManualQuestion("story_summary", now);
+  if (!storyQuestion) return { published: false };
+  return publishStoryQuestion(storyQuestion);
+}
+
+/**
  * Publish daily question
  * Handles special days (monthly reflection, goals, weekly reflection) and regular questions
  * Now checks for manual questions first before using defaults
  */
 export async function publishDailyQuestion() {
   try {
+    const dueStory = await publishDueManualStoryQuestion();
+    if (dueStory.published) return dueStory;
+
     const statusCheck = await Status.findOne();
     if (statusCheck?.questionSentToday) {
       return { alreadyPublished: true };
@@ -307,6 +410,10 @@ export async function publishDailyQuestion() {
     await Status.updateOne({}, {
       $set: {
         questionSentToday: true,
+        todayContentType: "question",
+        todayAudioUrl: null,
+        todayStoryTranscript: null,
+        todaySummaryGuide: null,
         todayTopic: question.topic || null,
         todayQuestion: question.question || null,
         todayCategory: question.category || null,

@@ -8,6 +8,10 @@ const statusSchema = new mongoose.Schema({
   todayTopic: { type: String, default: null },
   todayQuestion: { type: String, default: null },
   todayCategory: { type: String, default: null },
+  todayContentType: { type: String, enum: ["question", "story_audio"], default: "question" },
+  todayAudioUrl: { type: String, default: null },
+  todayStoryTranscript: { type: String, default: null },
+  todaySummaryGuide: { type: String, default: null },
   todayPosterImage: { type: String, default: null },
   posterExpiresAt: { type: Date, default: null },
   recentCategories: { type: [String], default: [] },
@@ -23,10 +27,15 @@ const statusSchema = new mongoose.Schema({
   // Vocabulary challenge settings (admin-configurable)
   vocabWordCount: { type: Number, default: 3, min: 1, max: 10 }, // how many words per day
   vocabLevel: { type: String, default: "B2", enum: ["A1", "A2", "B1", "B2", "C1", "C2"] }, // CEFR level
+  // Story Summary settings (admin-configurable)
+  storyWordCount: { type: Number, default: 200, min: 100, max: 400 },
+  usedStoryThemes: { type: [String], default: [] },
+  storyLevel: { type: String, default: "B1", enum: ["A2", "B1", "B2", "C1"] },
   // Monthly reflection
   isMonthlyReflectionDay: { type: Boolean, default: false },
   isMonthlyGoalsDay: { type: Boolean, default: false },
   isWeeklyReflectionDay: { type: Boolean, default: false },
+  isStorySummaryDay: { type: Boolean, default: false },
   // Daily report tracking
   dailyReportGenerated: { type: Boolean, default: false },
   reportExpiresAt: { type: Date, default: null },

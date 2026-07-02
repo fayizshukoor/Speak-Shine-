@@ -212,6 +212,14 @@ export function startScheduler() {
       const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: TIMEZONE }));
       const nowTime = `${String(nowIST.getHours()).padStart(2,"0")}:${String(nowIST.getMinutes()).padStart(2,"0")}`;
 
+      // ── 0. Publish due manual story task at its exact scheduled time ─────
+      const { publishDueManualStoryQuestion } = await import("../backend/services/scheduler/questionSchedulerService.js");
+      const storyResult = await publishDueManualStoryQuestion();
+      if (storyResult?.published) {
+        console.log(`[Scheduler] 🎧 Story summary published: ${storyResult.topic}`);
+        return;
+      }
+
       // ── 1. Publish daily question at posterSendTime ──────────────────────
       const sendTime = s.posterSendTime || "08:00";
       if (nowTime === sendTime && !s.questionSentToday) {
@@ -251,6 +259,12 @@ export function startScheduler() {
 
       const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: TIMEZONE }));
       const nowMins = nowIST.getHours() * 60 + nowIST.getMinutes();
+
+      const { publishDueManualStoryQuestion } = await import("../backend/services/scheduler/questionSchedulerService.js");
+      const storyResult = await publishDueManualStoryQuestion();
+      if (storyResult?.published) {
+        console.log(`[Scheduler] Catch-up: story summary published: ${storyResult.topic}`);
+      }
 
       // ── Catch-up: publish question if posterSendTime passed ──────────────
       if (!s.questionSentToday) {

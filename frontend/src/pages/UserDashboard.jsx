@@ -798,6 +798,10 @@ export default function UserDashboard() {
           background: "linear-gradient(135deg, #0c1a2e 0%, #0f2d4a 50%, #0c1a2e 100%)",
           border: "2px solid rgba(56,189,248,0.45)",
           boxShadow: "0 8px 40px rgba(14,165,233,0.2)",
+        } : data?.today?.isStorySummary ? {
+          background: "linear-gradient(135deg, #10231f 0%, #173d35 50%, #10231f 100%)",
+          border: "2px solid rgba(45,212,191,0.45)",
+          boxShadow: "0 8px 40px rgba(20,184,166,0.2)",
         } : {}}>
           {/* Header */}
           <div className="daily-poster-header">
@@ -805,12 +809,14 @@ export default function UserDashboard() {
               {data?.today?.isMonthlyReflection ? "🌟 Speak & Shine"
                : data?.today?.isMonthlyGoals ? "🎯 Speak & Shine"
                : data?.today?.isWeeklyReflection ? "📅 Speak & Shine"
+               : data?.today?.isStorySummary ? "🎧 Speak & Shine"
                : "✦ Speak & Shine"}
             </div>
             <div className="daily-poster-sub">
               {data?.today?.isMonthlyReflection ? "MONTHLY REFLECTION"
                : data?.today?.isMonthlyGoals ? "MONTHLY GOAL SETTING"
                : data?.today?.isWeeklyReflection ? "WEEKLY REFLECTION"
+               : data?.today?.isStorySummary ? "STORY SUMMARY"
                : "DAILY SPEAKING CHALLENGE"}
             </div>
             {data.today.category && (
@@ -818,6 +824,7 @@ export default function UserDashboard() {
                 data?.today?.isMonthlyReflection ? { background:"rgba(139,92,246,0.3)", border:"1px solid rgba(167,139,250,0.5)", color:"#c4b5fd" }
                 : data?.today?.isMonthlyGoals ? { background:"rgba(34,197,94,0.25)", border:"1px solid rgba(74,222,128,0.5)", color:"#4ade80" }
                 : data?.today?.isWeeklyReflection ? { background:"rgba(14,165,233,0.25)", border:"1px solid rgba(56,189,248,0.5)", color:"#38bdf8" }
+                : data?.today?.isStorySummary ? { background:"rgba(20,184,166,0.25)", border:"1px solid rgba(45,212,191,0.5)", color:"#5eead4" }
                 : {}
               }>
                 {data.today.category}
@@ -826,7 +833,24 @@ export default function UserDashboard() {
           </div>
 
           {/* Monthly Reflection questions */}
-          {data?.today?.isMonthlyReflection ? (
+          {data?.today?.isStorySummary ? (
+            <div style={{ marginTop: "1rem" }}>
+              <div className="daily-poster-section-label">🎧 LISTENING PRACTICE</div>
+              {data.today.topic && (
+                <div className="daily-poster-topic-wrap">
+                  <div className="daily-poster-section-label">STORY</div>
+                  <div className="daily-poster-topic">"{data.today.topic}"</div>
+                </div>
+              )}
+              {data.today.audioUrl && (
+                <audio controls src={data.today.audioUrl} style={{ width: "100%", marginTop: "0.75rem" }} />
+              )}
+              <div style={{ marginTop:"0.85rem", background:"rgba(20,184,166,0.08)", border:"1px solid rgba(45,212,191,0.25)", borderRadius:10, padding:"0.65rem 0.85rem", fontSize:"0.82rem", color:"rgba(255,255,255,0.82)", lineHeight:1.5 }}>
+                {data.today.question || "Listen to the story audio. Then record a clear video summary in your own words."}
+              </div>
+            </div>
+
+          ) : data?.today?.isMonthlyReflection ? (
             <div style={{ marginTop: "1rem" }}>
               <div className="daily-poster-section-label">📋 REFLECTION QUESTIONS</div>
               <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", marginTop: "0.75rem" }}>
@@ -907,6 +931,7 @@ export default function UserDashboard() {
                 : data?.today?.isMonthlyReflection ? { background:"linear-gradient(135deg,#7c3aed,#5b21b6)", boxShadow:"0 4px 20px rgba(139,92,246,0.4)" }
                 : data?.today?.isMonthlyGoals ? { background:"linear-gradient(135deg,#16a34a,#15803d)", boxShadow:"0 4px 20px rgba(34,197,94,0.4)" }
                 : data?.today?.isWeeklyReflection ? { background:"linear-gradient(135deg,#0ea5e9,#0284c7)", boxShadow:"0 4px 20px rgba(14,165,233,0.4)" }
+                : data?.today?.isStorySummary ? { background:"linear-gradient(135deg,#0f766e,#0d9488)", boxShadow:"0 4px 20px rgba(20,184,166,0.35)" }
                 : {}),
             }}
             onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; }}
@@ -916,6 +941,7 @@ export default function UserDashboard() {
              : data?.today?.isMonthlyReflection ? "🌟 Record Monthly Reflection Video"
              : data?.today?.isMonthlyGoals ? "🎯 Record Monthly Goals Video"
              : data?.today?.isWeeklyReflection ? "📅 Record Weekly Reflection Video"
+             : data?.today?.isStorySummary ? "🎧 Record Story Summary Video"
              : "🎥 Upload Your Speaking Video Now!"}
           </button>
         </div>

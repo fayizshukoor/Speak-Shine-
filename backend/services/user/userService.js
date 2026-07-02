@@ -302,8 +302,13 @@ export async function resetDailySubmissions() {
       todayTopic: null,
       todayQuestion: null,
       todayCategory: null,
+      todayContentType: "question",
+      todayAudioUrl: null,
+      todayStoryTranscript: null,
+      todaySummaryGuide: null,
       todayPosterImage: null,
       posterExpiresAt: null,
+      isStorySummaryDay: false,
     }
   }, { upsert: true });
   

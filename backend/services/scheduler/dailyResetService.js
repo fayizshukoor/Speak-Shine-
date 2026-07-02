@@ -9,6 +9,18 @@ import StreakRecord from "../../../models/streakRecordSchema.js";
 
 const TIMEZONE = "Asia/Kolkata";
 
+export function computeMissedDayFineUpdate(currentFine = 0, dailyFine = 2) {
+  if (currentFine < 0) {
+    const remainingBuffer = currentFine + dailyFine;
+    if (remainingBuffer <= 0) {
+      return { fineCharged: false, setFine: remainingBuffer, weeklyFineInc: 0 };
+    }
+    return { fineCharged: true, setFine: remainingBuffer, weeklyFineInc: remainingBuffer };
+  }
+
+  return { fineCharged: true, incFine: dailyFine, weeklyFineInc: dailyFine };
+}
+
 /**
  * Update streaks at midnight.
  * - Submitted today  → streak +1; award +1 streakFreeze at every 7-day milestone
@@ -196,6 +208,11 @@ export async function resetStatusFlags() {
         isMonthlyReflectionDay: false,
         isMonthlyGoalsDay: false,
         isWeeklyReflectionDay: false,
+        isStorySummaryDay: false,
+        todayContentType: "question",
+        todayAudioUrl: null,
+        todayStoryTranscript: null,
+        todaySummaryGuide: null,
       }
     }, { upsert: true });
 
@@ -261,6 +278,11 @@ export async function performDailyReset() {
         isMonthlyReflectionDay: false,
         isMonthlyGoalsDay: false,
         isWeeklyReflectionDay: false,
+        isStorySummaryDay: false,
+        todayContentType: "question",
+        todayAudioUrl: null,
+        todayStoryTranscript: null,
+        todaySummaryGuide: null,
         todayQuestion: null,
         todayTopic: null,
         todayCategory: null,

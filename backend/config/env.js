@@ -89,6 +89,7 @@ const env = {
 
   GROQ_API_KEY: getVar('GROQ_API_KEY', ''),
   GROQ_API_KEYS: (getVar('GROQ_API_KEYS', '') || '').split(',').map((s) => s.trim()).filter(Boolean),
+  ELEVENLABS_API_KEY: getVar('ELEVENLABS_API_KEY', ''),
 
   FRONTEND_URL: getVar('FRONTEND_URL', DEFAULTS.FRONTEND_URL),
   APP_URL: getVar('APP_URL', DEFAULTS.APP_URL),

@@ -21,6 +21,8 @@ router.delete("/manual/:id", authMiddleware, requireRole("admin", "trainer"), qu
 
 // Admin-only routes
 router.post("/generate-now",   authMiddleware, requireRole("admin"), questionsController.generateQuestionsNow);
+router.post("/generate-story", authMiddleware, requireRole("admin", "trainer"), questionsController.generateStoryNow);
+router.post("/generate-story-audio", authMiddleware, requireRole("admin", "trainer"), questionsController.generateStoryAudio);
 router.post("/clean-generic",  authMiddleware, requireRole("admin"), questionsController.cleanGenericQuestions);
 router.post("/",               authMiddleware, requireRole("admin"), questionsController.addQuestion);
 router.delete("/:id",          authMiddleware, requireRole("admin"), questionsController.deleteQuestion);

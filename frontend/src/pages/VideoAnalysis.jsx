@@ -39,6 +39,7 @@ export default function VideoAnalysis() {
   const [isMonthlyReflection, setIsMonthlyReflection] = useState(false);
   const [isMonthlyGoals, setIsMonthlyGoals] = useState(false);
   const [isWeeklyReflection, setIsWeeklyReflection] = useState(false);
+  const [isStorySummary, setIsStorySummary] = useState(false);
 
   // shared state
   const [reportId, setReportId]       = useState(null);
@@ -56,7 +57,7 @@ export default function VideoAnalysis() {
       // Show sample question for guests from preview API
       api.get("/guest/preview").then(r => {
         const t = r.data?.today;
-        if (t?.question) setTodayQuestion({ question: t.question, topic: t.topic, category: t.category });
+        if (t?.question) setTodayQuestion({ question: t.question, topic: t.topic, category: t.category, audioUrl: t.audioUrl, contentType: t.contentType });
         if (Array.isArray(t?.vocabulary) && t.vocabulary.length > 0) setTodayVocabulary(t.vocabulary);
       }).catch(() => {});
       return;
@@ -65,10 +66,11 @@ export default function VideoAnalysis() {
     // Fetch today's question for the top card
     api.get("/dashboard/me").then(r => {
       const t = r.data?.today;
-      if (t?.question) setTodayQuestion({ question: t.question, topic: t.topic, category: t.category });
+      if (t?.question) setTodayQuestion({ question: t.question, topic: t.topic, category: t.category, audioUrl: t.audioUrl, contentType: t.contentType });
       if (t?.isMonthlyReflection) setIsMonthlyReflection(true);
       if (t?.isMonthlyGoals) setIsMonthlyGoals(true);
       if (t?.isWeeklyReflection) setIsWeeklyReflection(true);
+      if (t?.isStorySummary || t?.contentType === "story_audio") setIsStorySummary(true);
       if (Array.isArray(t?.vocabulary) && t.vocabulary.length > 0) setTodayVocabulary(t.vocabulary);
     }).catch(() => {});
   }, [isGuest]);
@@ -426,8 +428,41 @@ export default function VideoAnalysis() {
           </div>
         )}
 
+        {/* ── Story Summary Card ── */}
+        {todayQuestion && isStorySummary && (
+          <div style={{
+            background: "linear-gradient(135deg, #10231f 0%, #173d35 50%, #10231f 100%)",
+            border: "2px solid rgba(45,212,191,0.45)",
+            borderRadius: 18,
+            padding: "1.5rem",
+            marginBottom: "1rem",
+            boxShadow: "0 8px 40px rgba(20,184,166,0.2)",
+          }}>
+            <div style={{ display:"flex", alignItems:"center", gap:"0.75rem", marginBottom:"1rem" }}>
+              <div style={{ fontSize:"2.5rem" }}>🎧</div>
+              <div>
+                <div style={{ fontSize:"0.7rem", color:"rgba(94,234,212,0.85)", fontWeight:700, textTransform:"uppercase", letterSpacing:"0.1em" }}>Listening Practice</div>
+                <div style={{ fontSize:"1.3rem", fontWeight:800, color:"#fff", lineHeight:1.2 }}>Story Summary</div>
+                <div style={{ fontSize:"0.8rem", color:"rgba(255,255,255,0.65)", marginTop:"0.2rem" }}>Listen carefully, then summarize the story in your own words.</div>
+              </div>
+            </div>
+
+            {todayQuestion.topic && (
+              <div style={{ fontSize:"1rem", fontWeight:700, color:"#ccfbf1", marginBottom:"0.85rem" }}>{todayQuestion.topic}</div>
+            )}
+
+            {todayQuestion.audioUrl && (
+              <audio controls src={todayQuestion.audioUrl} style={{ width:"100%", marginBottom:"1rem" }} />
+            )}
+
+            <div style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(45,212,191,0.25)", borderRadius:12, padding:"0.85rem 1rem", color:"rgba(255,255,255,0.9)", fontSize:"0.9rem", lineHeight:1.5 }}>
+              {todayQuestion.question || "Listen to the story audio and record a short video summary in your own words."}
+            </div>
+          </div>
+        )}
+
         {/* ── Today's Question Card — regular days only ── */}
-        {todayQuestion && !isMonthlyReflection && !isMonthlyGoals && !isWeeklyReflection && (
+        {todayQuestion && !isMonthlyReflection && !isMonthlyGoals && !isWeeklyReflection && !isStorySummary && (
           <div className="daily-poster" style={{ marginBottom: "1rem" }}>
             <div className="daily-poster-header">
               <div className="daily-poster-brand">✦ Speak &amp; Shine</div>
@@ -475,8 +510,8 @@ export default function VideoAnalysis() {
         </div>
 
         {mode === "upload"
-          ? <UploadCard onAnalysisStarted={onAnalysisStarted} isMonthlyReflection={isMonthlyReflection} isMonthlyGoals={isMonthlyGoals} isWeeklyReflection={isWeeklyReflection} vocabulary={todayVocabulary} isGuest={isGuest} />
-          : <RecordCard  onAnalysisStarted={onAnalysisStarted} question={todayQuestion} isMonthlyReflection={isMonthlyReflection} isMonthlyGoals={isMonthlyGoals} isWeeklyReflection={isWeeklyReflection} vocabulary={todayVocabulary} isGuest={isGuest} />
+          ? <UploadCard onAnalysisStarted={onAnalysisStarted} isMonthlyReflection={isMonthlyReflection} isMonthlyGoals={isMonthlyGoals} isWeeklyReflection={isWeeklyReflection} isStorySummary={isStorySummary} vocabulary={todayVocabulary} isGuest={isGuest} />
+          : <RecordCard  onAnalysisStarted={onAnalysisStarted} question={todayQuestion} isMonthlyReflection={isMonthlyReflection} isMonthlyGoals={isMonthlyGoals} isWeeklyReflection={isWeeklyReflection} isStorySummary={isStorySummary} vocabulary={todayVocabulary} isGuest={isGuest} />
         }
 
         {/* Report Section */}
@@ -1146,7 +1181,7 @@ function VocabularyWords({ words, compact = false }) {
 }
 
 // ── Upload Card (direct-to-R2 flow) ─────────────────────────────────────────
-function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, isWeeklyReflection, vocabulary = [], isGuest = false }) {
+function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, isWeeklyReflection, isStorySummary, vocabulary = [], isGuest = false }) {
   const [file, setFile]           = useState(null);
   const [fileDuration, setFileDuration] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -1159,7 +1194,7 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
   const uploadStartRef = useRef(null);
   const { generateHashAndFrames, cacheResult, isHashing, hashProgress } = useVideoFrameHash();
 
-  const gateFlags = { isMonthlyReflection, isMonthlyGoals, isWeeklyReflection };
+  const gateFlags = { isMonthlyReflection, isMonthlyGoals, isWeeklyReflection, isStorySummary };
 
   const handleFileChange = (e) => {
     const f = e.target.files[0];
@@ -1500,7 +1535,7 @@ function UploadCard({ onAnalysisStarted, isMonthlyReflection, isMonthlyGoals, is
 // ── Record Card ──────────────────────────────────────────────────────────────
 // States: "setup" → "countdown" → "recording" → "preview" → "uploading"
 
-function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthlyGoals, isWeeklyReflection, vocabulary = [], isGuest = false }) {
+function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthlyGoals, isWeeklyReflection, isStorySummary, vocabulary = [], isGuest = false }) {
   const navigate = useNavigate();
   const [step, setStep]             = useState("setup");
   const [cameras, setCameras]       = useState([]);
@@ -1576,6 +1611,8 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
     ? 600  // 10 minutes for monthly reflection/goals
     : isWeeklyReflection 
     ? 420  // 7 minutes for weekly reflection
+    : isStorySummary
+    ? 180  // 3 minutes for story summaries
     : 300; // 5 minutes for regular daily questions
 
   // Enumerate devices + restore any saved draft on mount
@@ -2019,7 +2056,7 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
     cleanup();
   };
 
-  const gateFlags = { isMonthlyReflection, isMonthlyGoals, isWeeklyReflection };
+  const gateFlags = { isMonthlyReflection, isMonthlyGoals, isWeeklyReflection, isStorySummary };
 
   const submitRecording = async () => {
     if (!recordedBlob) return;
@@ -2334,6 +2371,17 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
                 <li>New word or phrase you learned this week?</li>
                 <li>Focus for next week — review prep &amp; communication?</li>
               </ol>
+            </div>
+          )}
+
+          {/* Story summary reminder inside record card */}
+          {isStorySummary && (
+            <div style={{
+              background: "rgba(20,184,166,0.08)", border: "1px solid rgba(45,212,191,0.3)",
+              borderRadius: 12, padding: "0.85rem 1rem", marginBottom: "1.25rem",
+              fontSize: "0.82rem", color: "rgba(255,255,255,0.8)", lineHeight: 1.6,
+            }}>
+              🎧 <strong style={{ color: "#2dd4bf" }}>Story Summary Day!</strong> Listen to the audio first, then retell the story clearly in your own words.
             </div>
           )}
 

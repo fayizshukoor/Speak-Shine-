@@ -9,13 +9,15 @@ export const GATE_FRAME_IDEAL = 16;
 /** @typedef {"pass"|"warn"|"fail"} GateStatus */
 
 /**
- * @param {{ isMonthlyReflection?: boolean, isMonthlyGoals?: boolean, isWeeklyReflection?: boolean }} flags
+ * @param {{ isMonthlyReflection?: boolean, isMonthlyGoals?: boolean, isWeeklyReflection?: boolean, isStorySummary?: boolean }} flags
  */
 export function getDurationLimits(flags = {}) {
   const maxSeconds = flags.isMonthlyReflection || flags.isMonthlyGoals
     ? 600
     : flags.isWeeklyReflection
       ? 420
+      : flags.isStorySummary
+      ? 180
       : 300;
   return { minSeconds: 60, maxSeconds, minLabel: "1 min", maxLabel: formatMaxLabel(maxSeconds) };
 }
@@ -23,7 +25,8 @@ export function getDurationLimits(flags = {}) {
 function formatMaxLabel(sec) {
   if (sec >= 600) return "10 min";
   if (sec >= 420) return "7 min";
-  return "5 min";
+  if (sec >= 300) return "5 min";
+  return "3 min";
 }
 
 function fmtDuration(sec) {
@@ -39,7 +42,7 @@ function fmtDuration(sec) {
  * @param {number|null} input.fileSizeBytes
  * @param {number|null} input.frameCount
  * @param {boolean} input.hasAudioTrack - optional hint from client
- * @param {{ isMonthlyReflection?: boolean, isMonthlyGoals?: boolean, isWeeklyReflection?: boolean }} input.flags
+ * @param {{ isMonthlyReflection?: boolean, isMonthlyGoals?: boolean, isWeeklyReflection?: boolean, isStorySummary?: boolean }} input.flags
  */
 export function evaluateSubmitGate(input) {
   const { minSeconds, maxSeconds, minLabel, maxLabel } = getDurationLimits(input.flags || {});

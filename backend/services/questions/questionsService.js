@@ -87,17 +87,29 @@ export async function editQuestion(questionId, category, topic, question) {
 /**
  * Setup manual question for specific date/type (admin/trainer)
  */
-export async function setupManualQuestion(setupType, scheduledFor, category, topic, question, createdBy) {
+export async function setupManualQuestion(setupType, scheduledFor, scheduledTime, category, topic, question, createdBy, story = {}) {
   if (!setupType || !scheduledFor || !category || !topic || !question) {
     throw new Error("setupType, scheduledFor, category, topic and question are required");
   }
 
-  const validTypes = ["weekly_reflection", "monthly_reflection", "monthly_goals"];
+  const validTypes = ["weekly_reflection", "monthly_reflection", "monthly_goals", "story_summary"];
   if (!validTypes.includes(setupType)) {
     throw new Error("Invalid setupType. Must be one of: " + validTypes.join(", "));
   }
 
-  const scheduleDate = new Date(scheduledFor);
+  if (setupType === "story_summary" && !story.audioUrl) {
+    throw new Error("audioUrl is required for story summary questions");
+  }
+
+  const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+  const normalizedTime = scheduledTime && timeRegex.test(scheduledTime) ? scheduledTime : null;
+  if (scheduledTime && !normalizedTime) {
+    throw new Error("Invalid scheduledTime format. Use HH:MM");
+  }
+
+  const scheduleDate = normalizedTime
+    ? new Date(`${scheduledFor}T${normalizedTime}:00+05:30`)
+    : new Date(scheduledFor);
   if (isNaN(scheduleDate.getTime())) {
     throw new Error("Invalid scheduledFor date");
   }
@@ -123,7 +135,12 @@ export async function setupManualQuestion(setupType, scheduledFor, category, top
     question,
     isManualSetup: true,
     setupType,
+    contentType: setupType === "story_summary" ? "story_audio" : "question",
+    audioUrl: story.audioUrl || null,
+    storyTranscript: story.storyTranscript || null,
+    summaryGuide: story.summaryGuide || null,
     scheduledFor: scheduleDate,
+    scheduledTime: normalizedTime,
     createdBy,
     isUsed: false
   });
@@ -209,6 +226,11 @@ export async function getQuestionTemplates() {
       "What was your biggest challenge last month and how will you overcome it this month?",
       "How many reviews are you planning to attend this month?",
       "What will you do differently this month to grow faster?"
+    ],
+    story_summary: [
+      "Listen to the story audio. Then record a short video summary in your own words.",
+      "Retell the story in order: beginning, problem, important events, ending, and lesson.",
+      "Summarize the story clearly without reading a transcript."
     ]
   };
 
@@ -234,6 +256,24 @@ export async function getManualQuestionForDate(date, setupType) {
 
   if (manualQuestion) {
     // Mark as used
+    await Question.findByIdAndUpdate(manualQuestion._id, { isUsed: true });
+  }
+
+  return manualQuestion;
+}
+
+/**
+ * Get the oldest due manual question by exact scheduled datetime.
+ */
+export async function getDueManualQuestion(setupType, now = new Date()) {
+  const manualQuestion = await Question.findOne({
+    isManualSetup: true,
+    setupType,
+    scheduledFor: { $lte: now },
+    isUsed: false
+  }).sort({ scheduledFor: 1 });
+
+  if (manualQuestion) {
     await Question.findByIdAndUpdate(manualQuestion._id, { isUsed: true });
   }
 

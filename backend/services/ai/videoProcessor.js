@@ -46,6 +46,14 @@ export async function processWebVideo(videoPath, displayName = "User", onProgres
     const status = await Status.findOne().lean();
     questionTopic = status?.todayTopic || null;
     questionText  = status?.todayQuestion || null;
+    if (status?.isStorySummaryDay) {
+      const storyContext = [
+        "This is a story summary task. Evaluate whether the speaker understood and summarized the audio story accurately.",
+        status?.todayStoryTranscript ? `Story transcript: ${status.todayStoryTranscript}` : null,
+        status?.todaySummaryGuide ? `Expected key points / summary guide: ${status.todaySummaryGuide}` : null,
+      ].filter(Boolean).join("\n");
+      questionText = [questionText, storyContext].filter(Boolean).join("\n\n");
+    }
   } catch (err) {
     console.warn("[VideoProcessor] Could not fetch today's question:", err.message);
   }
