@@ -111,8 +111,8 @@ export async function getSettings(req, res) {
  */
 export async function updateSettings(req, res) {
   try {
-    const { posterSendTime, questionGenerateTime, vocabWordCount, vocabLevel } = req.body;
-    const result = await dashboardService.updateSettings(posterSendTime, questionGenerateTime, vocabWordCount, vocabLevel);
+    const { posterSendTime, questionGenerateTime, vocabWordCount, vocabLevel, storyWordCount } = req.body;
+    const result = await dashboardService.updateSettings(posterSendTime, questionGenerateTime, vocabWordCount, vocabLevel, storyWordCount);
     res.json(result);
   } catch (error) {
     if (error.statusCode) {

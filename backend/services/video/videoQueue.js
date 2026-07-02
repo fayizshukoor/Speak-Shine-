@@ -311,6 +311,7 @@ async function processJob(job) {
         isMonthlyReflection: status?.isMonthlyReflectionDay || false,
         isMonthlyGoals:      status?.isMonthlyGoalsDay      || false,
         isWeeklyReflection:  status?.isWeeklyReflectionDay  || false,
+        isStorySummary:      status?.isStorySummaryDay      || false,
       };
       const { maxSeconds } = getDurationLimits(gateFlags);
       const todayVocab = status?.todayVocabulary || [];

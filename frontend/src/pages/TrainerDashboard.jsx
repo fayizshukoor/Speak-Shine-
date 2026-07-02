@@ -845,11 +845,17 @@ function ManualQuestionsPanel() {
   const [form, setForm] = useState({
     setupType: "weekly_reflection",
     scheduledFor: "",
+    scheduledTime: "",
     category: "",
     topic: "",
-    question: ""
+    question: "",
+    audioUrl: "",
+    storyTranscript: "",
+    summaryGuide: ""
   });
   const [saving, setSaving] = useState(false);
+  const [generatingStory, setGeneratingStory] = useState(false);
+  const [generatingAudio, setGeneratingAudio] = useState(false);
   const [busy, setBusy] = useState({});
   const [toast, setToast] = useState(null);
   const [selectedTemplate, setSelectedTemplate] = useState("");
@@ -859,12 +865,27 @@ function ManualQuestionsPanel() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const load = async () => {
+  const handleGenerateStory = async () => {
+    setGeneratingStory(true);
     try {
-      const [questionsRes, templatesRes] = await Promise.all([
-        api.get("/questions/manual?upcoming=true"),
-        api.get("/questions/templates")
-      ]);
+      const res = await api.post("/questions/generate-story");
+      const { topic, story, summaryGuide, question } = res.data;
+      setForm(f => ({
+        ...f,
+        topic,
+        question,
+        storyTranscript: story,
+        summaryGuide: Array.isArray(summaryGuide) ? summaryGuide.join("\n") : summaryGuide || "",
+      }));
+      notify("Story generated! Review and add an audio URL before saving.");
+    } catch (err) {
+      notify(err.response?.data?.error || "Story generation failed", "error");
+    } finally {
+      setGeneratingStory(false);
+    }
+  };
+
+  const load = async () => {
       setManualQuestions(questionsRes.data);
       setTemplates(templatesRes.data);
     } catch (err) {
@@ -884,9 +905,13 @@ function ManualQuestionsPanel() {
       setForm({
         setupType: "weekly_reflection",
         scheduledFor: "",
+        scheduledTime: "",
         category: "",
         topic: "",
-        question: ""
+        question: "",
+        audioUrl: "",
+        storyTranscript: "",
+        summaryGuide: ""
       });
       setSelectedTemplate("");
       setShowForm(false);
@@ -940,11 +965,19 @@ function ManualQuestionsPanel() {
     return nextMonth.toISOString().split('T')[0];
   };
 
+  const getTodayDate = () => new Date().toISOString().split('T')[0];
+
+  const getCurrentTime = () => {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  };
+
   const getDefaultDate = (setupType) => {
     switch (setupType) {
       case "weekly_reflection": return getNextSunday();
       case "monthly_goals": return getNextMonthFirst();
       case "monthly_reflection": return getNextMonthLast();
+      case "story_summary": return getTodayDate();
       default: return "";
     }
   };
@@ -952,13 +985,15 @@ function ManualQuestionsPanel() {
   const setupTypeLabels = {
     weekly_reflection: "Weekly Reflection (Sunday)",
     monthly_goals: "Monthly Goals (1st of month)",
-    monthly_reflection: "Monthly Reflection (Last day of month)"
+    monthly_reflection: "Monthly Reflection (Last day of month)",
+    story_summary: "Story Summary (scheduled time)"
   };
 
   const groupedQuestions = {
     weekly_reflection: manualQuestions.filter(q => q.setupType === "weekly_reflection"),
     monthly_goals: manualQuestions.filter(q => q.setupType === "monthly_goals"),
-    monthly_reflection: manualQuestions.filter(q => q.setupType === "monthly_reflection")
+    monthly_reflection: manualQuestions.filter(q => q.setupType === "monthly_reflection"),
+    story_summary: manualQuestions.filter(q => q.setupType === "story_summary")
   };
 
   return (
@@ -983,7 +1018,7 @@ function ManualQuestionsPanel() {
         <div>
           <h2 style={{ margin: 0, fontSize: "1.3rem", fontWeight: 800 }}>📝 Manual Questions</h2>
           <p style={{ margin: "0.25rem 0 0", color: "var(--muted)", fontSize: "0.85rem" }}>
-            Setup custom questions for weekly and monthly reflections
+            Setup custom questions, reflections, and story listening tasks
           </p>
         </div>
         <button
@@ -1023,8 +1058,10 @@ function ManualQuestionsPanel() {
                       ...f, 
                       setupType: newType,
                       scheduledFor: getDefaultDate(newType),
+                      scheduledTime: newType === "story_summary" ? getCurrentTime() : f.scheduledTime,
                       category: newType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
-                      topic: newType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())
+                      topic: newType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                      question: newType === "story_summary" ? "Listen to the story audio and record a short video summary in your own words." : f.question
                     }));
                     setSelectedTemplate("");
                   }}
@@ -1042,6 +1079,16 @@ function ManualQuestionsPanel() {
                   required
                   value={form.scheduledFor} 
                   onChange={e => setForm(f => ({ ...f, scheduledFor: e.target.value }))} 
+                />
+              </div>
+              <div>
+                <label className="form-label">Scheduled Time {form.setupType === "story_summary" ? "*" : "(optional)"}</label>
+                <input
+                  className="form-input"
+                  type="time"
+                  required={form.setupType === "story_summary"}
+                  value={form.scheduledTime}
+                  onChange={e => setForm(f => ({ ...f, scheduledTime: e.target.value }))}
                 />
               </div>
             </div>
@@ -1101,6 +1148,41 @@ function ManualQuestionsPanel() {
                 onChange={e => setForm(f => ({ ...f, question: e.target.value }))} 
               />
             </div>
+            {form.setupType === "story_summary" && (
+              <>
+                <div style={{ marginBottom: "0.75rem" }}>
+                  <label className="form-label">Story Audio URL *</label>
+                  <input
+                    className="form-input"
+                    type="url"
+                    placeholder="https://.../story.mp3"
+                    required
+                    value={form.audioUrl}
+                    onChange={e => setForm(f => ({ ...f, audioUrl: e.target.value }))}
+                  />
+                </div>
+                <div style={{ marginBottom: "0.75rem" }}>
+                  <label className="form-label">Story Transcript (optional)</label>
+                  <textarea
+                    className="form-input"
+                    rows={4}
+                    placeholder="Paste the story text here for better AI summary scoring..."
+                    value={form.storyTranscript}
+                    onChange={e => setForm(f => ({ ...f, storyTranscript: e.target.value }))}
+                  />
+                </div>
+                <div style={{ marginBottom: "1rem" }}>
+                  <label className="form-label">Expected Summary / Key Points (optional)</label>
+                  <textarea
+                    className="form-input"
+                    rows={3}
+                    placeholder="Key points students should mention..."
+                    value={form.summaryGuide}
+                    onChange={e => setForm(f => ({ ...f, summaryGuide: e.target.value }))}
+                  />
+                </div>
+              </>
+            )}
             <button type="submit" className="btn-primary" disabled={saving} style={{ minWidth: 160 }}>
               {saving ? "Setting up…" : "📝 Setup Question"}
             </button>
@@ -1152,9 +1234,15 @@ function ManualQuestionsPanel() {
                         <div style={{ fontSize: "0.85rem", color: "var(--text)", marginBottom: "0.4rem", lineHeight: 1.4 }}>
                           {q.question}
                         </div>
+                        {q.audioUrl && (
+                          <div style={{ fontSize: "0.78rem", color: "#2dd4bf", marginBottom: "0.4rem", wordBreak: "break-all" }}>
+                            🎧 {q.audioUrl}
+                          </div>
+                        )}
 
                         <div style={{ display: "flex", gap: "1rem", fontSize: "0.78rem", color: "var(--muted)", flexWrap: "wrap" }}>
                           <span>📅 {new Date(q.scheduledFor).toLocaleDateString("en-IN", { dateStyle: "medium" })}</span>
+                          <span>⏰ {q.scheduledTime || new Date(q.scheduledFor).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>
                           <span>👤 {q.createdBy}</span>
                           <span>📂 {q.category}</span>
                         </div>
@@ -1188,7 +1276,7 @@ function ManualQuestionsPanel() {
             <div style={{ textAlign: "center", padding: "3rem 1rem", color: "var(--muted)" }}>
               <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>📝</div>
               <div style={{ fontWeight: 600, marginBottom: "0.5rem" }}>No manual questions scheduled</div>
-              <div style={{ fontSize: "0.85rem" }}>Click "+ Setup Question" to create custom weekly or monthly questions</div>
+              <div style={{ fontSize: "0.85rem" }}>Click "+ Setup Question" to create custom weekly, monthly, or story tasks</div>
             </div>
           )}
         </>

@@ -2,9 +2,9 @@
  * Client-side submit gate — mirrors backend submitGate.js for instant feedback.
  */
 
-export function getDurationLimits({ isMonthlyReflection, isMonthlyGoals, isWeeklyReflection } = {}) {
-  const maxSeconds = isMonthlyReflection || isMonthlyGoals ? 600 : isWeeklyReflection ? 420 : 300;
-  const maxLabel = maxSeconds >= 600 ? "10 min" : maxSeconds >= 420 ? "7 min" : "5 min";
+export function getDurationLimits({ isMonthlyReflection, isMonthlyGoals, isWeeklyReflection, isStorySummary } = {}) {
+  const maxSeconds = isMonthlyReflection || isMonthlyGoals ? 600 : isWeeklyReflection ? 420 : isStorySummary ? 180 : 300;
+  const maxLabel = maxSeconds >= 600 ? "10 min" : maxSeconds >= 420 ? "7 min" : maxSeconds >= 300 ? "5 min" : "3 min";
   return { minSeconds: 60, maxSeconds, minLabel: "1 min", maxLabel };
 }
 

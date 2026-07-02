@@ -54,6 +54,9 @@ export async function getTodayOverview() {
       topic: status?.todayTopic || null,
       question: status?.todayQuestion || null,
       category: status?.todayCategory || null,
+      contentType: status?.todayContentType || "question",
+      audioUrl: status?.todayAudioUrl || null,
+      isStorySummary: status?.isStorySummaryDay || false,
       posterImage: getPosterImage(status),
     },
     stats: {
@@ -228,10 +231,13 @@ export async function getUserProfile(phone) {
       topic: status?.todayTopic || null,
       question: status?.todayQuestion || null,
       category: status?.todayCategory || null,
+      contentType: status?.todayContentType || "question",
+      audioUrl: status?.todayAudioUrl || null,
       posterImage: getPosterImage(status),
       isMonthlyReflection: status?.isMonthlyReflectionDay || false,
       isMonthlyGoals: status?.isMonthlyGoalsDay || false,
       isWeeklyReflection: status?.isWeeklyReflectionDay || false,
+      isStorySummary: status?.isStorySummaryDay || false,
       vocabulary: await vocabularyPromise,
     },
     dailyReport: showReport ? dailyReport : null,
@@ -308,6 +314,11 @@ export async function setTodayQuestion(topic, question, category) {
       todayQuestion: question,
       todayTopic: topic || null,
       todayCategory: category || null,
+      todayContentType: "question",
+      todayAudioUrl: null,
+      todayStoryTranscript: null,
+      todaySummaryGuide: null,
+      isStorySummaryDay: false,
       questionSentToday: true,
     }
   }, { upsert: true });
@@ -329,6 +340,8 @@ export async function getSettings() {
     questionGenerateTime: status.questionGenerateTime || "07:00",
     vocabWordCount: status.vocabWordCount ?? 3,
     vocabLevel: status.vocabLevel || "B2",
+    storyWordCount: status.storyWordCount ?? 200,
+    storyLevel: status.storyLevel || "B1",
   };
 }
 
@@ -380,7 +393,27 @@ export async function updateSettings(posterSendTime, questionGenerateTime, vocab
     // Clear today's vocab so it regenerates with new level
     updates.todayVocabulary = [];
   }
-  
+
+  if (storyWordCount !== undefined) {
+    const count = parseInt(storyWordCount, 10);
+    if (isNaN(count) || count < 100 || count > 400) {
+      const error = new Error("storyWordCount must be between 100 and 400");
+      error.statusCode = 400;
+      throw error;
+    }
+    updates.storyWordCount = count;
+  }
+
+  if (storyLevel !== undefined) {
+    const VALID_STORY_LEVELS = ["A2", "B1", "B2", "C1"];
+    if (!VALID_STORY_LEVELS.includes(storyLevel)) {
+      const error = new Error(`storyLevel must be one of: ${VALID_STORY_LEVELS.join(", ")}`);
+      error.statusCode = 400;
+      throw error;
+    }
+    updates.storyLevel = storyLevel;
+  }
+
   await Status.updateOne({}, { $set: updates }, { upsert: true });
   
   return { success: true, ...updates };
@@ -440,6 +473,11 @@ export async function enableMonthlyReflection() {
       questionSentToday: true,
       isMonthlyReflectionDay: true,
       isMonthlyGoalsDay: false,
+      isStorySummaryDay: false,
+      todayContentType: "question",
+      todayAudioUrl: null,
+      todayStoryTranscript: null,
+      todaySummaryGuide: null,
       todayTopic: MONTHLY_REFLECTION_TOPIC,
       todayQuestion: reflectionText,
       todayCategory: MONTHLY_REFLECTION_CATEGORY,
@@ -462,6 +500,11 @@ export async function enableMonthlyGoals() {
       isMonthlyGoalsDay: true,
       isMonthlyReflectionDay: false,
       isWeeklyReflectionDay: false,
+      isStorySummaryDay: false,
+      todayContentType: "question",
+      todayAudioUrl: null,
+      todayStoryTranscript: null,
+      todaySummaryGuide: null,
       todayTopic: MONTHLY_GOALS_TOPIC,
       todayQuestion: goalsText,
       todayCategory: MONTHLY_GOALS_CATEGORY,
@@ -484,6 +527,11 @@ export async function enableWeeklyReflection() {
       isWeeklyReflectionDay: true,
       isMonthlyReflectionDay: false,
       isMonthlyGoalsDay: false,
+      isStorySummaryDay: false,
+      todayContentType: "question",
+      todayAudioUrl: null,
+      todayStoryTranscript: null,
+      todaySummaryGuide: null,
       todayTopic: WEEKLY_REFLECTION_TOPIC,
       todayQuestion: weeklyText,
       todayCategory: WEEKLY_REFLECTION_CATEGORY,
@@ -502,10 +550,15 @@ export async function disableSpecialModes() {
       isMonthlyReflectionDay: false,
       isMonthlyGoalsDay: false,
       isWeeklyReflectionDay: false,
+      isStorySummaryDay: false,
       questionSentToday: false,
       todayTopic: null,
       todayQuestion: null,
       todayCategory: null,
+      todayContentType: "question",
+      todayAudioUrl: null,
+      todayStoryTranscript: null,
+      todaySummaryGuide: null,
     }
   });
   
