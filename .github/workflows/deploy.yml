@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Deploy to EC2
         uses: appleboy/ssh-action@master
