@@ -4,44 +4,121 @@
  * Generates an MP3 audio file from story text using ElevenLabs TTS,
  * then uploads it to Cloudflare R2 under story-audio/ folder.
  *
- * Requires: ELEVENLABS_API_KEY in Infisical
+ * Uses the ElevenLabs key manager (min-heap rotation) so multiple keys
+ * are cycled automatically on rate-limit / quota / transient errors.
+ *
+ * Environment variables:
+ *   ELEVENLABS_API_KEYS  — comma-separated list of keys (preferred)
+ *   ELEVENLABS_API_KEY   — single key (fallback / backwards-compat)
  */
 
 import fetch from "node-fetch";
 import { uploadBufferToR2 } from "../../config/storage.js";
+import {
+  getKey,
+  markRateLimited,
+  markInvalid,
+  markTransientError,
+  parseRetryAfter,
+} from "./elevenLabsKeyManager.js";
 
-const VOICE_ID = "pNInz6obpgDQGcFmaJgB"; // Adam — premade, free tier compatible
+// Adam voice — premade, free-tier compatible on all ElevenLabs accounts
+const VOICE_ID = "pNInz6obpgDQGcFmaJgB";
 
+const MAX_ATTEMPTS = 8; // try up to 8 key-switches before giving up
+
+/**
+ * Convert text to an MP3 Buffer using ElevenLabs TTS.
+ * Rotates keys automatically on 429 / 401 / 403 / 5xx.
+ */
 async function textToMp3Buffer(text) {
-  const apiKey = process.env.ELEVENLABS_API_KEY;
-  if (!apiKey) {
-    throw new Error("ELEVENLABS_API_KEY is not set in Infisical.");
-  }
+  let lastError = null;
 
-  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`, {
-    method: "POST",
-    headers: {
-      "xi-api-key": apiKey,
-      "Content-Type": "application/json",
-      "Accept": "audio/mpeg",
-    },
-    body: JSON.stringify({
-      text,
-      model_id: "eleven_multilingual_v2",
-      voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.3, use_speaker_boost: true },
-    }),
-  });
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const apiKey = getKey();
 
-  if (!res.ok) {
+    if (!apiKey) {
+      throw new Error(
+        "All ElevenLabs API keys are exhausted or on cooldown. " +
+        "Add more keys via ELEVENLABS_API_KEYS or wait for cooldown to expire."
+      );
+    }
+
+    let res;
+    try {
+      res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`, {
+        method: "POST",
+        headers: {
+          "xi-api-key": apiKey,
+          "Content-Type": "application/json",
+          "Accept": "audio/mpeg",
+        },
+        body: JSON.stringify({
+          text,
+          model_id: "eleven_multilingual_v2",
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75,
+            style: 0.3,
+            use_speaker_boost: true,
+          },
+        }),
+      });
+    } catch (networkErr) {
+      // Network-level failure (DNS, timeout, etc.)
+      console.warn(`[StoryAudio] Network error on attempt ${attempt + 1}:`, networkErr.message);
+      markTransientError(apiKey);
+      lastError = networkErr;
+      continue;
+    }
+
+    // ── Success ──────────────────────────────────────────────────────────────
+    if (res.ok) {
+      return Buffer.from(await res.arrayBuffer());
+    }
+
+    // ── Handle error status codes ─────────────────────────────────────────────
     const errText = await res.text().catch(() => "");
     let detail = errText;
     try { detail = JSON.parse(errText)?.detail?.message || errText; } catch {}
+
+    if (res.status === 429) {
+      // Rate limited — use Retry-After header if present
+      const retryAfter = parseRetryAfter(res.headers.get("Retry-After")) || 60;
+      markRateLimited(apiKey, retryAfter);
+      lastError = new Error(`Rate limited (429): ${detail}`);
+      continue; // try next key
+    }
+
+    if (res.status === 401 || res.status === 403) {
+      // Invalid key or quota exceeded
+      markInvalid(apiKey);
+      lastError = new Error(`Auth/quota error (${res.status}): ${detail}`);
+      continue; // try next key
+    }
+
+    if (res.status >= 500) {
+      // ElevenLabs server error — short cooldown then retry
+      markTransientError(apiKey);
+      lastError = new Error(`ElevenLabs server error (${res.status}): ${detail}`);
+      continue;
+    }
+
+    // 4xx client errors other than 401/403/429 are not retryable
     throw new Error(`ElevenLabs API error ${res.status}: ${detail}`);
   }
 
-  return Buffer.from(await res.arrayBuffer());
+  throw new Error(
+    `ElevenLabs TTS failed after ${MAX_ATTEMPTS} attempts. Last error: ${lastError?.message}`
+  );
 }
 
+/**
+ * Generate TTS audio for a story and upload to R2.
+ * @param {string} storyText - The story text to convert to audio
+ * @param {string} [topic]   - Used to build the R2 filename slug
+ * @returns {Promise<string>} Public URL of the uploaded MP3
+ */
 export async function generateAndUploadStoryAudio(storyText, topic = "story") {
   if (!storyText || storyText.trim().length < 10) {
     throw new Error("Story text is too short to generate audio");
@@ -52,7 +129,11 @@ export async function generateAndUploadStoryAudio(storyText, topic = "story") {
   const mp3Buffer = await textToMp3Buffer(storyText);
   console.log(`[StoryAudio] TTS done — ${(mp3Buffer.length / 1024).toFixed(1)} KB. Uploading to R2…`);
 
-  const slug = topic.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  const slug = topic
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
   const key = `story-audio/${slug}-${Date.now()}.mp3`;
 
   const publicUrl = await uploadBufferToR2(mp3Buffer, key, "audio/mpeg");
