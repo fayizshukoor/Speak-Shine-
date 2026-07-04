@@ -452,7 +452,7 @@ export default function VideoAnalysis() {
             )}
 
             {todayQuestion.audioUrl && (
-              <audio controls src={todayQuestion.audioUrl} style={{ width:"100%", marginBottom:"1rem" }} />
+              <audio controls controlsList="nodownload" src={todayQuestion.audioUrl} style={{ width:"100%", marginBottom:"1rem" }} />
             )}
 
             <div style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(45,212,191,0.25)", borderRadius:12, padding:"0.85rem 1rem", color:"rgba(255,255,255,0.9)", fontSize:"0.9rem", lineHeight:1.5 }}>
@@ -2862,7 +2862,7 @@ function RecordCard({ onAnalysisStarted, question, isMonthlyReflection, isMonthl
             )}
           </div>
           
-          <video ref={previewVideoRef} controls playsInline
+          <video ref={previewVideoRef} controls controlsList="nodownload" playsInline
             style={{ width: "100%", borderRadius: "12px", background: "#000", aspectRatio: "16/9", marginBottom: "1rem" }} />
           {recordGate && <SubmitGatePanel gate={recordGate} />}
 
