@@ -146,19 +146,34 @@ jobs:
             # a. Tag candidate as the new :latest
             docker tag speak-shine-app:candidate speak-shine-app:latest
 
-            # b. Stop & remove old app container
-            docker stop speak-shine-app  2>/dev/null || true
-            docker rm   speak-shine-app  2>/dev/null || true
+            # b. Stop & remove the OLD app container (if it still exists — may be absent on first deploy)
+            OLD_APP_ID="$(docker inspect --format='{{.Id}}' speak-shine-app 2>/dev/null || true)"
+            CANDIDATE_ID="$(docker inspect --format='{{.Id}}' speak-shine-app-candidate 2>/dev/null || true)"
 
-            # c. Rename candidate → speak-shine-app (so docker-compose tracks it)
+            # Only stop the old container if it is NOT the candidate
+            # (on first deploy speak-shine-app may not exist at all)
+            if [ -n "$OLD_APP_ID" ] && [ "$OLD_APP_ID" != "$CANDIDATE_ID" ]; then
+              echo "Stopping old container ($( echo $OLD_APP_ID | head -c 12 )…)"
+              docker stop speak-shine-app  2>/dev/null || true
+              docker rm   speak-shine-app  2>/dev/null || true
+            fi
+
+            # c. Rename candidate → speak-shine-app
             docker rename speak-shine-app-candidate speak-shine-app
+            echo "✓ Container renamed to speak-shine-app"
 
-            # d. Update container's restart policy to "always" so it survives reboots
+            # d. Update restart policy so it survives reboots
             docker update --restart always speak-shine-app
 
-            # e. Reload Nginx config — picks up the now-live upstream (< 1 ms, zero dropped connections)
-            docker exec speak-shine-nginx nginx -s reload 2>/dev/null || \
-              docker compose up -d --no-recreate nginx
+            # e. Reload Nginx — picks up new upstream without dropping connections
+            #    Try exec first (fastest); fall back to restart if exec fails
+            if docker exec speak-shine-nginx nginx -t 2>/dev/null; then
+              docker exec speak-shine-nginx nginx -s reload
+              echo "✓ Nginx reloaded (zero dropped connections)"
+            else
+              echo "⚠ Nginx config test failed — restarting nginx container"
+              docker compose restart nginx
+            fi
 
             echo "✓ Cutover complete — speak-shine-app is now the candidate"
             echo ""
