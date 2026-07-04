@@ -349,7 +349,18 @@ export default function AdminDashboard() {
     setSettingsSaving(true);
     try {
       await api.patch("/dashboard/settings", settings);
-      msg("Settings saved! Changes apply within 1 minute.");
+      // Re-fetch fresh values to update state (bypasses 30s GET cache)
+      const fresh = await api.get("/dashboard/settings?_t=" + Date.now());
+      setSettings(s => ({
+        ...s,
+        posterSendTime: fresh.data.posterSendTime || "08:00",
+        questionGenerateTime: fresh.data.questionGenerateTime || "07:00",
+        vocabWordCount: fresh.data.vocabWordCount ?? 3,
+        vocabLevel: fresh.data.vocabLevel || "B2",
+        storyWordCount: fresh.data.storyWordCount ?? 200,
+        storyLevel: fresh.data.storyLevel || "B1",
+      }));
+      msg("Settings saved!");
     } catch (err) {
       msg(err?.response?.data?.error || "Failed to save settings", "danger");
     } finally {
@@ -1760,7 +1771,7 @@ export default function AdminDashboard() {
               </div>
             </div>
             <button type="submit" className="btn-primary" disabled={settingsSaving}>
-              {settingsSaving ? "Saving…" : "💾 Save Vocabulary Settings"}
+              {settingsSaving ? "Saving…" : "💾 Save Vocabulary & Story Settings"}
             </button>
           </form>
           <div style={{marginTop:"1rem",padding:"0.75rem 1rem",background:"rgba(124,111,255,0.08)",borderRadius:10,border:"1px solid rgba(124,111,255,0.2)",fontSize:"0.82rem",color:"var(--muted)"}}>

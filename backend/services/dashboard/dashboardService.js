@@ -348,7 +348,7 @@ export async function getSettings() {
 /**
  * Update bot schedule settings (admin only)
  */
-export async function updateSettings(posterSendTime, questionGenerateTime, vocabWordCount, vocabLevel) {
+export async function updateSettings(posterSendTime, questionGenerateTime, vocabWordCount, vocabLevel, storyWordCount, storyLevel) {
   const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
   const updates = {};
   
