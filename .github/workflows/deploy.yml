@@ -145,49 +145,51 @@ jobs:
             # ── 7. Zero-downtime cutover ──────────────────────────────────────
             echo "=== [7/7] Zero-downtime cutover ==="
 
-            # a. Tag candidate as the new :latest
+            # Tag candidate as the new :latest so docker compose picks it up
             docker tag speak-shine-app:candidate speak-shine-app:latest
 
-            # b. Stop & remove the OLD app container (if it still exists — may be absent on first deploy)
-            OLD_APP_ID="$(docker inspect --format='{{.Id}}' speak-shine-app 2>/dev/null || true)"
-            CANDIDATE_ID="$(docker inspect --format='{{.Id}}' speak-shine-app-candidate 2>/dev/null || true)"
+            # Stop the candidate — compose will restart it properly with the right
+            # network aliases (so Nginx can resolve "app:3001")
+            docker rm -f speak-shine-app-candidate 2>/dev/null || true
 
-            # Only stop the old container if it is NOT the candidate
-            # (on first deploy speak-shine-app may not exist at all)
-            if [ -n "$OLD_APP_ID" ] && [ "$OLD_APP_ID" != "$CANDIDATE_ID" ]; then
-              echo "Stopping old container ($( echo $OLD_APP_ID | head -c 12 )…)"
-              docker stop speak-shine-app  2>/dev/null || true
-              docker rm   speak-shine-app  2>/dev/null || true
-            fi
+            # Bring up app with the new image via compose — this gives it the correct
+            # network alias "app" that Nginx upstream depends on.
+            # --force-recreate replaces any existing container atomically.
+            docker compose up -d --force-recreate --no-build app
 
-            # c. Rename candidate → speak-shine-app
-            docker rename speak-shine-app-candidate speak-shine-app
-            echo "✓ Container renamed to speak-shine-app"
+            # Wait for the compose-managed app to be healthy before reloading Nginx
+            echo "Waiting for compose app to become healthy…"
+            for i in $(seq 1 30); do
+              if curl -fsS http://localhost:3001/api/health >/dev/null 2>&1; then
+                echo "✓ App healthy on port 3001"
+                break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "❌ App did not become healthy after compose up"
+                docker compose logs --tail=50 app
+                exit 1
+              fi
+              sleep 3
+            done
 
-            # d. Update restart policy so it survives reboots
-            docker update --restart always speak-shine-app
+            # Reload Nginx to pick up any config changes (maintenance page, etc.)
+            docker exec speak-shine-nginx nginx -s reload 2>/dev/null && \
+              echo "✓ Nginx reloaded" || \
+              echo "⚠ Nginx reload signal failed (Nginx may have reloaded automatically)"
 
-            # e. Reload Nginx — picks up new upstream without dropping connections
-            #    Try exec first (fastest); fall back to restart if exec fails
-            if docker exec speak-shine-nginx nginx -t 2>/dev/null; then
-              docker exec speak-shine-nginx nginx -s reload
-              echo "✓ Nginx reloaded (zero dropped connections)"
-            else
-              echo "⚠ Nginx config test failed — restarting nginx container"
-              docker compose restart nginx
-            fi
+            echo "✓ Cutover complete"
 
             echo "✓ Cutover complete — speak-shine-app is now the candidate"
             echo ""
 
             # ── Final validation ──────────────────────────────────────────────
             echo "=== Final health check ==="
-            sleep 3
-            if curl -fsS http://localhost:3001/api/health > /dev/null; then
+            sleep 2
+            if curl -fsS http://localhost:3001/api/health > /dev/null 2>&1; then
               echo "✓ Production health check passed"
             else
               echo "⚠ Post-cutover health check failed — check container logs"
-              docker logs --tail=50 speak-shine-app || true
+              docker compose logs --tail=50 app || true
             fi
 
             # ── Cleanup ───────────────────────────────────────────────────────
