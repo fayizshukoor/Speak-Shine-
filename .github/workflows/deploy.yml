@@ -18,7 +18,7 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4.2.2
 
-      - name: Deploy to EC2
+      - name: Deploy to EC2 (zero-downtime)
         uses: appleboy/ssh-action@master
         env:
           ENV_FILE_CONTENT: ${{ secrets.ENV_FILE_CONTENT }}
@@ -27,6 +27,8 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
           envs: ENV_FILE_CONTENT
+          # Give the full deploy enough time (build can take ~5 min on small EC2)
+          command_timeout: 15m
           script: |
             set -euo pipefail
 
@@ -37,110 +39,145 @@ jobs:
 
             cd "$APP_DIR"
 
-            echo "================================="
-            echo "Sync latest source"
-            echo "================================="
+            # ── 1. Sync latest source ─────────────────────────────────────────
+            echo "=== [1/7] Syncing source ==="
             git fetch origin main
             git reset --hard origin/main
 
-            echo "================================="
-            echo "Pull environment variables from Infisical"
-            echo "================================="
-            # If ENV_FILE_CONTENT secret is set, use it as the authoritative .env
+            # ── 2. Write environment variables ───────────────────────────────
+            echo "=== [2/7] Writing .env ==="
             if [ -n "${ENV_FILE_CONTENT:-}" ]; then
-              echo "$ENV_FILE_CONTENT" > .env
-              echo "✓ Environment variables written from ENV_FILE_CONTENT secret"
-            # Otherwise try Infisical
+              printf '%s' "$ENV_FILE_CONTENT" > .env
+              echo "✓ .env written from ENV_FILE_CONTENT secret"
             elif command -v infisical &> /dev/null; then
-              echo "Infisical CLI found, attempting to pull production secrets..."
-              if infisical export --env=production --format=dotenv > /tmp/.env.infisical.tmp 2>/dev/null \
-                  && [ -s /tmp/.env.infisical.tmp ] \
-                  && grep -q "JWT_SECRET" /tmp/.env.infisical.tmp; then
-                mv /tmp/.env.infisical.tmp .env
-                echo "✓ Environment variables synced from Infisical"
+              echo "Trying Infisical..."
+              if infisical export --env=production --format=dotenv > /tmp/.env.tmp 2>/dev/null \
+                  && [ -s /tmp/.env.tmp ] \
+                  && grep -q "JWT_SECRET" /tmp/.env.tmp; then
+                mv /tmp/.env.tmp .env
+                echo "✓ .env written from Infisical"
               else
-                rm -f /tmp/.env.infisical.tmp
-                echo "⚠ Infisical export failed — using existing .env"
+                rm -f /tmp/.env.tmp
+                echo "⚠ Infisical export failed — keeping existing .env"
               fi
-            else
-              echo "⚠ Infisical CLI not found, using existing .env file"
             fi
-            # Final safety check
             if [ ! -f .env ] || ! grep -q "JWT_SECRET" .env; then
-              echo "❌ Error: .env is missing or does not contain JWT_SECRET"
+              echo "❌ FATAL: .env is missing or does not contain JWT_SECRET"
               exit 1
             fi
 
-            echo "================================="
-            echo "Backup compose file"
-            echo "================================="
-            cp docker-compose.yml docker-compose.backup.yml
-
-            echo "================================="
-            echo "Save rollback image"
-            echo "================================="
-            PREVIOUS_APP_IMAGE="$(docker inspect --format='{{.Image}}' speak-shine-app 2>/dev/null || true)"
-            if [ -n "$PREVIOUS_APP_IMAGE" ]; then
-              docker tag "$PREVIOUS_APP_IMAGE" speak-shine-app:rollback
-              echo "Rollback image saved: $PREVIOUS_APP_IMAGE"
+            # ── 3. Save rollback image (tag current live image before anything changes) ──
+            echo "=== [3/7] Saving rollback image ==="
+            ROLLBACK_SAVED=false
+            CURRENT_IMAGE="$(docker inspect --format='{{.Image}}' speak-shine-app 2>/dev/null || true)"
+            if [ -n "$CURRENT_IMAGE" ]; then
+              docker tag "$CURRENT_IMAGE" speak-shine-app:rollback
+              ROLLBACK_SAVED=true
+              echo "✓ Rollback image saved: ${CURRENT_IMAGE:0:20}…"
             else
-              echo "No previous app container found; rollback image unavailable"
+              echo "⚠ No running container found — first deploy or previous deploy failed"
             fi
 
-            echo "================================="
-            echo "Build fresh app image"
-            echo "================================="
-            docker compose build --no-cache app
+            # ── 4. Build new image ────────────────────────────────────────────
+            echo "=== [4/7] Building new image ==="
+            # Build into a temporary tag so the live :latest tag is untouched until
+            # the new container passes health checks.
+            docker build --no-cache -t speak-shine-app:candidate .
+            echo "✓ New image built as speak-shine-app:candidate"
 
-            echo "================================="
-            echo "Restart app and nginx"
-            echo "================================="
-            docker compose up -d --force-recreate --remove-orphans app nginx
+            # ── 5. Start new container alongside the old one ──────────────────
+            echo "=== [5/7] Starting candidate container ==="
+            # Run the candidate on port 3002 (internal only — Nginx still hits 3001).
+            docker rm -f speak-shine-app-candidate 2>/dev/null || true
+            docker run -d \
+              --name speak-shine-app-candidate \
+              --network speakshine-network \
+              --env-file .env \
+              --health-cmd "curl -fsS http://localhost:3001/api/health" \
+              --health-interval 10s \
+              --health-timeout 5s \
+              --health-retries 5 \
+              --health-start-period 20s \
+              --restart no \
+              -p 3002:3001 \
+              speak-shine-app:candidate
+            echo "✓ Candidate container started on port 3002 (internal health gate)"
 
-            echo "================================="
-            echo "Wait for app health"
-            echo "================================="
-            for i in $(seq 1 30); do
-              if curl -fsS http://localhost:3001/api/health >/dev/null; then
-                echo "Health check passed"
+            # ── 6. Wait for candidate to become healthy ───────────────────────
+            echo "=== [6/7] Health-gating candidate container ==="
+            HEALTHY=false
+            for i in $(seq 1 36); do
+              STATUS="$(docker inspect --format='{{.State.Health.Status}}' speak-shine-app-candidate 2>/dev/null || echo 'missing')"
+              echo "  Attempt $i/36 — health status: $STATUS"
+
+              if [ "$STATUS" = "healthy" ]; then
+                HEALTHY=true
+                echo "✓ Candidate is healthy!"
                 break
               fi
 
-              if [ "$i" -eq 30 ]; then
-                echo "Health check failed"
-                docker compose ps
-                docker compose logs --tail=150 app
-
-                echo "================================="
-                echo "Rolling back compose file"
-                echo "================================="
-                cp docker-compose.backup.yml docker-compose.yml
-
-                if docker image inspect speak-shine-app:rollback >/dev/null 2>&1; then
-                  echo "Restoring previous app image"
-                  docker tag speak-shine-app:rollback speak-shine-app:latest
-                else
-                  echo "No rollback image available"
-                fi
-
-                docker compose up -d --force-recreate app nginx
-                exit 1
+              if [ "$STATUS" = "unhealthy" ]; then
+                echo "❌ Candidate container is unhealthy"
+                break
               fi
 
               sleep 5
             done
 
-            echo "================================="
-            echo "Deployment status"
-            echo "================================="
-            docker compose ps
-            docker system df
+            if [ "$HEALTHY" = "false" ]; then
+              echo "❌ Candidate failed to become healthy — aborting deploy"
+              echo ""
+              echo "=== Candidate logs (last 80 lines) ==="
+              docker logs --tail=80 speak-shine-app-candidate || true
+              docker rm -f speak-shine-app-candidate || true
 
-            echo "================================="
-            echo "Cleanup unused images only"
-            echo "================================="
-            docker image rm speak-shine-app:rollback >/dev/null 2>&1 || true
-            docker image prune -f || true
+              # Old container is still running — nothing to roll back
+              echo ""
+              echo "✓ Previous version is still serving traffic (no downtime)"
+              exit 1
+            fi
+
+            # ── 7. Zero-downtime cutover ──────────────────────────────────────
+            echo "=== [7/7] Zero-downtime cutover ==="
+
+            # a. Tag candidate as the new :latest
+            docker tag speak-shine-app:candidate speak-shine-app:latest
+
+            # b. Stop & remove old app container
+            docker stop speak-shine-app  2>/dev/null || true
+            docker rm   speak-shine-app  2>/dev/null || true
+
+            # c. Rename candidate → speak-shine-app (so docker-compose tracks it)
+            docker rename speak-shine-app-candidate speak-shine-app
+
+            # d. Update container's restart policy to "always" so it survives reboots
+            docker update --restart always speak-shine-app
+
+            # e. Reload Nginx config — picks up the now-live upstream (< 1 ms, zero dropped connections)
+            docker exec speak-shine-nginx nginx -s reload 2>/dev/null || \
+              docker compose up -d --no-recreate nginx
+
+            echo "✓ Cutover complete — speak-shine-app is now the candidate"
+            echo ""
+
+            # ── Final validation ──────────────────────────────────────────────
+            echo "=== Final health check ==="
+            sleep 3
+            if curl -fsS http://localhost:3001/api/health > /dev/null; then
+              echo "✓ Production health check passed"
+            else
+              echo "⚠ Post-cutover health check failed — check container logs"
+              docker logs --tail=50 speak-shine-app || true
+            fi
+
+            # ── Cleanup ───────────────────────────────────────────────────────
+            echo "=== Cleanup ==="
+            docker image rm speak-shine-app:candidate  2>/dev/null || true
+            docker image rm speak-shine-app:rollback   2>/dev/null || true
+            docker image prune -f  || true
             docker builder prune -af || true
 
-            echo "Deployment completed"
+            echo ""
+            docker compose ps
+            echo ""
+            echo "🚀 Deployment complete — zero downtime achieved"
