@@ -87,6 +87,9 @@ jobs:
 
             # ── 5. Start new container alongside the old one ──────────────────
             echo "=== [5/7] Starting candidate container ==="
+            # Ensure the Docker network exists (created by docker compose on first run,
+            # but may be absent on a fresh server before any compose up).
+            docker network create speakshine-network 2>/dev/null || true
             # Run the candidate on port 3002 (internal only — Nginx still hits 3001).
             docker rm -f speak-shine-app-candidate 2>/dev/null || true
             docker run -d \
