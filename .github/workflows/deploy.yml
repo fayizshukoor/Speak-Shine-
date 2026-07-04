@@ -90,7 +90,10 @@ jobs:
             # Ensure the Docker network exists (created by docker compose on first run,
             # but may be absent on a fresh server before any compose up).
             docker network create speakshine-network 2>/dev/null || true
-            # Run the candidate on port 3002 (internal only — Nginx still hits 3001).
+            # Run the candidate on the internal network only — NO host port needed.
+            # Health checks go directly to the container via its internal port 3001.
+            # The host port 3002 binding is removed to avoid "port already allocated" errors
+            # when a previous failed deploy left a dangling container.
             docker rm -f speak-shine-app-candidate 2>/dev/null || true
             docker run -d \
               --name speak-shine-app-candidate \
@@ -102,9 +105,8 @@ jobs:
               --health-retries 5 \
               --health-start-period 20s \
               --restart no \
-              -p 3002:3001 \
               speak-shine-app:candidate
-            echo "✓ Candidate container started on port 3002 (internal health gate)"
+            echo "✓ Candidate container started (internal network only, no host port)"
 
             # ── 6. Wait for candidate to become healthy ───────────────────────
             echo "=== [6/7] Health-gating candidate container ==="
