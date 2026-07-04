@@ -73,11 +73,24 @@ function isSunday() {
   return istDate.getDay() === 0; // 0 = Sunday
 }
 
+/** Returns true if today is Saturday (IST) */
+function isSaturday() {
+  const now = new Date();
+  const istDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  return istDate.getDay() === 6; // 6 = Saturday
+}
+
 async function publishDailyQuestion() {
   try {
     const statusCheck = await Status.findOne();
     if (statusCheck?.questionSentToday) {
       return; // already published today
+    }
+
+    // ── Saturday → delegate to questionSchedulerService (auto story summary) ─
+    if (isSaturday()) {
+      const { publishDailyQuestion: publishFromService } = await import("../backend/services/scheduler/questionSchedulerService.js");
+      return await publishFromService();
     }
 
     // ── 1st of month → Monthly Goal Setting (takes priority over Sunday) ─

@@ -190,6 +190,11 @@ export async function publishDailyQuestion() {
 
     const today = new Date();
 
+    // ── Saturday → Auto Story Summary ────────────────────────────────────
+    if (isSaturday()) {
+      return await publishAutoSaturdayStory();
+    }
+
     // ── 1st of month → Monthly Goal Setting (takes priority over Sunday) ─
     if (isFirstDayOfMonth()) {
       // Check for manual monthly goals question first
