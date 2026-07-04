@@ -452,7 +452,7 @@ export default function VideoAnalysis() {
             )}
 
             {todayQuestion.audioUrl && (
-              <audio controls controlsList="nodownload" src={todayQuestion.audioUrl} style={{ width:"100%", marginBottom:"1rem" }} />
+              <audio controls controlsList="nodownload nofullscreen noremoteplayback" onContextMenu={e => e.preventDefault()} src={todayQuestion.audioUrl} style={{ width:"100%", marginBottom:"1rem" }} />
             )}
 
             <div style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(45,212,191,0.25)", borderRadius:12, padding:"0.85rem 1rem", color:"rgba(255,255,255,0.9)", fontSize:"0.9rem", lineHeight:1.5 }}>

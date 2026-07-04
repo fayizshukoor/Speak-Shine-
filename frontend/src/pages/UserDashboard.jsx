@@ -843,7 +843,7 @@ export default function UserDashboard() {
                 </div>
               )}
               {data.today.audioUrl && (
-                <audio controls controlsList="nodownload" src={data.today.audioUrl} style={{ width: "100%", marginTop: "0.75rem" }} />
+                <audio controls controlsList="nodownload nofullscreen noremoteplayback" onContextMenu={e => e.preventDefault()} src={data.today.audioUrl} style={{ width: "100%", marginTop: "0.75rem" }} />
               )}
               <div style={{ marginTop:"0.85rem", background:"rgba(20,184,166,0.08)", border:"1px solid rgba(45,212,191,0.25)", borderRadius:10, padding:"0.65rem 0.85rem", fontSize:"0.82rem", color:"rgba(255,255,255,0.82)", lineHeight:1.5 }}>
                 {data.today.question || "Listen to the story audio. Then record a clear video summary in your own words."}
