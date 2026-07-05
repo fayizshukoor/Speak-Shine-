@@ -151,26 +151,53 @@ export async function getUserByPhone(phone) {
 
 /**
  * Update user role
+ * - `admin` can assign any role including admin/admins
+ * - `admins` can only change roles between user/trainer/viewer; cannot touch admin/admins accounts
  */
-export async function updateUserRole(phone, role) {
-  if (!["user", "trainer", "admin", "viewer"].includes(role)) {
+export async function updateUserRole(phone, newRole, requesterId) {
+  const VALID_ROLES = ["user", "trainer", "admin", "admins", "viewer"];
+  if (!VALID_ROLES.includes(newRole)) {
     const error = new Error("Invalid role");
     error.statusCode = 400;
     throw error;
   }
-  
+
+  // Resolve the requester's own role
+  const requester = await Auth.findById(requesterId).select("role").lean();
+  if (!requester) {
+    const error = new Error("Requester not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  // admins-tier restriction: cannot assign or touch admin-level roles
+  if (requester.role === "admins") {
+    if (newRole === "admin" || newRole === "admins") {
+      const error = new Error("You do not have permission to assign admin-level roles");
+      error.statusCode = 403;
+      throw error;
+    }
+    // Also block changing the role of an existing admin/admins account
+    const target = await Auth.findOne({ phone }).select("role").lean();
+    if (target && (target.role === "admin" || target.role === "admins")) {
+      const error = new Error("You do not have permission to change an admin-level account");
+      error.statusCode = 403;
+      throw error;
+    }
+  }
+
   const auth = await Auth.findOneAndUpdate(
-    { phone }, 
-    { role }, 
+    { phone },
+    { role: newRole },
     { new: true }
   );
-  
+
   if (!auth) {
     const error = new Error("Auth record not found");
     error.statusCode = 404;
     throw error;
   }
-  
+
   return { success: true, role: auth.role };
 }
 
@@ -240,8 +267,20 @@ export async function toggleSubmissionStatus(phone) {
 
 /**
  * Delete user
+ * admins-tier cannot delete admin/admins accounts
  */
-export async function deleteUser(phone) {
+export async function deleteUser(phone, requesterId) {
+  if (requesterId) {
+    const requester = await Auth.findById(requesterId).select("role").lean();
+    if (requester?.role === "admins") {
+      const target = await Auth.findOne({ phone }).select("role").lean();
+      if (target && (target.role === "admin" || target.role === "admins")) {
+        const error = new Error("You do not have permission to delete an admin-level account");
+        error.statusCode = 403;
+        throw error;
+      }
+    }
+  }
   await Auth.deleteOne({ phone });
   return { success: true };
 }
@@ -420,7 +459,7 @@ export async function createUserAccount(phone, password, name, role, actionToken
     throw error;
   }
   
-  if (!["user", "trainer", "admin", "viewer"].includes(role)) {
+  if (!["user", "trainer", "admin", "admins", "viewer"].includes(role)) {
     const error = new Error("Invalid role");
     error.statusCode = 400;
     throw error;

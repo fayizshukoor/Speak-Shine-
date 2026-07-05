@@ -10,9 +10,9 @@ import { authMiddleware, requireRole } from "../middleware/auth.js";
 const router = express.Router();
 
 // All attendance routes require trainer or admin role — viewer can read
-router.post("/mark", authMiddleware, requireRole("trainer", "admin"), attendanceController.markAttendance);
-router.post("/bulk", authMiddleware, requireRole("trainer", "admin"), attendanceController.markBulkAttendance);
-router.get("/:phone", authMiddleware, requireRole("trainer", "admin", "viewer"), attendanceController.getStudentAttendance);
-router.get("/date/:date", authMiddleware, requireRole("trainer", "admin", "viewer"), attendanceController.getAttendanceByDate);
+router.post("/mark", authMiddleware, requireRole("trainer", "admin", "admins"), attendanceController.markAttendance);
+router.post("/bulk", authMiddleware, requireRole("trainer", "admin", "admins"), attendanceController.markBulkAttendance);
+router.get("/:phone", authMiddleware, requireRole("trainer", "admin", "admins", "viewer"), attendanceController.getStudentAttendance);
+router.get("/date/:date", authMiddleware, requireRole("trainer", "admin", "admins", "viewer"), attendanceController.getAttendanceByDate);
 
 export default router;

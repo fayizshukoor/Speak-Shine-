@@ -21,7 +21,7 @@ router.post("/verify",       authMiddleware, verifyPayment);
 router.get("/my-transactions", authMiddleware, getMyTransactions);
 
 // ── Admin endpoints ───────────────────────────────────────────────────────────
-router.patch("/admin/toggle-paid/:phone", authMiddleware, requireRole("admin"), adminTogglePaid);
-router.get("/admin/all",                  authMiddleware, requireRole("admin", "viewer"), adminGetAllTransactions);
+router.patch("/admin/toggle-paid/:phone", authMiddleware, requireRole("admin", "admins"), adminTogglePaid);
+router.get("/admin/all",                  authMiddleware, requireRole("admin", "admins", "viewer"), adminGetAllTransactions);
 
 export default router;

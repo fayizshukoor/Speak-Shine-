@@ -10,7 +10,7 @@ import { getMonitoring } from "../controllers/monitoringController.js";
 const router = express.Router();
 
 // GET /api/monitoring - Get system monitoring data (admin only)
-router.get("/", authMiddleware, requireRole("admin"), getMonitoring);
+router.get("/", authMiddleware, requireRole("admin", "admins"), getMonitoring);
 
 export default router;
 

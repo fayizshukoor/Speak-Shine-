@@ -7,6 +7,7 @@ import RoleSelector from "../components/RoleSelector.jsx";
 import SubmissionControls from "../components/SubmissionControls.jsx";
 import { useConfirm } from "../components/ConfirmDialog.jsx";
 import { useToast } from "../components/Toast.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 import api from "../api/client.js";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, Legend } from "recharts";
 
@@ -16,6 +17,8 @@ const tt = { background:"#16162a", border:"1px solid #252545", borderRadius:10, 
 const TABS = [{id:"overview",l:"📊 Overview"},{id:"today",l:"📅 Today"},{id:"users",l:"👥 Users"},{id:"registrations",l:"📋 Registrations"},{id:"reports",l:"📈 Reports"},{id:"points",l:"⭐ Points"},{id:"submissions",l:"📝 Submissions"},{id:"questions",l:"❓ Questions"},{id:"manual-questions",l:"📝 Manual Questions"},{id:"live",l:"🎥 Live Sessions"},{id:"payments",l:"💳 Payments"},{id:"monitoring",l:"🖥️ Monitor"},{id:"settings",l:"⚙️ Settings"}];
 
 export default function AdminDashboard() {
+  const { user: currentUser } = useAuth();
+  const isAdminsTier = currentUser?.role === "admins"; // limited admin role
   const [tab, setTab] = useState("overview");
   const [dash, setDash] = useState(null);
   const [users, setUsers] = useState([]);
@@ -917,8 +920,9 @@ export default function AdminDashboard() {
                       onChange={e=>setNewMember(p=>({...p,role:e.target.value}))}>
                       <option value="user">User</option>
                       <option value="trainer">Trainer</option>
-                      <option value="admin">Admin</option>
                       <option value="viewer">Viewer (read-only)</option>
+                      {!isAdminsTier && <option value="admins">Admins</option>}
+                      {!isAdminsTier && <option value="admin">Admin</option>}
                     </select>
                   </div>
                 </div>

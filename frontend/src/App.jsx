@@ -33,9 +33,10 @@ function PageLoader() {
 function GuestRoute({ children, loginFor }) {
   const { user } = useAuth();
   if (!user) return children;
-  if (loginFor === "admin"   && user.role === "admin")                                    return <Navigate to="/admin"     replace />;
-  if (loginFor === "trainer" && ["trainer","admin"].includes(user.role))                  return <Navigate to="/trainer"   replace />;
+  if (loginFor === "admin"   && (user.role === "admin" || user.role === "admins"))        return <Navigate to="/admin"     replace />;
+  if (loginFor === "trainer" && ["trainer","admin","admins"].includes(user.role))         return <Navigate to="/trainer"   replace />;
   if (user.role === "admin")   return <Navigate to="/admin"     replace />;
+  if (user.role === "admins")  return <Navigate to="/admin"     replace />;
   if (user.role === "trainer") return <Navigate to="/trainer"   replace />;
   if (user.role === "viewer")  return <Navigate to="/admin"     replace />;
   return <Navigate to="/dashboard" replace />;
@@ -54,6 +55,7 @@ function HomeRedirect() {
   const { user } = useAuth();
   if (!user) return <Navigate to="/dashboard" replace />;  // guests see preview
   if (user.role === "admin")   return <Navigate to="/admin"     replace />;
+  if (user.role === "admins")  return <Navigate to="/admin"     replace />;
   if (user.role === "trainer") return <Navigate to="/trainer"   replace />;
   if (user.role === "viewer")  return <Navigate to="/admin"     replace />;
   return <Navigate to="/dashboard" replace />;
@@ -64,9 +66,8 @@ function HomeRedirect() {
 function PaidRoute({ children }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  const bypass = ["admin", "trainer", "viewer"].includes(user.role);
+  const bypass = ["admin", "admins", "trainer", "viewer"].includes(user.role);
   if (bypass) return children;
-  // paid status is stored in user.paid (set after boot from /users/me)
   if (!user.paid) return <PaymentWall />;
   return children;
 }
@@ -174,7 +175,7 @@ function AppRoutes() {
               </ProtectedRoute>
             } />
             <Route path="/admin" element={
-              <ProtectedRoute roles={["admin", "viewer"]} loginPath="/admin/login">
+              <ProtectedRoute roles={["admin", "admins", "viewer"]} loginPath="/admin/login">
                 <AdminDashboard />
               </ProtectedRoute>
             } />

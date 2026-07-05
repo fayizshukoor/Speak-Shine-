@@ -1,11 +1,18 @@
 import { useState } from "react";
 import api from "../api/client.js";
 import { useToast } from "./Toast.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 
 export default function RoleSelector({ phone, currentRole, onRoleChange }) {
   const [role, setRole] = useState(currentRole);
   const [loading, setLoading] = useState(false);
   const toast = useToast();
+  const { user: currentUser } = useAuth();
+
+  // admins-tier: cannot touch admin or admins accounts, cannot assign admin/admins
+  const isAdminsTier = currentUser?.role === "admins";
+  const targetIsAdminLevel = role === "admin" || role === "admins";
+  const locked = isAdminsTier && targetIsAdminLevel;
 
   const changeRole = async (newRole) => {
     if (newRole === role) return;
@@ -23,6 +30,25 @@ export default function RoleSelector({ phone, currentRole, onRoleChange }) {
       setLoading(false);
     }
   };
+
+  if (locked) {
+    // admins-tier user viewing an admin-level account — read-only badge
+    return (
+      <span style={{
+        background: "rgba(124,111,255,0.15)",
+        border: "1px solid rgba(124,111,255,0.3)",
+        color: "#a78bfa",
+        borderRadius: 8,
+        padding: "0.2rem 0.6rem",
+        fontSize: "0.75rem",
+        fontWeight: 600,
+        cursor: "not-allowed",
+        userSelect: "none",
+      }}>
+        🔒 {role}
+      </span>
+    );
+  }
 
   return (
     <select
@@ -42,8 +68,10 @@ export default function RoleSelector({ phone, currentRole, onRoleChange }) {
     >
       <option value="user">User</option>
       <option value="trainer">Trainer</option>
-      <option value="admin">Admin</option>
       <option value="viewer">Viewer</option>
+      {/* admins-tier cannot assign admin-level roles */}
+      {!isAdminsTier && <option value="admins">Admins</option>}
+      {!isAdminsTier && <option value="admin">Admin</option>}
     </select>
   );
 }

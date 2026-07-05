@@ -13,19 +13,19 @@ const router = express.Router();
 router.get("/random", authMiddleware, questionsController.getRandomQuestion);
 
 // Admin/Trainer routes — viewer can read
-router.get("/", authMiddleware, requireRole("admin", "trainer", "viewer"), questionsController.listQuestions);
-router.get("/manual", authMiddleware, requireRole("admin", "trainer", "viewer"), questionsController.listManualQuestions);
-router.get("/templates", authMiddleware, requireRole("admin", "trainer", "viewer"), questionsController.getQuestionTemplates);
-router.post("/manual", authMiddleware, requireRole("admin", "trainer"), questionsController.setupManualQuestion);
-router.delete("/manual/:id", authMiddleware, requireRole("admin", "trainer"), questionsController.deleteManualQuestion);
+router.get("/", authMiddleware, requireRole("admin", "admins", "trainer", "viewer"), questionsController.listQuestions);
+router.get("/manual", authMiddleware, requireRole("admin", "admins", "trainer", "viewer"), questionsController.listManualQuestions);
+router.get("/templates", authMiddleware, requireRole("admin", "admins", "trainer", "viewer"), questionsController.getQuestionTemplates);
+router.post("/manual", authMiddleware, requireRole("admin", "admins", "trainer"), questionsController.setupManualQuestion);
+router.delete("/manual/:id", authMiddleware, requireRole("admin", "admins", "trainer"), questionsController.deleteManualQuestion);
 
 // Admin-only routes
-router.post("/generate-now",   authMiddleware, requireRole("admin"), questionsController.generateQuestionsNow);
-router.post("/generate-story", authMiddleware, requireRole("admin", "trainer"), questionsController.generateStoryNow);
-router.post("/generate-story-audio", authMiddleware, requireRole("admin", "trainer"), questionsController.generateStoryAudio);
-router.post("/clean-generic",  authMiddleware, requireRole("admin"), questionsController.cleanGenericQuestions);
-router.post("/",               authMiddleware, requireRole("admin"), questionsController.addQuestion);
-router.delete("/:id",          authMiddleware, requireRole("admin"), questionsController.deleteQuestion);
-router.patch("/:id",           authMiddleware, requireRole("admin"), questionsController.editQuestion);
+router.post("/generate-now",   authMiddleware, requireRole("admin", "admins"), questionsController.generateQuestionsNow);
+router.post("/generate-story", authMiddleware, requireRole("admin", "admins", "trainer"), questionsController.generateStoryNow);
+router.post("/generate-story-audio", authMiddleware, requireRole("admin", "admins", "trainer"), questionsController.generateStoryAudio);
+router.post("/clean-generic",  authMiddleware, requireRole("admin", "admins"), questionsController.cleanGenericQuestions);
+router.post("/",               authMiddleware, requireRole("admin", "admins"), questionsController.addQuestion);
+router.delete("/:id",          authMiddleware, requireRole("admin", "admins"), questionsController.deleteQuestion);
+router.patch("/:id",           authMiddleware, requireRole("admin", "admins"), questionsController.editQuestion);
 
 export default router;

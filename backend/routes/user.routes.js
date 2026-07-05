@@ -10,26 +10,26 @@ import { authMiddleware, requireRole } from "../middleware/auth.js";
 const router = express.Router();
 
 // ── User List & Profile ──────────────────────────────────────────────────────
-router.get("/", authMiddleware, requireRole("admin", "trainer", "viewer"), userController.getAllUsers);
+router.get("/", authMiddleware, requireRole("admin", "admins", "trainer", "viewer"), userController.getAllUsers);
 router.get("/me", authMiddleware, userController.getMyProfile);
-router.get("/:phone", authMiddleware, requireRole("admin", "trainer", "viewer"), userController.getUserByPhone);
+router.get("/:phone", authMiddleware, requireRole("admin", "admins", "trainer", "viewer"), userController.getUserByPhone);
 
 // ── User Management (Admin) ──────────────────────────────────────────────────
-router.patch("/:phone/role", authMiddleware, requireRole("admin"), userController.updateUserRole);
-router.patch("/:phone/toggle", authMiddleware, requireRole("admin"), userController.toggleUserStatus);
-router.patch("/:phone/toggle-submitted", authMiddleware, requireRole("admin", "trainer"), userController.toggleSubmissionStatus);
-router.delete("/:phone", authMiddleware, requireRole("admin"), userController.deleteUser);
-router.patch("/:phone/fine", authMiddleware, requireRole("admin"), userController.adjustUserFine);
+router.patch("/:phone/role", authMiddleware, requireRole("admin", "admins"), userController.updateUserRole);
+router.patch("/:phone/toggle", authMiddleware, requireRole("admin", "admins"), userController.toggleUserStatus);
+router.patch("/:phone/toggle-submitted", authMiddleware, requireRole("admin", "admins", "trainer"), userController.toggleSubmissionStatus);
+router.delete("/:phone", authMiddleware, requireRole("admin", "admins"), userController.deleteUser);
+router.patch("/:phone/fine", authMiddleware, requireRole("admin", "admins"), userController.adjustUserFine);
 
 // ── Bulk Reset Operations (Admin/Trainer) ────────────────────────────────────
-router.post("/reset/weekly", authMiddleware, requireRole("admin", "trainer"), userController.resetWeeklySubmissions);
-router.post("/reset/monthly", authMiddleware, requireRole("admin", "trainer"), userController.resetMonthlySubmissions);
-router.post("/reset/day", authMiddleware, requireRole("admin", "trainer"), userController.resetDailySubmissions);
-router.post("/reset/fines", authMiddleware, requireRole("admin"), userController.resetAllFines);
+router.post("/reset/weekly", authMiddleware, requireRole("admin", "admins", "trainer"), userController.resetWeeklySubmissions);
+router.post("/reset/monthly", authMiddleware, requireRole("admin", "admins", "trainer"), userController.resetMonthlySubmissions);
+router.post("/reset/day", authMiddleware, requireRole("admin", "admins", "trainer"), userController.resetDailySubmissions);
+router.post("/reset/fines", authMiddleware, requireRole("admin", "admins"), userController.resetAllFines);
 
 // ── Admin User Creation (OTP-protected) ──────────────────────────────────────
-router.post("/admin-send-otp", authMiddleware, requireRole("admin"), userController.sendAdminOTP);
-router.post("/admin-verify-otp", authMiddleware, requireRole("admin"), userController.verifyAdminOTP);
-router.post("/admin-create", authMiddleware, requireRole("admin"), userController.createUserAccount);
+router.post("/admin-send-otp", authMiddleware, requireRole("admin", "admins"), userController.sendAdminOTP);
+router.post("/admin-verify-otp", authMiddleware, requireRole("admin", "admins"), userController.verifyAdminOTP);
+router.post("/admin-create", authMiddleware, requireRole("admin", "admins"), userController.createUserAccount);
 
 export default router;

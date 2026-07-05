@@ -60,7 +60,7 @@ export async function getUserByPhone(req, res) {
 export async function updateUserRole(req, res) {
   try {
     const { role } = req.body;
-    const result = await userService.updateUserRole(req.params.phone, role);
+    const result = await userService.updateUserRole(req.params.phone, role, req.user.id);
     res.json(result);
   } catch (error) {
     if (error.statusCode) {
@@ -111,9 +111,12 @@ export async function toggleSubmissionStatus(req, res) {
  */
 export async function deleteUser(req, res) {
   try {
-    const result = await userService.deleteUser(req.params.phone);
+    const result = await userService.deleteUser(req.params.phone, req.user.id);
     res.json(result);
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     console.error("[DeleteUser] Error:", error.message);
     res.status(500).json({ error: error.message });
   }
