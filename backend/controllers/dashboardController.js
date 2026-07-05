@@ -189,6 +189,22 @@ export async function enableWeeklyReflection(req, res) {
 }
 
 /**
+ * POST /api/dashboard/demo-story-summary - Force story summary mode (admin)
+ */
+export async function enableStorySummaryDemo(req, res) {
+  try {
+    const result = await dashboardService.enableStorySummaryDemo();
+    res.json(result);
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
+    console.error("[Dashboard] Enable story summary demo error:", error.message);
+    res.status(500).json({ error: error.message });
+  }
+}
+
+/**
  * POST /api/dashboard/demo-monthly-reflection-off - Turn off all special modes (admin)
  */
 export async function disableSpecialModes(req, res) {

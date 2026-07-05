@@ -105,10 +105,10 @@ function isSaturday() {
 }
 
 /**
- * Auto-generate and publish a story summary for Saturday.
+ * Auto-generate and publish a story summary for the configured story day.
  * Skips if a manual story is already scheduled for today.
  */
-async function publishAutoSaturdayStory() {
+export async function publishAutoSaturdayStory() {
   try {
     const { generateListeningStory } = await import("../ai/storyGenerator.js");
     const { generateAndUploadStoryAudio } = await import("../ai/storyAudioService.js");

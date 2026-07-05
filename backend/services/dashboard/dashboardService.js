@@ -553,6 +553,20 @@ export async function enableWeeklyReflection() {
 }
 
 /**
+ * Force story summary mode ON (admin only, for testing)
+ */
+export async function enableStorySummaryDemo() {
+  const { publishAutoSaturdayStory } = await import("../scheduler/questionSchedulerService.js");
+  const result = await publishAutoSaturdayStory();
+  if (!result.published) {
+    const error = new Error(result.error || "Failed to generate story summary");
+    error.statusCode = 500;
+    throw error;
+  }
+  return { success: true, message: `Story summary demo activated: "${result.topic}" — refresh the app to see it` };
+}
+
+/**
  * Turn off all special modes (admin only)
  */
 export async function disableSpecialModes() {
