@@ -33,7 +33,7 @@ export default function AdminDashboard() {
   const [modal, setModal] = useState(null);
   const [fineInput, setFineInput] = useState("");
   const [selectedStudent, setSelectedStudent] = useState(null);
-  const [settings, setSettings] = useState({ posterSendTime: "08:00", questionGenerateTime: "07:00", vocabWordCount: 3, vocabLevel: "B2", storyWordCount: 200, storyLevel: "B1" });
+  const [settings, setSettings] = useState({ posterSendTime: "08:00", questionGenerateTime: "07:00", vocabWordCount: 3, vocabLevel: "B2", storyWordCount: 200, storyLevel: "B1", storyDay: 6 });
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [resetting, setResetting] = useState("");
   const [publishQ, setPublishQ] = useState(null); // selected question for webapp publish
@@ -186,6 +186,7 @@ export default function AdminDashboard() {
         vocabLevel: s.data.vocabLevel || "B2",
         storyWordCount: s.data.storyWordCount ?? 200,
         storyLevel: s.data.storyLevel || "B1",
+        storyDay: s.data.storyDay ?? 6,
       });
       setDataLoaded(prev => ({ ...prev, settings: true }));
     } catch (err) {
@@ -359,6 +360,7 @@ export default function AdminDashboard() {
         vocabLevel: fresh.data.vocabLevel || "B2",
         storyWordCount: fresh.data.storyWordCount ?? 200,
         storyLevel: fresh.data.storyLevel || "B1",
+        storyDay: fresh.data.storyDay ?? 6,
       }));
       msg("Settings saved!");
     } catch (err) {
@@ -1744,7 +1746,7 @@ export default function AdminDashboard() {
             <div className="form-group" style={{marginBottom:"1.5rem"}}>
               <label className="form-label" style={{display:"flex",alignItems:"center",gap:"0.5rem"}}>
                 🎓 Story Difficulty Level
-                <span style={{color:"var(--muted)",fontWeight:400,fontSize:"0.8rem"}}>(CEFR level for Saturday stories)</span>
+                <span style={{color:"var(--muted)",fontWeight:400,fontSize:"0.8rem"}}>(CEFR level for story day)</span>
               </label>
               <div style={{display:"flex",gap:"0.5rem",flexWrap:"wrap"}}>
                 {[
@@ -1768,6 +1770,41 @@ export default function AdminDashboard() {
                     <strong>{l}</strong> — {desc}
                   </button>
                 ))}
+              </div>
+            </div>
+            <div className="form-group" style={{marginBottom:"1.5rem"}}>
+              <label className="form-label" style={{display:"flex",alignItems:"center",gap:"0.5rem"}}>
+                📅 Story Day
+                <span style={{color:"var(--muted)",fontWeight:400,fontSize:"0.8rem"}}>(day of week auto-story runs)</span>
+              </label>
+              <div style={{display:"flex",gap:"0.5rem",flexWrap:"wrap"}}>
+                {[
+                  {d:0,label:"Sun"},
+                  {d:1,label:"Mon"},
+                  {d:2,label:"Tue"},
+                  {d:3,label:"Wed"},
+                  {d:4,label:"Thu"},
+                  {d:5,label:"Fri"},
+                  {d:6,label:"Sat"},
+                ].map(({d, label}) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setSettings(s => ({...s, storyDay: d}))}
+                    style={{
+                      padding:"0.4rem 0.85rem", borderRadius:20, fontSize:"0.82rem", fontWeight:600,
+                      border: settings.storyDay === d ? "2px solid #7c6fff" : "1px solid var(--border)",
+                      background: settings.storyDay === d ? "rgba(124,111,255,0.18)" : "var(--bg-secondary)",
+                      color: settings.storyDay === d ? "#a78bfa" : "var(--muted)",
+                      cursor:"pointer",
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div style={{marginTop:"0.4rem",fontSize:"0.75rem",color:"var(--muted)"}}>
+                Currently: <strong style={{color:"var(--accent)"}}>{["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][settings.storyDay ?? 6]}</strong>
               </div>
             </div>
             <button type="submit" className="btn-primary" disabled={settingsSaving}>

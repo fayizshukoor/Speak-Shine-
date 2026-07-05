@@ -28,5 +28,6 @@ router.post("/demo-monthly-reflection", authMiddleware, requireRole("admin"), da
 router.post("/demo-monthly-goals", authMiddleware, requireRole("admin"), dashboardController.enableMonthlyGoals);
 router.post("/demo-weekly-reflection", authMiddleware, requireRole("admin"), dashboardController.enableWeeklyReflection);
 router.post("/demo-monthly-reflection-off", authMiddleware, requireRole("admin"), dashboardController.disableSpecialModes);
+router.post("/demo-story-summary", authMiddleware, requireRole("admin"), dashboardController.enableStorySummaryDemo);
 
 export default router;

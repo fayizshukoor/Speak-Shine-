@@ -342,13 +342,14 @@ export async function getSettings() {
     vocabLevel: status.vocabLevel || "B2",
     storyWordCount: status.storyWordCount ?? 200,
     storyLevel: status.storyLevel || "B1",
+    storyDay: status.storyDay ?? 6,
   };
 }
 
 /**
  * Update bot schedule settings (admin only)
  */
-export async function updateSettings(posterSendTime, questionGenerateTime, vocabWordCount, vocabLevel, storyWordCount, storyLevel) {
+export async function updateSettings(posterSendTime, questionGenerateTime, vocabWordCount, vocabLevel, storyWordCount, storyLevel, storyDay) {
   const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
   const updates = {};
   
@@ -412,6 +413,16 @@ export async function updateSettings(posterSendTime, questionGenerateTime, vocab
       throw error;
     }
     updates.storyLevel = storyLevel;
+  }
+
+  if (storyDay !== undefined) {
+    const day = parseInt(storyDay, 10);
+    if (isNaN(day) || day < 0 || day > 6) {
+      const error = new Error("storyDay must be 0 (Sunday) through 6 (Saturday)");
+      error.statusCode = 400;
+      throw error;
+    }
+    updates.storyDay = day;
   }
 
   await Status.updateOne({}, { $set: updates }, { upsert: true });

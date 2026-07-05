@@ -87,7 +87,7 @@ async function publishDailyQuestion() {
       return; // already published today
     }
 
-    // ── Saturday → delegate to questionSchedulerService (auto story summary) ─
+    // ── Story Summary Day → delegate to questionSchedulerService ──────────
     if (isSaturday()) {
       const { publishDailyQuestion: publishFromService } = await import("../backend/services/scheduler/questionSchedulerService.js");
       return await publishFromService();

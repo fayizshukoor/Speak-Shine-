@@ -77,7 +77,26 @@ function isSunday() {
 }
 
 /**
- * Check if today is Saturday (IST)
+ * Check if today is the story summary day (IST).
+ * Uses storyDay from DB settings (default 6 = Saturday).
+ */
+async function isStoryDay() {
+  try {
+    const status = await Status.findOne().select("storyDay").lean();
+    const configuredDay = status?.storyDay ?? 6; // default Saturday
+    const now = new Date();
+    const istDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+    return istDate.getDay() === configuredDay;
+  } catch {
+    // Fallback to Saturday if DB is unavailable
+    const now = new Date();
+    const istDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+    return istDate.getDay() === 6;
+  }
+}
+
+/**
+ * Check if today is Saturday (IST) — kept for backwards compat
  */
 function isSaturday() {
   const now = new Date();
@@ -190,8 +209,8 @@ export async function publishDailyQuestion() {
 
     const today = new Date();
 
-    // ── Saturday → Auto Story Summary ────────────────────────────────────
-    if (isSaturday()) {
+    // ── Story Summary Day → Auto Story Summary ────────────────────────────
+    if (await isStoryDay()) {
       return await publishAutoSaturdayStory();
     }
 
