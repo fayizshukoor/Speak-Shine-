@@ -8,6 +8,7 @@ import GuestBanner from "../components/GuestBanner.jsx";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, Legend, RadarChart, Radar, PolarGrid, PolarAngleAxis,
+  BarChart, Bar, Cell,
 } from "recharts";
 
 const MOTIVATIONAL = [
@@ -540,7 +541,7 @@ function VocabularyWords({ words }) {
   );
 }
 
-const tt = { background: "#16162a", border: "1px solid #252545", borderRadius: 10, fontSize: 12 };
+const tt = { background: "#16162a", border: "1px solid #252545", borderRadius: 10, fontSize: 12, color: "#f0f0ff" };
 const avg = (arr, k) => { const v = arr.filter(s => s[k] != null).map(s => s[k]); return v.length ? (v.reduce((a,b)=>a+b,0)/v.length).toFixed(1) : "—"; };
 const scoreColor = v => v >= 7 ? "var(--success)" : v >= 5 ? "var(--warning)" : "var(--danger)";
 
@@ -667,6 +668,7 @@ export default function UserDashboard() {
   const scores = profile?.feedbackScores || [];
   const latest = scores.slice(-1)[0];
   const chartData = scores.map((s, i) => ({ session: `#${i+1}`, Fluency: s.fluency, Grammar: s.grammar, Confidence: s.confidence, Vocabulary: s.vocabulary }));
+  const pointsData = scores.map((s, i) => ({ session: `#${i+1}`, pts: s.points != null ? Math.round(s.points) : null })).filter(d => d.pts != null);
   const radarData = latest ? Object.keys(SCORES).map(k => ({ subject: k.charAt(0).toUpperCase()+k.slice(1), score: latest[k] || 0 })) : [];
   const SESSION_PAGE_SIZE = 5;
   const reversedScores = [...scores].reverse();
@@ -819,6 +821,12 @@ export default function UserDashboard() {
                : data?.today?.isStorySummary ? "STORY SUMMARY"
                : "DAILY SPEAKING CHALLENGE"}
             </div>
+            {/* Sunday bonus badge */}
+            {new Date().getDay() === 0 && (
+              <div className="daily-poster-badge" style={{ background: "rgba(251,191,36,0.2)", border: "1px solid rgba(251,191,36,0.5)", color: "#fbbf24", marginTop: "0.35rem" }}>
+                🎉 Sunday Bonus — Double Points Today!
+              </div>
+            )}
             {data.today.category && (
               <div className="daily-poster-badge" style={
                 data?.today?.isMonthlyReflection ? { background:"rgba(139,92,246,0.3)", border:"1px solid rgba(167,139,250,0.5)", color:"#c4b5fd" }
@@ -1329,6 +1337,42 @@ export default function UserDashboard() {
               </div>
             )}
           </div>
+
+          {pointsData.length > 0 && (
+            <div className="card" style={{ marginTop: "1rem" }}>
+              <div className="section-title">📊 Daily Points — Last {pointsData.length} Sessions</div>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={pointsData} margin={{ top: 4, right: 4, left: -20, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.04)" vertical={false} />
+                  <XAxis dataKey="session" stroke="#55557a" fontSize={10} tickLine={false} axisLine={false} />
+                  <YAxis domain={[0, 100]} stroke="#55557a" fontSize={10} tickLine={false} axisLine={false} />
+                  <Tooltip
+                    contentStyle={tt}
+                    cursor={{ fill: "rgba(124,111,255,0.08)" }}
+                    formatter={(v) => [`${v} pts`, "Points"]}
+                    itemStyle={{ color: "#fbbf24" }}
+                    labelStyle={{ color: "#a0a0c0", marginBottom: "0.2rem" }}
+                  />
+                  <Bar dataKey="pts" radius={[6, 6, 0, 0]} maxBarSize={32}>
+                    {pointsData.map((d, i) => (
+                      <Cell
+                        key={i}
+                        fill={d.pts >= 80 ? "#4ade80" : d.pts >= 50 ? "#7c6fff" : d.pts >= 30 ? "#fbbf24" : "#f87171"}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+              <div style={{ display: "flex", gap: "1rem", justifyContent: "center", marginTop: "0.5rem", flexWrap: "wrap" }}>
+                {[{ color: "#4ade80", label: "80+ pts" }, { color: "#7c6fff", label: "50–79 pts" }, { color: "#fbbf24", label: "30–49 pts" }, { color: "#f87171", label: "< 30 pts" }].map(({ color, label }) => (
+                  <div key={label} style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.7rem", color: "var(--muted)" }}>
+                    <div style={{ width: 10, height: 10, borderRadius: 2, background: color }} />
+                    {label}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="card" style={{ marginTop: "1rem" }}>
             <div className="section-title">Session History</div>

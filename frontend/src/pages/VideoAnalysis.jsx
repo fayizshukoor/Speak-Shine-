@@ -3071,6 +3071,29 @@ function ReportView({ analysis: a, expiresAt, formatTimeRemaining }) {
   return (
     <div className="report-content">
 
+      {/* ── Sunday bonus banner ── */}
+      {a.sundayBonus && (
+        <div style={{
+          marginBottom: "1rem",
+          padding: "0.85rem 1rem",
+          borderRadius: 12,
+          background: "linear-gradient(135deg, rgba(251,191,36,0.15), rgba(124,111,255,0.1))",
+          border: "1px solid rgba(251,191,36,0.45)",
+          display: "flex", alignItems: "center", gap: "0.75rem",
+        }}>
+          <span style={{ fontSize: "1.6rem", flexShrink: 0 }}>🎉</span>
+          <div>
+            <div style={{ fontWeight: 800, color: "#fbbf24", fontSize: "1rem", marginBottom: "0.2rem" }}>
+              Sunday Bonus! Points Doubled
+            </div>
+            <div style={{ fontSize: "0.82rem", color: "rgba(255,255,255,0.75)", lineHeight: 1.5 }}>
+              Base score: <strong>{Math.round(a.baseScore ?? 0)} pts</strong> → Bonus score: <strong style={{ color: "#fbbf24" }}>{Math.round(cs ?? 0)} pts</strong>.
+              Every Sunday submission earns double points! 🔥
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Score outcome banner for re-submissions ── */}
       {a.scoreOutcome === "dropped" && (
         <div style={{
