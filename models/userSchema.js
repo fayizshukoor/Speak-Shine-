@@ -31,6 +31,7 @@ const userSchema = new mongoose.Schema({
       grammar: Number,
       confidence: Number,
       vocabulary: Number,
+      points: { type: Number, default: null },
       date: { type: Date, default: Date.now },
     }],
     default: [],

@@ -354,13 +354,21 @@ async function processJob(job) {
     });
 
     const { fluency, grammar, confidence, vocabulary } = result.analysis;
+
+    // ── Compute effective score (with Sunday bonus) early so it can be stored ──
+    let effectiveScore = compositeScore;
+    if (compositeScore != null) {
+      const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+      if (nowIST.getDay() === 0) effectiveScore = compositeScore * 2;
+    }
+
     if (fluency != null || grammar != null) {
       await User.findOneAndUpdate(
         { phone },
         {
           $push: {
             feedbackScores: {
-              $each: [{ fluency, grammar, confidence, vocabulary, date: new Date() }],
+              $each: [{ fluency, grammar, confidence, vocabulary, points: effectiveScore ?? null, date: new Date() }],
               $slice: -30,
             },
           },
