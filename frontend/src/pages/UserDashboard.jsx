@@ -819,6 +819,12 @@ export default function UserDashboard() {
                : data?.today?.isStorySummary ? "STORY SUMMARY"
                : "DAILY SPEAKING CHALLENGE"}
             </div>
+            {/* Sunday bonus badge */}
+            {new Date().getDay() === 0 && (
+              <div className="daily-poster-badge" style={{ background: "rgba(251,191,36,0.2)", border: "1px solid rgba(251,191,36,0.5)", color: "#fbbf24", marginTop: "0.35rem" }}>
+                🎉 Sunday Bonus — Double Points Today!
+              </div>
+            )}
             {data.today.category && (
               <div className="daily-poster-badge" style={
                 data?.today?.isMonthlyReflection ? { background:"rgba(139,92,246,0.3)", border:"1px solid rgba(167,139,250,0.5)", color:"#c4b5fd" }

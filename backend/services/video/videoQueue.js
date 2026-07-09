@@ -383,6 +383,13 @@ async function processJob(job) {
       const d  = String(nowIST.getDate()).padStart(2, "0");
       const todayIST = `${y}-${mo}-${d}`;
 
+      // ── Sunday bonus: double points 🎉 ───────────────────────────────────
+      const isSunday = nowIST.getDay() === 0;
+      const effectiveScore = isSunday ? compositeScore * 2 : compositeScore;
+      if (isSunday) {
+        console.log(`[Queue] 🎉 Sunday bonus! Score doubled: ${compositeScore.toFixed(1)} → ${effectiveScore.toFixed(1)} for ${phone}`);
+      }
+
       // Fetch current user state
       const userDoc = await User.findOne({ phone }).lean();
       const alreadyScoredToday = userDoc?.lastScoreDate === todayIST;
@@ -393,31 +400,37 @@ async function processJob(job) {
         await User.findOneAndUpdate(
           { phone },
           {
-            $inc: { monthlyScore: compositeScore },
-            $set: { lastScoreDate: todayIST, todayScore: compositeScore },
+            $inc: { monthlyScore: effectiveScore },
+            $set: { lastScoreDate: todayIST, todayScore: effectiveScore },
           }
         );
         scoreOutcome = "new";
-        console.log(`[Queue] 📊 monthlyScore +${compositeScore.toFixed(1)} for ${phone} (${todayIST}) [first submission]`);
-      } else if (compositeScore > prevScore) {
+        console.log(`[Queue] 📊 monthlyScore +${effectiveScore.toFixed(1)} for ${phone} (${todayIST}) [first submission]`);
+      } else if (effectiveScore > prevScore) {
         // Case 2: better score — replace today's contribution
-        const improvement = compositeScore - prevScore;
+        const improvement = effectiveScore - prevScore;
         await User.findOneAndUpdate(
           { phone },
           {
             $inc: { monthlyScore: improvement },
-            $set: { todayScore: compositeScore },
+            $set: { todayScore: effectiveScore },
           }
         );
         scoreOutcome = "improved";
         previousScore = prevScore;
-        console.log(`[Queue] 📈 monthlyScore improved +${improvement.toFixed(1)} for ${phone} (${todayIST}) [${prevScore.toFixed(1)} → ${compositeScore.toFixed(1)}]`);
+        console.log(`[Queue] 📈 monthlyScore improved +${improvement.toFixed(1)} for ${phone} (${todayIST}) [${prevScore.toFixed(1)} → ${effectiveScore.toFixed(1)}]`);
       } else {
         // Case 3: worse or equal score — drop it
         scoreOutcome = "dropped";
         previousScore = prevScore;
-        console.log(`[Queue] ℹ️  Re-submission score ${compositeScore.toFixed(1)} ≤ today's best ${prevScore.toFixed(1)} for ${phone} — keeping existing score`);
+        console.log(`[Queue] ℹ️  Re-submission score ${effectiveScore.toFixed(1)} ≤ today's best ${prevScore.toFixed(1)} for ${phone} — keeping existing score`);
       }
+
+      // Save sundayBonus flag so the UI can show a celebration message
+      await VideoReport.findByIdAndUpdate(reportId, {
+        "analysis.sundayBonus": isSunday,
+        "analysis.baseScore": compositeScore,
+      });
     }
 
     // Save scoreOutcome to the report so the UI can show the right message
